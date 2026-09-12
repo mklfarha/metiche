@@ -39,6 +39,13 @@ func main() {
 		warmup   = flag.Int("warmup", 30, "fixture events delivered instantly at start, so a cold board is not empty")
 		loop     = flag.Bool("loop", false, "restart the recording when it ends")
 		teamsCSV = flag.String("teams", "demo", "comma-separated team slugs, when -backend is set")
+		// The flag names the VARIABLE, never the value. A bearer token passed
+		// as an argument lands in shell history and in every `ps` on the box,
+		// and a token in a file lands in a commit eventually.
+		tokenEnv = flag.String("backend-token-env", "METICHE_BOARD_TOKEN",
+			"name of the environment variable holding the backend read-API bearer token")
+		backfill = flag.Int64("backfill", 200,
+			"events of history to pull into the timeline behind the snapshot cursor, when -backend is set")
 	)
 	flag.Parse()
 
@@ -51,12 +58,25 @@ func main() {
 	srv := web.NewServer(frontend.Static(), log)
 
 	if *backend != "" {
+		// Read once, keep it in memory, and never log it or put it in a flag
+		// value. The variable is then cleared from this process's environment
+		// so it is not inherited by anything spawned later and does not show
+		// up in /proc/self/environ.
+		token := strings.TrimSpace(os.Getenv(*tokenEnv))
+		_ = os.Unsetenv(*tokenEnv)
+		if token == "" {
+			log.Warn("no backend token; the read API will reject this if it requires one",
+				"expected_env", *tokenEnv)
+		}
 		for _, slug := range strings.Split(*teamsCSV, ",") {
 			slug = strings.TrimSpace(slug)
 			if slug == "" {
 				continue
 			}
-			f := &feed.Live{BaseURL: *backend, Slug: slug, Logger: log}
+			f := &feed.Live{
+				BaseURL: *backend, Slug: slug, Token: token,
+				TimelineBackfill: *backfill, Logger: log,
+			}
 			if _, err := srv.AddTeam(ctx, slug, slug, "", f); err != nil {
 				log.Error("add team", "slug", slug, "err", err)
 				os.Exit(1)

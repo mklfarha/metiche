@@ -190,6 +190,17 @@ type Contract struct {
 	Kind       string       `json:"kind"` // http|event|module|cli
 	Assertions []*Assertion `json:"assertions"`
 	UpdatedAt  time.Time    `json:"updated_at"`
+	// Agreement is the backend's own one-word verdict on this contract —
+	// unclaimed | unconsumed | agreed | mismatch | empty — when the board is
+	// reading from the live API. It is empty when the state was folded from an
+	// event log, because there it is derived from the assertions instead.
+	//
+	// It exists because the read API returns each assertion's shape_hash and
+	// field_count but not its fields: the server canonicalizes and compares
+	// the shapes itself, and the board is told the answer rather than the
+	// inputs. Without this the matrix would call a known mismatch "converged",
+	// which is the board lying about the one view it exists for.
+	Agreement string `json:"agreement,omitempty"`
 }
 
 // Producers returns the active produces-side assertions.
@@ -320,4 +331,37 @@ func (e Event) Tone() string {
 		return "quiet"
 	}
 	return ""
+}
+
+// ---------------------------------------------------------------- snapshots
+
+// TeamState is a whole team as the backend's read API describes it at one
+// instant: the board's first paint, before a single stream frame arrives.
+//
+// It exists because a live feed cannot be replayed from nothing the way a
+// fixture can. The backend's event frames are deliberately thin — a kind, a
+// sequence, the short key of the subject and a one-line summary — so they tell
+// a board WHAT changed but not enough to rebuild what the thing now is. The
+// read API answers that in one coherent transaction, and this is its shape in
+// the board's own vocabulary.
+type TeamState struct {
+	Team      Team
+	Project   Project
+	Members   []*Member
+	Sessions  []*Session
+	Intents   []*Intent
+	Claims    []*Claim
+	Contracts []*Contract
+	Decisions []*Decision
+	Conflicts []*Conflict
+
+	// ResumeFrom is the sequence a stream should resume after in order to be
+	// consistent with this state. It is normally Team.Sequence.
+	//
+	// A feed may set it LOWER to pull recent history into the timeline, and
+	// that is safe for exactly one reason: state loaded from here is
+	// authoritative, so the re-delivered events are appended to the log and
+	// never folded back over entities they already produced. It must never be
+	// set higher — that is the one direction that loses an event.
+	ResumeFrom int64
 }

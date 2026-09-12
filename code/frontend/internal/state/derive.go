@@ -509,6 +509,39 @@ func verdict(row ContractRow, s Snapshot) (status, severity, headline string) {
 			}
 		}
 		return "mismatch", sev, fmt.Sprintf("%d field disagreement(s) between producer and consumer", len(row.Diffs))
+	case row.Contract.Agreement == "mismatch":
+		// The backend said so, and on the live path it is the only one that
+		// can: the read API returns each assertion's shape hash but not its
+		// fields, so there are no diffs here to count. Reporting "converged"
+		// because we cannot see the fields would be the board lying about the
+		// one view it exists for.
+		return "mismatch", "high", "producer and consumer canonicalize to different shapes"
+	case len(row.Producers) > 1:
+		return "contested", "high", fmt.Sprintf("%d sessions claim to produce this", len(row.Producers))
+	case len(row.Producers) > 0 && len(row.Consumers) == 0:
+		return "unconsumed", "", "produced, nobody consuming it yet"
+	default:
+		return "converged", "", "producer and consumer agree"
+	}
+}
+
+func oldVerdict(row ContractRow, s Snapshot) (status, severity, headline string) {
+	switch {
+	case len(row.Consumers) > 0 && len(row.Producers) == 0:
+		names := make([]string, 0, len(row.Consumers))
+		for _, c := range row.Consumers {
+			names = append(names, s.SessionLabel(c.SessionKey))
+		}
+		return "unclaimed", "critical",
+			fmt.Sprintf("%s is coding against this — nobody is building it", strings.Join(names, ", "))
+	case len(row.Diffs) > 0:
+		sev := "low"
+		for _, d := range row.Diffs {
+			if model.SeverityRank(d.Severity) > model.SeverityRank(sev) {
+				sev = d.Severity
+			}
+		}
+		return "mismatch", sev, fmt.Sprintf("%d field disagreement(s) between producer and consumer", len(row.Diffs))
 	case len(row.Producers) > 1:
 		return "contested", "high", fmt.Sprintf("%d sessions claim to produce this", len(row.Producers))
 	case len(row.Producers) > 0 && len(row.Consumers) == 0:

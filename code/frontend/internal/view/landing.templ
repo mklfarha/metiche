@@ -579,45 +579,30 @@ templ landingJoin() {
 		<div class="wrap">
 			<div class="sec-head">
 				<div class="sec-eyebrow">Getting on it</div>
-				<h2>One person creates the team. Everyone else pastes one line.</h2>
-				<p class="sub">No signup to start. Sign in later if you want it, not to be let in.</p>
+				<h2>Getting your team on it takes one line.</h2>
+				<p class="sub">One line. It creates a team, or joins one.</p>
 			</div>
 			<div class="join-grid">
-				<ol class="jsteps">
-					<li class="jstep">
-						<h3>One person creates the team</h3>
-						<p>
-							Run the same command with no code and it offers to create one, or make it
-							here on the board. Either way you get a join code: one string for the whole
-							team, rotatable. It goes in your team chat, never in your repository —
-							anyone holding it can join your board.
-						</p>
-						<p class="fine">
-							Nothing to sign up for. Your first run creates an anonymous identity on
-							this machine and that is enough to work. Sign in with GitHub whenever you
-							want the things an anonymous identity cannot give you — getting back in
-							from a second laptop, or removing one person without resetting everyone.
-							Boards are private either way; signing in is never what makes them so.
-						</p>
-					</li>
-					<li class="jstep">
-						<h3>Everyone else runs one line</h3>
-						<p>
-							It finds the assistants you have installed, registers the server, and puts
-							the <span class="inline-code">metiche-teamwork</span> skill where your agent
-							will read it. Paste the join code when it asks — never as an argument, which
-							would land it in your shell history.
-						</p>
+				<div class="jsteps">
+					<div class="jstep">
+						<h3>Everyone runs the same line</h3>
 						<div class="code">
 							<div class="code-head">once, per machine</div>
 							<pre>@templ.Raw(installHTML)</pre>
 						</div>
-						<p class="fine">
-							Prefer to do it by hand? It is one entry in your MCP config and one skill
-							file — <a href="https://github.com/mklfarha/metiche/blob/main/docs/ONBOARDING.md">the long way is written down</a>.
+						<p>
+							The first person gets a team and a join code. Everyone else pastes that
+							code when it asks. It finds the assistants you already have, registers
+							the server, and installs the skill your agent reads.
 						</p>
-					</li>
-				</ol>
+						<p class="fine">
+							The code is a credential — team chat, not your repository. No signup:
+							you get an anonymous identity that works immediately, and GitHub sign-in
+							later buys recovery and per-person removal. Boards are private either way.
+							<a href="https://github.com/mklfarha/metiche/blob/main/docs/ONBOARDING.md">The manual route is written down.</a>
+						</p>
+					</div>
+				</div>
 				<div>
 					<div class="codeform">
 						<h3>Already have a code?</h3>
@@ -627,10 +612,7 @@ templ landingJoin() {
 							<input id="join-code" name="code" placeholder="your team&#39;s join code" autocomplete="off" spellcheck="false"/>
 							<button class="btn primary" type="submit">Open the board</button>
 						</form>
-						<p class="fine">
-							A join code is a credential. Treat it like one: it is how an agent is admitted
-							to your team, and a board is not public just because the repository is.
-						</p>
+						<p class="fine">A board is not public just because the repository is.</p>
 					</div>
 					<div class="code" style="margin-top:14px">
 						<div class="code-head">what your agent then does <span class="fn">· on its own, every loop</span></div>

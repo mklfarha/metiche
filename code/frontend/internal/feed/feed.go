@@ -28,3 +28,19 @@ type Feed interface {
 	// closed when the feed ends or ctx is cancelled.
 	Stream(ctx context.Context, after int64) (<-chan model.Event, error)
 }
+
+// Snapshotter is the other half of a live feed: the state itself, read whole
+// at one instant, with the cursor to resume streaming from.
+//
+// It is a separate, OPTIONAL interface rather than part of Feed because the
+// two implementations genuinely differ. A fixture recording carries the whole
+// world in its event payloads, so folding the log is the state and there is
+// nothing to snapshot. The real backend's frames deliberately do not: they say
+// what changed, and the read API says what things now are. A consumer asks
+// whether its feed can do this and behaves accordingly — see hub.Hub.Run.
+type Snapshotter interface {
+	// Snapshot reads the whole team at one instant. The returned ResumeFrom is
+	// the cursor to pass to Stream so that nothing is missed and nothing
+	// arrives twice.
+	Snapshot(ctx context.Context) (model.TeamState, error)
+}

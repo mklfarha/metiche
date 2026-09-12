@@ -49,6 +49,20 @@ type Store struct {
 	events    []model.Event
 	maxEvents int
 	clock     func() time.Time
+
+	// snapshotAuthoritative switches off event folding.
+	//
+	// A fixture recording carries the whole world in its payloads, so folding
+	// the log IS the state. The live backend's frames do not: they carry a
+	// kind, a sequence, a subject key and a summary, and deliberately nothing
+	// else. Folding those would not merely be thin, it would be wrong —
+	// mutate() would key a session off an absent payload field and invent an
+	// empty-keyed row on the board.
+	//
+	// So when a Load has handed this store a real snapshot, events stop being
+	// the source of entity state and become what they are on that path: the
+	// timeline, and the signal to go and read the snapshot again.
+	snapshotAuthoritative bool
 }
 
 // New returns an empty store for a team.
@@ -98,7 +112,9 @@ func (s *Store) Apply(ev model.Event) (model.Event, bool) {
 	}
 	ev.BoardRevision = s.team.BoardRevision
 
-	s.mutate(ev)
+	if !s.snapshotAuthoritative {
+		s.mutate(ev)
+	}
 
 	s.events = append(s.events, ev)
 	if len(s.events) > s.maxEvents {
@@ -119,6 +135,106 @@ func (s *Store) EventsAfter(after int64) []model.Event {
 		}
 	}
 	return out
+}
+
+// Load seeds the store from a backend snapshot and moves the cursors to it.
+//
+// This is the first half of the live path, and it is what makes the boundary
+// exact: the snapshot describes the team as of its own sequence, the cursor is
+// set to that sequence (or to ts.ResumeFrom, see below), and the stream is
+// then opened with ?after=<that number>. Everything at or below it is already
+// drawn and everything above it arrives on the stream — no gap to fill and no
+// event applied twice, because Apply still rejects anything that is not
+// strictly newer than the cursor.
+//
+// Loading a snapshot makes it authoritative for entity state from then on; see
+// the field comment on snapshotAuthoritative for why that is not optional.
+func (s *Store) Load(ts model.TeamState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.snapshotAuthoritative = true
+	s.replace(ts)
+
+	cursor := ts.Team.Sequence
+	if ts.ResumeFrom > 0 && ts.ResumeFrom < cursor {
+		cursor = ts.ResumeFrom
+	}
+	s.team.Sequence = cursor
+	s.team.BoardRevision = ts.Team.BoardRevision
+}
+
+// Refresh replaces entity state from a newer snapshot WITHOUT touching the
+// cursors.
+//
+// It is called when a structural frame says the shape of the board changed.
+// The cursors are deliberately left alone: the stream, not the snapshot, owns
+// the timeline cursor, and a refresh that raised it would silently swallow the
+// stream frames between the old cursor and whatever instant the refresh
+// happened to read — they would be rejected by Apply as already-seen and never
+// appear in the log.
+func (s *Store) Refresh(ts model.TeamState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.snapshotAuthoritative = true
+	s.replace(ts)
+	if ts.Team.BoardRevision > s.team.BoardRevision {
+		s.team.BoardRevision = ts.Team.BoardRevision
+	}
+}
+
+// replace swaps in the entity maps from a snapshot. The caller holds the lock.
+//
+// Wholesale replacement rather than a merge, on purpose: the snapshot is one
+// coherent read of the whole team, and merging it into what was there before
+// would keep exactly the rows the backend has stopped reporting — the session
+// that ended, the claim that expired, the conflict somebody resolved.
+func (s *Store) replace(ts model.TeamState) {
+	if ts.Team.Slug != "" {
+		s.team.Slug = ts.Team.Slug
+	}
+	if ts.Team.Name != "" {
+		s.team.Name = ts.Team.Name
+	}
+	if ts.Project.Key != "" {
+		s.project.Key = ts.Project.Key
+	}
+	if ts.Project.RepoURL != "" {
+		s.project.RepoURL = ts.Project.RepoURL
+	}
+	if ts.Project.Cadence.Valid() {
+		s.project.Cadence = ts.Project.Cadence
+	}
+
+	s.members = make(map[string]*model.Member, len(ts.Members))
+	for _, m := range ts.Members {
+		s.members[m.Key] = m
+	}
+	s.sessions = make(map[string]*model.Session, len(ts.Sessions))
+	for _, v := range ts.Sessions {
+		s.sessions[v.Key] = v
+	}
+	s.intents = make(map[string]*model.Intent, len(ts.Intents))
+	for _, v := range ts.Intents {
+		s.intents[v.Key] = v
+	}
+	s.claims = make(map[string]*model.Claim, len(ts.Claims))
+	for _, v := range ts.Claims {
+		s.claims[v.Key] = v
+	}
+	s.contracts = make(map[string]*model.Contract, len(ts.Contracts))
+	for _, v := range ts.Contracts {
+		s.contracts[v.Key] = v
+	}
+	s.decisions = make(map[string]*model.Decision, len(ts.Decisions))
+	for _, v := range ts.Decisions {
+		s.decisions[v.Key] = v
+	}
+	s.conflicts = make(map[string]*model.Conflict, len(ts.Conflicts))
+	for _, v := range ts.Conflicts {
+		s.conflicts[v.Key] = v
+	}
 }
 
 // Snapshot copies the current state out under the read lock.

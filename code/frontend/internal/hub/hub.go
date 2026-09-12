@@ -64,6 +64,11 @@ type Hub struct {
 	mu   sync.Mutex
 	subs map[*Subscriber]struct{}
 
+	// snapshots is set when the feed can read whole state from the backend.
+	// It is nil for a fixture, and that nil is what selects between the two
+	// ways a board can be correct — see Run.
+	snapshots feed.Snapshotter
+
 	// A human acting from the board injects an event locally, which consumes a
 	// sequence number the feed does not know about. drift keeps the feed's own
 	// numbering monotonic on top of that, so an injected event never makes the
@@ -108,7 +113,30 @@ func (h *Hub) Subscribers() int {
 // broadcast; a burst of structural events coalesces into a single board
 // repaint, because repainting four times in one tick is indistinguishable from
 // repainting once except in how much it flickers.
+//
+// If the feed can also produce a snapshot, the snapshot is read FIRST and the
+// stream is opened from the cursor it reports. That order is the whole of the
+// "no gap, no double-apply" guarantee on the live path:
+//
+//	state at sequence S  ──►  stream ?after=S  ──►  S+1, S+2, …
+//
+// Everything at or below S is in the state; everything above it arrives on the
+// stream; and Apply rejects anything not strictly newer than the cursor, so an
+// overlap at the boundary costs nothing. The other order — subscribe, then
+// read state — leaves a window whose events are in neither.
 func (h *Hub) Run(ctx context.Context, f feed.Feed) error {
+	if s, ok := f.(feed.Snapshotter); ok {
+		ts, err := s.Snapshot(ctx)
+		if err != nil {
+			return err
+		}
+		h.snapshots = s
+		h.store.Load(ts)
+		h.log.Info("loaded team snapshot", "slug", h.Slug,
+			"sequence", ts.Team.Sequence, "board_revision", ts.Team.BoardRevision,
+			"resume_from", h.store.Sequence(), "sessions", len(ts.Sessions))
+	}
+
 	events, err := f.Stream(ctx, h.store.Sequence())
 	if err != nil {
 		return err
@@ -143,6 +171,7 @@ func (h *Hub) Run(ctx context.Context, f feed.Feed) error {
 					}
 				}
 				if structural {
+					h.refresh(ctx)
 					h.broadcastBoard()
 				}
 			}
@@ -174,6 +203,32 @@ func (h *Hub) ingest(ev model.Event) bool {
 		HTML: render(h.renderer.TimelineItem(snap, applied)),
 	})
 	return applied.Structural
+}
+
+// refresh re-reads state from the backend after a structural change.
+//
+// This is the second cursor doing its job. sequence moved on every frame and
+// each one cost a timeline row; board_revision moved only on the ones that
+// changed the SHAPE of the board, and only those are worth a round trip and a
+// re-layout. A status line edit repaints nothing here.
+//
+// It is a no-op for a fixture feed, which has no backend to ask. A failed
+// refresh is logged and dropped: the board keeps the state it had and the next
+// structural frame tries again, which is a great deal better than blanking a
+// board somebody is reading because one request timed out.
+func (h *Hub) refresh(ctx context.Context) {
+	if h.snapshots == nil {
+		return
+	}
+	ts, err := h.snapshots.Snapshot(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			h.log.Warn("refreshing team state failed; keeping the last good board",
+				"slug", h.Slug, "err", err)
+		}
+		return
+	}
+	h.store.Refresh(ts)
 }
 
 func (h *Hub) broadcastBoard() {

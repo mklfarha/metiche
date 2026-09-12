@@ -54,6 +54,11 @@ func (s *Server) AddTeam(ctx context.Context, slug, name, joinCode string, f fee
 	if err := h.Run(ctx, f); err != nil {
 		return nil, fmt.Errorf("start feed for %s: %w", slug, err)
 	}
+	// A live feed learns the team's real name from its snapshot during Run;
+	// a fixture was named by its caller. Take whichever is better.
+	if loaded := h.Snapshot().Team.Name; loaded != "" {
+		name = loaded
+	}
 	t := &Team{Slug: slug, Name: name, JoinCode: joinCode, Hub: h, Feed: f}
 	s.teams[slug] = t
 	s.order = append(s.order, slug)

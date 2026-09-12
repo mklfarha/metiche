@@ -303,13 +303,20 @@ body.lp {
 .beat h3 { font-size: 16px; margin-bottom: 7px; }
 .beat p { font-size: 14px; color: var(--ink-2); margin: 0; }
 
+/* The thesis of the section, not an alert. It previously wore the
+   high-severity treatment — a coral wash and a coral left bar — which read as
+   an error modal and, worse, spent the one colour reserved for "something
+   needs you" on a sentence nobody needs to act on. Emphasis here is
+   typographic: more size, more space, a hairline above, no box. */
 .pullquote {
-  margin: 26px 0 0; padding: 18px 20px;
-  border: 1px solid var(--line); border-left: 4px solid var(--coral);
-  border-radius: var(--r); background: var(--wash-high);
-  font-size: clamp(16px, 2.2vw, 20px); line-height: 1.4; color: var(--ink); font-weight: 550;
+  margin: 32px 0 0; padding: 26px 0 2px;
+  border: 0; border-top: 1px solid var(--line);
+  background: none; border-radius: 0;
+  font-size: clamp(18px, 2.7vw, 25px); line-height: 1.32;
+  letter-spacing: -0.012em; color: var(--ink); font-weight: 600;
+  max-width: 62ch;
 }
-.pullquote .after { display: block; margin-top: 8px; font-size: 14px; font-weight: 400; color: var(--ink-2); }
+.pullquote .after { display: block; margin-top: 12px; font-size: 15px; line-height: 1.55; font-weight: 400; letter-spacing: 0; color: var(--ink-2); }
 
 /* ---------------------------------------------------------------- steps */
 
