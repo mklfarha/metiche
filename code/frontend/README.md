@@ -27,16 +27,55 @@ instantly at start), `-loop`, `-fixtures <dir>` to replay your own recordings.
 
 ## Running against the real backend
 
-The backend does not exist yet. When it does:
-
 ```sh
+export METICHE_BOARD_TOKEN=…            # the read API's bearer token
 go run ./cmd/metiche-web -backend https://api.metiche.xyz -teams demo
 ```
 
-`internal/feed` is the seam. `Feed` is a two-method interface; `Fixture` replays
-JSONL and `Live` reads the backend's JSON SSE stream. Nothing above that package
-knows which one it has, so switching is a flag, and `feed/live.go` is the only
-file that changes if the backend's envelope differs from what it expects.
+The token is read from the environment and never from a flag: a bearer token
+passed as an argument lands in shell history and in every `ps` on the box.
+`-backend-token-env` renames the variable it is read from; the value is never a
+flag, never a file in this repo, and never logged. The process clears the
+variable from its own environment once it has read it.
+
+Other live-mode flags: `-teams` (comma-separated slugs) and `-backfill` (how
+many events of history to pull into the timeline behind the snapshot cursor,
+default 200; `0` starts the rail empty and resumes exactly at the snapshot).
+
+`internal/feed` is the seam. `Feed` is a two-method interface; `Fixture`
+replays JSONL and `Live` reads the real backend. Nothing above that package
+knows which one it has.
+
+The two implementations are not symmetrical, and the asymmetry is the design
+rather than an omission. A fixture recording carries the whole world in its
+event payloads, so folding the log **is** the state. The backend's frames
+deliberately do not: they carry a sequence, a kind, whether it was structural,
+the subject's short key and a one-line summary — what changed, not what the
+thing now is. So `Live` also implements `feed.Snapshotter`, and the live path
+runs:
+
+```
+GET /v1/teams/{slug}          state, coherent at sequence S   (+ /contracts, /decisions)
+GET …/stream?after=S          S+1, S+2, … once each, in order
+```
+
+The snapshot is read first because its sequence is the resume cursor.
+Everything at or below it is in the state, everything above it arrives on the
+stream, and `state.Store.Apply` rejects anything not strictly newer — so the
+boundary has no gap and an overlap costs nothing. A structural frame (the
+`board_revision` cursor, not `sequence`) triggers a re-read of the snapshot;
+a status-line edit does not. Reconnection re-issues `?after=<last delivered>`,
+which is exact.
+
+Loading a snapshot switches the store off event folding, because folding a
+thin live frame would invent rows rather than merely miss fields. Fixture mode
+never loads one and is untouched by any of this — see
+`TestFixtureModeStillFolds`.
+
+`internal/feed/wire.go` is the adapter, and its doc comment is the current list
+of fields the read API does not expose (a conflict's paths, an agent key, a
+session's base commit, contract assertion fields), with what the board does
+instead of inventing them.
 
 ## The realtime mechanic
 

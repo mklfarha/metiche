@@ -73,7 +73,10 @@ type Live struct {
 	//
 	// It is safe only because live entity state comes from the snapshot: the
 	// backfilled events are appended to the log and never folded back over
-	// entities they already produced. Zero disables it.
+	// entities they already produced. Zero — the zero value — asks for no
+	// history at all and resumes exactly at the snapshot's cursor; the
+	// operator-facing default lives on the -backfill flag rather than here, so
+	// that a Live built in code does precisely what its fields say.
 	TimelineBackfill int64
 
 	// RequestTimeout bounds the snapshot reads. It is NOT applied to the
@@ -82,9 +85,6 @@ type Live struct {
 
 	Logger *slog.Logger
 }
-
-// defaultBackfill is about a screenful and a half of timeline.
-const defaultBackfill = 200
 
 // Name implements Feed. It must never grow the token: it is logged, and it is
 // rendered on /healthz.
@@ -190,12 +190,8 @@ func (l *Live) Snapshot(ctx context.Context) (model.TeamState, error) {
 	ts.Contracts = contracts.contracts()
 	ts.Decisions = decisions.decisions()
 
-	backfill := l.TimelineBackfill
-	if backfill == 0 {
-		backfill = defaultBackfill
-	}
-	if backfill > 0 {
-		ts.ResumeFrom = max64(0, ts.Team.Sequence-backfill)
+	if l.TimelineBackfill > 0 {
+		ts.ResumeFrom = max64(0, ts.Team.Sequence-l.TimelineBackfill)
 	}
 	return ts, nil
 }

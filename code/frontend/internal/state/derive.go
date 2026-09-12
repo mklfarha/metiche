@@ -525,32 +525,6 @@ func verdict(row ContractRow, s Snapshot) (status, severity, headline string) {
 	}
 }
 
-func oldVerdict(row ContractRow, s Snapshot) (status, severity, headline string) {
-	switch {
-	case len(row.Consumers) > 0 && len(row.Producers) == 0:
-		names := make([]string, 0, len(row.Consumers))
-		for _, c := range row.Consumers {
-			names = append(names, s.SessionLabel(c.SessionKey))
-		}
-		return "unclaimed", "critical",
-			fmt.Sprintf("%s is coding against this — nobody is building it", strings.Join(names, ", "))
-	case len(row.Diffs) > 0:
-		sev := "low"
-		for _, d := range row.Diffs {
-			if model.SeverityRank(d.Severity) > model.SeverityRank(sev) {
-				sev = d.Severity
-			}
-		}
-		return "mismatch", sev, fmt.Sprintf("%d field disagreement(s) between producer and consumer", len(row.Diffs))
-	case len(row.Producers) > 1:
-		return "contested", "high", fmt.Sprintf("%d sessions claim to produce this", len(row.Producers))
-	case len(row.Producers) > 0 && len(row.Consumers) == 0:
-		return "unconsumed", "", "produced, nobody consuming it yet"
-	default:
-		return "converged", "", "producer and consumer agree"
-	}
-}
-
 func snake(s string) string {
 	var b strings.Builder
 	for i, r := range s {
