@@ -1,0 +1,49 @@
+private/*
+env/*
+.env/*
+
+# --- secrets ---------------------------------------------------------------
+# The real config overlay and credentials live ONLY on the deployment box
+# (/etc/config/nuzur/metiche/prod.yaml and /etc/metiche/credentials.env, both
+# root-owned chmod 600). Nothing below should ever reach this repo, which is
+# public. prod.yaml.example is the committed template and is allowed.
+prod.yaml
+!prod.yaml.example
+credentials.env
+
+# A file named .env is NOT covered by the ".env/*" line above — that pattern
+# only matches paths INSIDE a directory called .env. Cover the file form too.
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+!**/testdata/*.key
+id_rsa*
+id_ed25519*
+*.p12
+*.pfx
+
+# Cluster credentials — a kubeconfig carries a bearer token or client cert.
+kubeconfig
+*.kubeconfig
+.kube/
+
+# Cloud provider credentials
+.aws/
+.linode-cli
+gcloud-*.json
+*-service-account*.json
+
+# --- local tooling ---------------------------------------------------------
+# Per-developer agent settings. These are machine-local (they carry local paths
+# and tool permissions) and belong to whoever is working, not to the project.
+.claude/
+.codex/
+__pycache__/
+*.py[cod]
+.codex-worker/
+
+# macOS Finder metadata
+.DS_Store
