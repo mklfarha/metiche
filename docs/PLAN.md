@@ -266,8 +266,23 @@ board other people can read.
 
 The rule is therefore: **the agent asks, and never guesses.**
 
-- A repo declares its team in a committed `.metiche` file naming the team slug. A slug is
-  not a credential, so committing it is safe.
+- A `.metiche` file names the team. The agent walks **up** from the working directory and
+  takes the nearest one, the way `.gitignore` and `.editorconfig` resolve — so a folder
+  holding five hackathon repos needs one file, not five.
+
+  ```
+  # ~/work/hackathon/.metiche
+  team = hackathon-2026        # required: the team slug
+  project = orbital-freight    # optional: defaults to the repo directory name
+  ```
+
+  Two placements, both useful. Inside a repo it is committed, so every teammate who clones
+  gets the same binding and nobody is asked at all. In a parent directory it covers every
+  repo beneath it and belongs to you alone, never entering a repository. A file deeper in
+  the tree overrides a shallower one, which is how one repo inside `hackathon/` opts out.
+
+  **Never a credential.** The slug is not access; the token stays in `~/.metiche/env`. A
+  `.metiche` file is safe to commit precisely because holding it grants nothing.
 - No `.metiche` and the account is on exactly one team → use it, and **say so once**.
   With one team there is nothing to disambiguate, so asking would be friction for no
   information. But the exposure has not gone away: if your one team is the hackathon team
