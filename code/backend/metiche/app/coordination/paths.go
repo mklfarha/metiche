@@ -435,9 +435,14 @@ const (
 // asking "why is this only low?" gets an answer instead of a number.
 const (
 	PathAdjusterSameMember = "same_member"
-	PathAdjusterSameBranch = "same_branch"
-	PathAdjusterBroadClaim = "broad_claim_cap"
-	PathAdjusterHotspot    = "hotspot"
+	// PathAdjusterSameMemberConcurrent marks the case where both agents belong
+	// to one person AND both sessions are live. It softens nothing; it is
+	// recorded so the trail shows the same-member rule was considered and
+	// deliberately declined.
+	PathAdjusterSameMemberConcurrent = "same_member_concurrent"
+	PathAdjusterSameBranch           = "same_branch"
+	PathAdjusterBroadClaim           = "broad_claim_cap"
+	PathAdjusterHotspot              = "hotspot"
 )
 
 // PathClaimSide is one participant in a candidate overlap.
@@ -446,6 +451,14 @@ type PathClaimSide struct {
 	Path       NormalizedPath
 	MemberUUID string
 	Branch     string
+	// LiveNow is whether this side's session is actively heartbeating right
+	// now, as opposed to holding a claim it has not touched in a while.
+	//
+	// It exists for one rule: see the same-member adjuster below. One person
+	// fanning out several agents AT ONCE is not the same situation as one
+	// person who left a background agent running, and the difference is
+	// whether both sessions are live.
+	LiveNow bool
 }
 
 // SeverityInput is everything the severity rules may look at. It is a value
@@ -477,10 +490,31 @@ func PathConflictSeverity(in SeverityInput) (Severity, []string) {
 	sev := pathBaseSeverity(in.A, in.B)
 	var fired []string
 
-	// Two agents driven by the same person are coordinated by that person.
+	// Two agents driven by the same person, where only one of them is
+	// actually working right now, are coordinated by that person: they are
+	// looking at one terminal and the other claim is something they left
+	// running. Soften it.
+	//
+	// But when BOTH sessions are live, that person is fanning out agents in
+	// parallel, and "the human is serializing this in their head" is exactly
+	// false -- that is the moment they have the least idea what their own
+	// agents are each touching. Solo fan-out is a first-class way to use
+	// metiche, not an edge case, so it gets full severity and the incumbent
+	// gets told (see InstructIncumbent in app/mcp/detector.go).
+	//
+	// Getting this wrong is not theoretical: two agents of one person
+	// overlapping on the same branch used to take two -1s and land under the
+	// notify floor, which is silence in the single most common shape solo
+	// fan-out produces.
 	if in.A.MemberUUID != "" && in.A.MemberUUID == in.B.MemberUUID {
-		sev = pathClampSeverity(sev - 1)
-		fired = append(fired, PathAdjusterSameMember)
+		if in.A.LiveNow && in.B.LiveNow {
+			// Recorded but NOT applied, so the audit trail says the rule had
+			// an opinion and why it did not fire.
+			fired = append(fired, PathAdjusterSameMemberConcurrent)
+		} else {
+			sev = pathClampSeverity(sev - 1)
+			fired = append(fired, PathAdjusterSameMember)
+		}
 	}
 	// Same branch means git will show them the collision at merge time, which
 	// is late but is not silent.

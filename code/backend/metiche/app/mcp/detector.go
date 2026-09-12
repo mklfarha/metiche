@@ -307,6 +307,9 @@ func findPathOverlaps(ctx context.Context, q queryer, req *pathDetectionRequest,
 			Branch:      req.Branch,
 			Mode:        d.Mode,
 			Path:        d.Path,
+			// The caller is live by definition: it is inside a tool call
+			// right now, which is the strongest heartbeat there is.
+			LiveNow: true,
 		}
 	}
 
@@ -332,6 +335,7 @@ func findPathOverlaps(ctx context.Context, q queryer, req *pathDetectionRequest,
 			Mode:        p.cand.Mode,
 			Path:        p.cand.Path,
 			HeldFor:     now.Sub(p.cand.Since),
+			LiveNow:     info.LiveNow,
 		}
 		v := assessOverlap(mineSide(p.mine), theirs, req.HotspotPatterns)
 		if !v.Conflict {
@@ -464,6 +468,10 @@ type sessionInfo struct {
 	MemberUUID string
 	AgentLabel string
 	MemberName string
+	// LiveNow is session.status == live: heartbeating, as opposed to stale,
+	// ended or abandoned. It decides whether one person's two agents are
+	// fanning out in parallel or whether one is simply left running.
+	LiveNow bool
 }
 
 // hydrateSessions turns the candidate session uuids into names in ONE query.
@@ -482,7 +490,8 @@ func hydrateSessions(ctx context.Context, q queryer, ids []string) (map[string]s
 	}
 	rows, err := q.QueryContext(ctx,
 		"SELECT s.`id`, s.`key`, COALESCE(s.`branch`, ''), COALESCE(s.`status_line`, ''), "+
-			"s.`agent_uuid`, s.`member_uuid`, COALESCE(a.`label`, ''), COALESCE(m.`display_name`, '') "+
+			"s.`agent_uuid`, s.`member_uuid`, COALESCE(a.`label`, ''), COALESCE(m.`display_name`, ''), "+
+			"s.`status` "+
 			"FROM `session` s "+
 			"JOIN `agent` a ON a.`id` = s.`agent_uuid` "+
 			"JOIN `member` m ON m.`id` = s.`member_uuid` "+
@@ -494,10 +503,12 @@ func hydrateSessions(ctx context.Context, q queryer, ids []string) (map[string]s
 	for rows.Next() {
 		var id string
 		var info sessionInfo
+		var status int64
 		if err := rows.Scan(&id, &info.Key, &info.Branch, &info.StatusLine,
-			&info.AgentUUID, &info.MemberUUID, &info.AgentLabel, &info.MemberName); err != nil {
+			&info.AgentUUID, &info.MemberUUID, &info.AgentLabel, &info.MemberName, &status); err != nil {
 			return nil, retryable(err, "reading who holds the overlapping claims")
 		}
+		info.LiveNow = status == int64(enums.SESSION_STATUS_LIVE)
 		out[id] = info
 	}
 	if err := rows.Err(); err != nil {
@@ -528,6 +539,9 @@ type claimSide struct {
 	// HeldFor is how long the other side has been holding this path. Only
 	// ever set for the incumbent; the caller's own claim is seconds old.
 	HeldFor time.Duration
+	// LiveNow is whether this side's session is heartbeating right now. The
+	// caller is live by definition -- it is mid tool call.
+	LiveNow bool
 }
 
 // overlapVerdict is the complete decision about one confirmed overlap.
@@ -583,6 +597,10 @@ func assessOverlap(mine, theirs claimSide, hotspots []string) overlapVerdict {
 
 	hotspot := hasAdjuster(adjusters, coordination.PathAdjusterHotspot)
 	broad := hasAdjuster(adjusters, coordination.PathAdjusterBroadClaim)
+	// Only the SOFTENING form suppresses the incumbent's instruction. When
+	// both of one person's sessions are live the adjuster records
+	// same_member_concurrent instead, and that must NOT silence anyone --
+	// parallel agents are precisely who needs telling.
 	sameMember := hasAdjuster(adjusters, coordination.PathAdjusterSameMember)
 
 	overlap := overlapLabel(mine.Path, theirs.Path)
@@ -608,6 +626,7 @@ func sidePathClaim(s claimSide) coordination.PathClaimSide {
 		Path:       s.Path,
 		MemberUUID: s.MemberUUID,
 		Branch:     s.Branch,
+		LiveNow:    s.LiveNow,
 	}
 }
 
