@@ -2,7 +2,9 @@ package app
 
 import (
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 
+	metichemcp "github.com/mklfarha/metiche/backend/app/mcp"
 	"github.com/mklfarha/metiche/backend/core"
 	restserver "github.com/mklfarha/metiche/backend/rest/server"
 )
@@ -49,14 +51,37 @@ import (
 // parseListParams, <entity>Declarations — are unexported, so a custom handler
 // writes its own JSON. Match the generated error shape (RFC 7807 problem+json:
 // type/title/status/detail) if you want one error format across the API.
-func ProvideCustomRoutes(coreImpl *core.Implementation) restserver.CustomRoutesFn {
+//
+// # WHAT METICHE MOUNTS HERE
+//
+// app/mcp.Register installs the agent-facing surface, gated on METICHE_ROLE:
+//
+//	/v1/mcp, /v1/mcp/*   the MCP endpoint over streamable HTTP (roles: mcp, all)
+//	/v1/metrics/mcp      the team-lock-hold histogram, timings only (roles: api, all)
+//
+// The MCP server runs IN THIS PROCESS rather than as its own service for one
+// load-bearing reason: a mutating tool has to append a team_event and advance
+// team.sequence inside a single transaction that holds the team row lock, and
+// only in-process access to core.Implementation gives us that transaction.
+//
+// METICHE_ROLE is "all" for v1 — one pod serving both halves — so the
+// in-process fan-out on commit covers every write. The api/mcp split exists
+// for when agent traffic needs isolating from the board's, and not before. An
+// unset or unrecognised value serves everything.
+func ProvideCustomRoutes(coreImpl *core.Implementation, logger *zap.Logger) restserver.CustomRoutesFn {
 	return func(r chi.Router) {
-		// Example — add "net/http" to the imports and uncomment:
-		//
-		// r.Get("/v1/custom/ping", func(w http.ResponseWriter, req *http.Request) {
-		// 	w.WriteHeader(http.StatusOK)
-		// 	_, _ = w.Write([]byte("pong"))
-		// })
-		_ = coreImpl
+		// Returns the handler so a later wave can install the detection layer
+		// with SetDetector — it must run inside the team lock, which means it
+		// has to be registered on this instance rather than called around it.
+		_ = metichemcp.Register(r, coreImpl, logger)
+
+		// SEAM — the board's own endpoints (app/webapi) and the SSE stream
+		// (app/stream) mount here too, on this same root router, with full
+		// paths including the /v1 prefix. Two chi rules apply to them exactly
+		// as they do above: never r.Route("/v1", ...) — the generated CRUD
+		// already owns that mount point and re-mounting panics while the
+		// router builds — and never r.Use here, because middleware cannot be
+		// added to a mux that already has routes. Wrap the handler itself, or
+		// scope it with r.Group.
 	}
 }
