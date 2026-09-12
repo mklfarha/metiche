@@ -33,7 +33,7 @@ const DefaultClaimTTLSeconds = 900
 type StartSessionParams struct {
 	ProjectKey     string `json:"project_key" jsonschema:"A short stable key for the repository you are working in - the repo name is the obvious choice. Claims are scoped to it, so a team working across several repos does not collide with itself. Created on first use."`
 	TeamSlug       string `json:"team_slug,omitempty" jsonschema:"Which team this work is for, by slug. Omit it if you are only on one team; required if you are on several, because guessing would put your work on the wrong board."`
-	ClientKey      string `json:"client_key,omitempty" jsonschema:"The same stable client_key you passed to join_team, identifying WHICH of your agents is starting this session. Omit it if you only run one."`
+	ClientKey      string `json:"client_key,omitempty" jsonschema:"Usually unnecessary: if your MCP config sends an X-Metiche-Client-Key header, which the metiche installer sets up, this is already known and you should omit it. Pass it only if you are deliberately driving several of your own agents over one connection. Do NOT guess a value -- an agent that does not know its own client_key should omit the field and let the connection answer."`
 	Branch         string `json:"branch,omitempty" jsonschema:"The git branch you are working on, exactly as git reports it. Self-reported: metiche never runs git."`
 	BaseCommit     string `json:"base_commit,omitempty" jsonschema:"The commit you branched from, full or short sha."`
 	Goal           string `json:"goal,omitempty" jsonschema:"One sentence on what this whole session is for, written for a teammate skimming the board. Max 280 characters."`

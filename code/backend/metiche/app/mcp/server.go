@@ -124,6 +124,11 @@ The loop:
   3. heartbeat about every 60 seconds while you work. Claims lapse without it.
   4. end_session when you are done, so your holds are released immediately.
 
+You do not need to know your own client_key, and you must never guess one. If your MCP config
+sends an X-Metiche-Client-Key header - the installer sets this up - the server already knows which
+of this person's agents you are. Omit client_key and it will be right. A guessed value is either
+rejected or, worse, files your work under somebody else's agent.
+
 Your token is the PERSON you work for, not this process and not one team. Send it on every call,
 including a later join_team for a second team - joining again with it adds a membership rather than
 a second identity. Because of that, a team is a per-call scope: pass team_slug when you are on more

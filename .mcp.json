@@ -18,7 +18,8 @@
       "type": "http",
       "url": "${METICHE_MCP_URL:-https://mcp.metiche.xyz/v1/mcp}",
       "headers": {
-        "Authorization": "Bearer ${METICHE_TOKEN}"
+        "Authorization": "Bearer ${METICHE_TOKEN}",
+        "X-Metiche-Client-Key": "${METICHE_CLIENT_KEY}"
       }
     }
   }

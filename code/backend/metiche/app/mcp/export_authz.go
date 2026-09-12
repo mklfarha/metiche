@@ -113,3 +113,47 @@ func AccountByToken(ctx context.Context, db *sql.DB, token string) (account_enti
 	}
 	return a, nil
 }
+
+// ── the agent's own identity, carried by the connection ──────────────────────
+
+// clientKeyKey is the context key for X-Metiche-Client-Key.
+type clientKeyKey struct{}
+
+// WithClientKey puts the calling agent's client_key on the context. Set by
+// authTool from the header of the request being served.
+func WithClientKey(ctx context.Context, key string) context.Context {
+	if key == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clientKeyKey{}, key)
+}
+
+// ClientKeyFromContext returns the client_key this connection declared, if any.
+//
+// WHY THIS EXISTS. The token identifies the PERSON, deliberately: one
+// credential covers every team you are on and every agent you run. The cost of
+// that choice is that a person with three agents sends three identical-looking
+// requests, and the server cannot tell which agent is calling.
+//
+// The obvious answer -- make the agent pass client_key -- turned out not to
+// work, because AN AGENT HAS NO WAY TO LEARN ITS OWN client_key. It is chosen
+// by the installer and then thrown away; it is not in the MCP config, the
+// environment, or the repository. Asked for it, a model guesses: "backend",
+// "ui", "codex". Every guess is rejected, and a guess that happened to hit
+// would be worse -- it would file the work under someone else's agent on a
+// board other people are reading.
+//
+// So the connection carries it, the same way it carries the token. The
+// installer knows exactly which agent it is configuring, and writes the header
+// alongside the Authorization one. The agent never has to know its own name,
+// which is the only arrangement that cannot be guessed wrong.
+//
+// It is NOT a credential and grants nothing on its own: it only selects among
+// agents that already belong to the authenticated account, and an unknown
+// value is an error rather than a new agent.
+func ClientKeyFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(clientKeyKey{}).(string); ok {
+		return v
+	}
+	return ""
+}

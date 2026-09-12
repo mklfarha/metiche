@@ -63,6 +63,16 @@ func authTool[In, Out any](hdl *Handler, next mcp.ToolHandlerFor[In, Out]) mcp.T
 		if hdl == nil || req == nil || req.Extra == nil || req.Extra.Header == nil {
 			return next(ctx, req, in)
 		}
+		// The agent's own identity, if the connection declares it. Read before
+		// the token and applied regardless of whether the token resolves,
+		// because it is not a credential -- it only selects among agents that
+		// already belong to whoever authenticated, and is meaningless without
+		// that. See ClientKeyFromContext for why it rides on the connection
+		// rather than being passed as an argument.
+		if ck := strings.TrimSpace(req.Extra.Header.Get("X-Metiche-Client-Key")); ck != "" {
+			ctx = WithClientKey(ctx, ck)
+		}
+
 		token := BearerFromHeader(req.Extra.Header.Get("Authorization"))
 		if token == "" {
 			token = strings.TrimSpace(req.Extra.Header.Get("X-Metiche-Token"))

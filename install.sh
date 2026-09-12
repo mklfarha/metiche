@@ -821,13 +821,26 @@ do_join() {
 # The bearer is the server-minted TOKEN, verified working a few lines above —
 # never the join code, which this endpoint answers with a 401. Written
 # literally, to the user's own home-directory config, mode 0600.
+# X-Metiche-Client-Key is NOT decoration and NOT a credential.
+#
+# The token identifies the PERSON. One person can run several agents, and the
+# server then cannot tell which one is calling -- so it asks for a client_key.
+# The problem is that AN AGENT CANNOT LEARN ITS OWN client_key: it is chosen
+# here, at install time, and appears nowhere the agent can read. Asked for one,
+# a model guesses, and a guess that happens to land files the work under
+# somebody else's agent on a shared board.
+#
+# So we write it into the client's config, next to the token. The agent never
+# has to know its own name, which is the only arrangement that cannot be
+# guessed wrong.
 server_json() {
     cat <<EOF
 {
   "type": "http",
   "url": "$URL",
   "headers": {
-    "Authorization": "Bearer $TOKEN"
+    "Authorization": "Bearer $TOKEN",
+    "X-Metiche-Client-Key": "$CLIENT_KEY"
   }
 }
 EOF
@@ -909,6 +922,18 @@ write_env_file() {
 # hand to a teammate, and sending one as a bearer gets a 401.
 $TOKEN_ENV=$TOKEN
 export $TOKEN_ENV
+
+# Which of your agents this shell is. The token says WHO you are; this says
+# WHICH agent, and the two together are what let one person run several agents
+# without the server having to guess between them. An agent cannot discover
+# this for itself -- it is chosen at install time -- so it travels in the
+# client's config and in this file, never as something a model is asked to
+# remember.
+#
+# Not a secret: it selects among agents that already belong to the token
+# above, and grants nothing on its own.
+METICHE_CLIENT_KEY=$CLIENT_KEY
+export METICHE_CLIENT_KEY
 "
     # Both sides through a command substitution: it strips trailing newlines,
     # and $desired has one that the file also has, so comparing the raw string
@@ -1139,6 +1164,10 @@ install_windsurf() {
 install_codex() {
     step "Codex"
 
+    # CODEX_HOME relocates Codex's whole config directory, and the tests and
+    # the two-agent setup both rely on that, so never assume ~/.codex.
+    codex_cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
+
     if ! command -v codex >/dev/null 2>&1; then
         if [ -d "$HOME/.codex" ]; then
             info "found ~/.codex but no codex on PATH — cannot use \`codex mcp add\`."
@@ -1149,50 +1178,70 @@ install_codex() {
         return 0
     fi
 
-    # Already pointing at the same endpoint? Say nothing and change nothing.
+    # Already pointing at the same endpoint AS THE SAME AGENT? Then nothing to
+    # do. Checking the client key too is the point: setting up a second agent
+    # on one machine is the whole reason this header exists, and matching on
+    # the URL alone would silently leave the second one wearing the first
+    # one's identity.
     if command -v grep >/dev/null 2>&1 &&
-       codex mcp get "$SERVER_NAME" --json 2>/dev/null | grep -q "\"$URL\""; then
-        info "already registered at $URL, nothing to do"
-        codex_env_warning
+       codex mcp get "$SERVER_NAME" --json 2>/dev/null | grep -q "\"$URL\"" &&
+       codex mcp get "$SERVER_NAME" --json 2>/dev/null | grep -q "\"$CLIENT_KEY\""; then
+        info "already registered at $URL as agent $CLIENT_KEY, nothing to do"
         return 0
     fi
 
-    plan "run: codex mcp add $SERVER_NAME --url $URL --bearer-token-env-var $TOKEN_ENV" || {
-        codex_env_warning
-        return 0
-    }
+    plan "write the metiche server into $codex_cfg" || return 0
 
-    if codex mcp add "$SERVER_NAME" \
-            --url "$URL" \
-            --bearer-token-env-var "$TOKEN_ENV" >/dev/null 2>&1; then
-        info "registered in ~/.codex/config.toml (no token written to disk)"
-        DID_SOMETHING=1
+    # WHY NOT --bearer-token-env-var, WHICH KEEPS THE TOKEN OFF DISK.
+    #
+    # Because it does not work for a GUI-launched Codex, and fails in a way
+    # nobody can see. Codex.app does not read your shell profile, so the
+    # variable is simply absent, and Codex then REFUSES TO START THE SERVER:
+    #
+    #   MCP server startup failed server_name="metiche"
+    #   error=Environment variable METICHE_TOKEN ... is not set
+    #
+    # What the user sees is `metiche: failed (0 tools)` and nothing else; the
+    # real reason is in a SQLite log in ~/.codex. A token that is theoretically
+    # safer but never reaches the client is worth nothing. config.toml is mode
+    # 0600 in the home directory, which is the same protection ~/.metiche/env
+    # has, so the honest difference is small.
+    #
+    # Two headers, not one. X-Metiche-Client-Key says WHICH of this person's
+    # agents this is -- see server_json above for why an agent cannot be
+    # expected to know that itself.
+    #
+    # Written by removing the table and appending a fresh one rather than
+    # editing TOML in place: `codex mcp add` cannot express extra headers, and
+    # a hand-rolled TOML edit of a file full of somebody's real settings is a
+    # bad trade. TOML tables may appear in any order, so appending is safe once
+    # the old table is gone, and `codex mcp remove` is a no-op when absent.
+    codex mcp remove "$SERVER_NAME" >/dev/null 2>&1 || true
+    # Codex does not create its own config directory, and appending into a
+    # missing one fails in a way that reads like a permissions problem.
+    mkdir -p "$(dirname "$codex_cfg")"
+    umask 077
+    {
+        printf '\n[mcp_servers.%s]\n' "$SERVER_NAME"
+        printf 'url = "%s"\n' "$URL"
+        printf 'http_headers = { Authorization = "Bearer %s", "X-Metiche-Client-Key" = "%s" }\n' \
+            "$TOKEN" "$CLIENT_KEY"
+    } >> "$codex_cfg"
+    chmod 600 "$codex_cfg" 2>/dev/null || true
+    DID_SOMETHING=1
+
+    if codex mcp get "$SERVER_NAME" >/dev/null 2>&1; then
+        info "registered in $codex_cfg (mode 0600) as agent $CLIENT_KEY"
     else
-        warn "\`codex mcp add\` failed. Your Codex may predate streamable-HTTP support"
-        warn "(verified working on codex-cli 0.151.0). Add it by hand:"
+        warn "codex could not read the entry back from $codex_cfg."
+        warn "Check it by hand; a backup of your previous config is not kept here."
         codex_manual_note
         return 0
     fi
-
-    codex_env_warning
     info "Codex reads AGENTS.md for standing instructions: ~/.codex/AGENTS.md globally,"
     info "or AGENTS.md in a repository root. Append skill/metiche-teamwork/SKILL.md to"
     info "one of those to teach it the cadence. This script will not edit an existing"
     info "AGENTS.md for you — it is your file and merging it is your call."
-}
-
-# The env var is load-bearing for Codex specifically, so warn every time
-# rather than only on a fresh install.
-codex_env_warning() {
-    # Read the variable TOKEN_ENV names, without eval. Only one name is ever
-    # correct here, so testing it directly is clearer than indirection.
-    if [ -z "${METICHE_TOKEN:-}" ]; then
-        warn "$TOKEN_ENV is not set in this shell, so Codex will send an empty bearer."
-        warn "Load it before starting codex:  . \"\$HOME/.metiche/env\""
-        warn "Make it permanent with --write-profile, or add that line to your profile."
-    else
-        info "$TOKEN_ENV is set in this shell; Codex inherits it when launched from here."
-    fi
 }
 
 # Printed only when we cannot run the CLI. Unlike the note for Zed, this format

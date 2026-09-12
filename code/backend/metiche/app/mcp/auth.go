@@ -599,6 +599,17 @@ func (h *Handler) RequireAgent(ctx context.Context, teamRef, clientKey string) (
 		return Resolved{}, err
 	}
 
+	// The connection can name the agent, and that is strictly better than the
+	// argument. See ClientKeyFromContext: the installer knows which agent it
+	// is configuring and writes X-Metiche-Client-Key into the client's own
+	// config, so the agent identifies itself the same way it authenticates --
+	// by the connection -- rather than by remembering a string it was never
+	// told. An explicit argument still wins, for a caller that genuinely
+	// manages several agents over one connection.
+	if clientKey == "" {
+		clientKey = ClientKeyFromContext(ctx)
+	}
+
 	if key := truncate(clientKey, 120); key != "" {
 		ag, found, err := h.agentByClientKey(ctx, nil, res.Account.ID, key)
 		if err != nil {
@@ -629,7 +640,9 @@ func (h *Handler) RequireAgent(ctx context.Context, teamRef, clientKey string) (
 		return res, nil
 	default:
 		return Resolved{}, fmt.Errorf(
-			"you have %d active agents, so this call needs the client_key of the one making it", len(agents))
+			"you have %d active agents and this connection does not say which one you are. "+
+				"Pass client_key, or better: re-run the metiche installer so your MCP config "+
+				"sends an X-Metiche-Client-Key header and you never have to know", len(agents))
 	}
 }
 
