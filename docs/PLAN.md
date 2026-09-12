@@ -268,7 +268,12 @@ The rule is therefore: **the agent asks, and never guesses.**
 
 - A repo declares its team in a committed `.metiche` file naming the team slug. A slug is
   not a credential, so committing it is safe.
-- No `.metiche` and the account is on exactly one team → use it.
+- No `.metiche` and the account is on exactly one team → use it, and **say so once**.
+  With one team there is nothing to disambiguate, so asking would be friction for no
+  information. But the exposure has not gone away: if your one team is the hackathon team
+  and you open a private repo, it binds silently and your private work lands on a board
+  those people can read. So the binding is automatic and *announced* — one line the first
+  time a repo is bound, never again. Automatic is fine; silent is not.
 - No `.metiche` and the account is on more than one → **stop and ask the person**, then
   write the answer to `.metiche` so it is asked once per repo, not once per session.
 - **Never derive a team from the directory name**, the repo name, or the remote URL. A
