@@ -34,7 +34,7 @@ constraint rules out a server-side LLM judge and shapes the entire detection des
 | Claims | **advisory + TTL**. Never block. Overlap is allowed and raises a conflict immediately. |
 | Human control | nudges (stop/steer/ask) + conflict resolution from the board |
 | Database | **MySQL**, reuses its proven deploy and codegen path (see Realtime) |
-| Deployment | Linode + microk8s + Helm, hostPath config overlay, no secrets in repo |
+| Deployment | **the existing nuzur Linode box**, microk8s, its own `metiche` namespace; Helm, hostPath config overlay, no secrets in repo |
 | Onboarding | `metiche-teamwork` skill + one-command join + Claude Code plugin |
 | v1 target | end-to-end demo first, harden after |
 
@@ -334,7 +334,7 @@ produces/consumes matrix — this is the view that shows the bottleneck) · `/t/
 8. **Frontend** — board, conflicts, contracts matrix, decisions, run history, nudges.
 9. **Skill + plugin** — `metiche-teamwork/SKILL.md`, `.mcp.json`, plugin manifest; point metiche at
    itself.
-10. **Deploy** — Helm charts and scripts, `METICHE_ROLE=all` for v1.
+10. **Deploy** — onto the existing nuzur Linode box under a new `metiche` namespace (no new host, no new cluster bootstrap). Helm charts and scripts, `METICHE_ROLE=all` for v1.
 
 ---
 
