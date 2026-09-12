@@ -58,7 +58,7 @@ Claude Code expands `${VAR}` and `${VAR:-default}` in `.mcp.json` values, header
 join code lives in your environment and nowhere in this repository. `install.sh` writes it to
 `~/.metiche/env` (mode 0600) and prints the one line that loads it from your shell profile.
 
-`${METICHE_MCP_URL:-https://mcp.metiche.xyz/mcp}` lets you point at a local server without editing
+`${METICHE_MCP_URL:-https://mcp.metiche.xyz/v1/mcp}` lets you point at a local server without editing
 anything: `METICHE_MCP_URL=http://127.0.0.1:8788/mcp`.
 
 If `METICHE_JOIN_CODE` is unset, Claude Code loads the server with the placeholder unexpanded and

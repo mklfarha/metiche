@@ -12,6 +12,7 @@
 #   ~/.metiche/src                              a shallow clone, for the plugin
 #   ~/.cursor/mcp.json                          Cursor's global MCP config
 #   ~/.codeium/windsurf/mcp_config.json         Windsurf's MCP config
+#   ~/.codex/config.toml                        via the `codex mcp add` CLI
 #   Claude Code's user-scope plugin config      via the `claude` CLI
 #   your shell profile                          only with --write-profile
 #
@@ -29,11 +30,14 @@ set -eu
 
 # ---------------------------------------------------------------- defaults ---
 
-METICHE_URL_DEFAULT="https://mcp.metiche.xyz/mcp"
+METICHE_URL_DEFAULT="https://mcp.metiche.xyz/v1/mcp"
 METICHE_REPO_DEFAULT="https://github.com/mklfarha/metiche.git"
 PLUGIN_NAME="metiche"
 MARKETPLACE_NAME="metiche"
 SERVER_NAME="metiche"
+# The environment variable Codex is told to read the bearer from. Must match
+# what write_env_file exports, or Codex authenticates as nobody.
+TOKEN_ENV="METICHE_JOIN_CODE"
 
 URL="${METICHE_URL:-$METICHE_URL_DEFAULT}"
 REPO="${METICHE_REPO:-$METICHE_REPO_DEFAULT}"
@@ -79,12 +83,12 @@ Usage:
 
 Options:
   --dry-run           Print every change that would be made; change nothing.
-  --url <url>         MCP endpoint (default: https://mcp.metiche.xyz/mcp).
+  --url <url>         MCP endpoint (default: https://mcp.metiche.xyz/v1/mcp).
   --marketplace <src> Claude Code plugin marketplace source. By default the
                       script uses ./plugin if you are standing in a clone of
                       the metiche repository, and otherwise makes a shallow
                       clone at ~/.metiche/src and uses ~/.metiche/src/plugin.
-  --only <list>       Comma-separated subset of: claude,cursor,windsurf.
+  --only <list>       Comma-separated subset of: claude,cursor,windsurf,codex.
                       Default: every assistant detected on this machine.
   --write-profile     Append the line that loads ~/.metiche/env to your shell
                       profile. Without this the line is printed, not written.
@@ -101,9 +105,15 @@ Cursor is configured globally (~/.cursor/mcp.json) and never per-project: the
 only project-scoped location is .cursor/mcp.json inside your repository, and a
 join code does not belong in a repository.
 
-Zed and Codex are not configured. Their MCP config formats were not verified
-when this script was written, and guessing at a config file is worse than
-printing the endpoint and letting you paste it. See the note it prints.
+Codex is configured through its own `codex mcp add` CLI, so metiche never
+parses or rewrites ~/.codex/config.toml. Codex is also the only client where
+the token is NOT written to disk: it stores the NAME of an environment
+variable and reads the value at connect time. That means ~/.metiche/env has
+to be loaded in the shell you launch codex from — see --write-profile.
+
+Zed is not configured. Its MCP config format was not verified when this script
+was written, and guessing at a config file is worse than printing the endpoint
+and letting you paste it. See the note it prints.
 EOF
 }
 
@@ -447,14 +457,103 @@ install_windsurf() {
     info "skill/metiche-teamwork/SKILL.md, or paste it into your workspace rules."
 }
 
+# ------------------------------------------------------------------- Codex ---
+
+# Codex is the one client where the token does NOT go in the config file.
+#
+# `codex mcp add --bearer-token-env-var NAME` stores the NAME of an environment
+# variable; Codex reads the value from its own environment at connect time. So
+# the config file contains no secret and is safe to read over someone's
+# shoulder — but it also means ~/.metiche/env MUST be loaded in the shell that
+# launches codex, or the bearer is empty and every call is unauthorized. For
+# the other clients the profile line is a convenience. Here it is required,
+# which is why this function says so out loud.
+#
+# We shell out to `codex mcp add` rather than editing config.toml ourselves,
+# deliberately. That file is mode 0600 and full of the user's real settings
+# (model, plugins, marketplaces), there is no toml equivalent of jq to lean on,
+# and a hand-rolled TOML merge that gets it wrong breaks their whole assistant.
+# The CLI owns its own format. Verified against codex-cli 0.151.0: re-running
+# is idempotent, and unrelated keys survive untouched.
+install_codex() {
+    step "Codex"
+
+    if ! command -v codex >/dev/null 2>&1; then
+        if [ -d "$HOME/.codex" ]; then
+            info "found ~/.codex but no codex on PATH — cannot use \`codex mcp add\`."
+            codex_manual_note
+        else
+            info "not found (no codex on PATH, no ~/.codex) — skipping"
+        fi
+        return 0
+    fi
+
+    # Already pointing at the same endpoint? Say nothing and change nothing.
+    if command -v grep >/dev/null 2>&1 &&
+       codex mcp get "$SERVER_NAME" --json 2>/dev/null | grep -q "\"$URL\""; then
+        info "already registered at $URL, nothing to do"
+        codex_env_warning
+        return 0
+    fi
+
+    plan "run: codex mcp add $SERVER_NAME --url $URL --bearer-token-env-var $TOKEN_ENV" || {
+        codex_env_warning
+        return 0
+    }
+
+    if codex mcp add "$SERVER_NAME" \
+            --url "$URL" \
+            --bearer-token-env-var "$TOKEN_ENV" >/dev/null 2>&1; then
+        info "registered in ~/.codex/config.toml (no token written to disk)"
+        DID_SOMETHING=1
+    else
+        warn "\`codex mcp add\` failed. Your Codex may predate streamable-HTTP support"
+        warn "(verified working on codex-cli 0.151.0). Add it by hand:"
+        codex_manual_note
+        return 0
+    fi
+
+    codex_env_warning
+    info "Codex reads AGENTS.md for standing instructions: ~/.codex/AGENTS.md globally,"
+    info "or AGENTS.md in a repository root. Append skill/metiche-teamwork/SKILL.md to"
+    info "one of those to teach it the cadence. This script will not edit an existing"
+    info "AGENTS.md for you — it is your file and merging it is your call."
+}
+
+# The env var is load-bearing for Codex specifically, so warn every time
+# rather than only on a fresh install.
+codex_env_warning() {
+    if [ -z "${METICHE_JOIN_CODE:-}" ]; then
+        warn "$TOKEN_ENV is not set in this shell, so Codex will send an empty bearer."
+        warn "Load it before starting codex:  . \"\$HOME/.metiche/env\""
+        warn "Make it permanent with --write-profile, or add that line to your profile."
+    else
+        info "$TOKEN_ENV is set in this shell; Codex inherits it when launched from here."
+    fi
+}
+
+# Printed only when we cannot run the CLI. Unlike the note for Zed, this format
+# IS verified (codex-cli 0.151.0), so it is safe to hand someone.
+codex_manual_note() {
+    say ""
+    say "      Add to ~/.codex/config.toml:"
+    say ""
+    say "          [mcp_servers.$SERVER_NAME]"
+    say "          url = \"$URL\""
+    say "          bearer_token_env_var = \"$TOKEN_ENV\""
+    say ""
+    say "      Then load ~/.metiche/env in the shell you start codex from."
+    say ""
+}
+
 # ------------------------------------------------------------------- other ---
 
 note_unverified() {
     step "Other assistants"
     cat <<EOF
-    Zed and Codex are not configured automatically: their MCP config formats
-    were not verified, and this script will not invent one. To wire them up by
-    hand, any MCP client needs exactly this:
+    Zed is not configured automatically: its MCP config format was not
+    verified, and this script will not invent one. To wire it up by hand, any
+    MCP client needs exactly this:
 
         transport  streamable http
         url        $URL
@@ -484,10 +583,12 @@ main() {
     if want claude   && command -v claude >/dev/null 2>&1; then found=1; fi
     if want cursor   && { [ -d "$HOME/.cursor" ] || command -v cursor >/dev/null 2>&1; }; then found=1; fi
     if want windsurf && { [ -d "$HOME/.codeium" ] || command -v windsurf >/dev/null 2>&1; }; then found=1; fi
+    if want codex    && { [ -d "$HOME/.codex" ]   || command -v codex >/dev/null 2>&1; }; then found=1; fi
 
     want claude   && install_claude
     want cursor   && install_cursor
     want windsurf && install_windsurf
+    want codex    && install_codex
 
     if [ "$found" -eq 0 ]; then
         warn "no supported assistant detected on this machine"

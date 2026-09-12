@@ -86,7 +86,7 @@ Restart Claude Code. `/mcp` should list `metiche`.
 ### Just the MCP server, no plugin
 
 ```sh
-claude mcp add --transport http --scope user metiche https://mcp.metiche.xyz/mcp \
+claude mcp add --transport http --scope user metiche https://mcp.metiche.xyz/v1/mcp \
   --header "Authorization: Bearer $METICHE_JOIN_CODE"
 ```
 
@@ -104,7 +104,7 @@ Global config, `~/.cursor/mcp.json`:
   "mcpServers": {
     "metiche": {
       "type": "http",
-      "url": "https://mcp.metiche.xyz/mcp",
+      "url": "https://mcp.metiche.xyz/v1/mcp",
       "headers": { "Authorization": "Bearer your-join-code" }
     }
   }
@@ -131,7 +131,7 @@ things:
 
 ```
 transport   streamable http
-url         https://mcp.metiche.xyz/mcp
+url         https://mcp.metiche.xyz/v1/mcp
 header      Authorization: Bearer <your join code>
 ```
 
@@ -141,7 +141,7 @@ and the skill, which is one markdown file with no dependencies.
 
 [`.mcp.json`](../.mcp.json) at the repository root registers metiche for agents working **on**
 metiche. It carries no credential: the header is `Bearer ${METICHE_JOIN_CODE}`, expanded from your
-environment at load time, and the endpoint is `${METICHE_MCP_URL:-https://mcp.metiche.xyz/mcp}`
+environment at load time, and the endpoint is `${METICHE_MCP_URL:-https://mcp.metiche.xyz/v1/mcp}`
 so you can point at a local server without editing a tracked file.
 
 If `METICHE_JOIN_CODE` is unset, Claude Code warns and leaves the placeholder unexpanded. Visible

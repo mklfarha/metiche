@@ -19,7 +19,7 @@ const mcpConfigHTML = `<span class="c">// .mcp.json — in the repo, committed, 
   <span class="k">"mcpServers"</span>: {
     <span class="k">"metiche"</span>: {
       <span class="k">"type"</span>: <span class="s">"http"</span>,
-      <span class="k">"url"</span>:  <span class="s">"https://mcp.metiche.xyz/mcp"</span>
+      <span class="k">"url"</span>:  <span class="s">"https://mcp.metiche.xyz/v1/mcp"</span>
     }
   }
 }`
