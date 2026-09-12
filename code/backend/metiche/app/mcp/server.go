@@ -132,7 +132,8 @@ can be revoked, expired or used up; ask for a fresh one rather than retrying a d
 
 Every response carries "pending": counts of instructions, conflicts and reviews waiting for you.
 MCP cannot push, so that count is how you find out anything. When it is non-zero, fetch the
-contents; when it is zero, carry on.
+contents with get_instructions - reading them is what marks them delivered, so you get each one
+once - and say what you did with report_back. When it is zero, carry on.
 
 Two cursors ride on every response. "sequence" advances on every event on the team - if it jumped
 by more than you expected, you missed something. "revision" advances only when the board's shape
@@ -268,6 +269,13 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	// installed by app/rest.go, which is what puts the overlap check inside
 	// the same row lock as the insert it authorises.
 	RegisterWorkTools(server, h, logger)
+
+	// Tools 13-14: get_instructions, report_back. The other end of the
+	// pending counts above -- the count says something is waiting,
+	// get_instructions is how it is collected, and report_back is how the
+	// person who raised it finds out what happened. get_instructions is the
+	// one that is NOT readOnly: reading is the delivery receipt.
+	RegisterInstructionTools(server, h, logger)
 
 	return server
 }

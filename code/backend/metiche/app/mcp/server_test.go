@@ -101,6 +101,17 @@ func TestToolSurface(t *testing.T) {
 		"declare_intent": {false, false},
 		"update_intent":  {false, true},
 		"check_paths":    {true, false},
+
+		// Tools 13-14, registered by RegisterInstructionTools.
+		// get_instructions is NOT readOnly however much it looks like it:
+		// reading an instruction is what marks it delivered, and a client
+		// that believed otherwise would cache the call and stop delivering
+		// anything. Not idempotent either — the second call deliberately
+		// answers differently, because the first consumed what it returned.
+		// report_back IS idempotent: its key is (instruction, outcome), so
+		// the same report twice replays rather than appending a second event.
+		"get_instructions": {false, false},
+		"report_back":      {false, true},
 	}
 
 	if len(registered) != len(want) {
