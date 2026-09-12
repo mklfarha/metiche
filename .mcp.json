@@ -1,0 +1,24 @@
+{
+  "//": [
+    "metiche pointed at itself. Agents working ON metiche coordinate THROUGH metiche.",
+    "",
+    "There is no credential in this file and there must never be one. The join",
+    "code is supplied by the environment: ${METICHE_JOIN_CODE} is expanded when",
+    "this config is loaded. Put it in your own dotfiles, never here —",
+    "install.sh writes ~/.metiche/env (mode 0600) and prints the one line that",
+    "loads it from your shell profile. ${METICHE_MCP_URL} overrides the endpoint",
+    "for local development, e.g. http://127.0.0.1:8788/mcp.",
+    "",
+    "Aspirational: the metiche backend is not deployed yet, so mcp.metiche.xyz",
+    "does not answer. This file is the seam, ready for when it does."
+  ],
+  "mcpServers": {
+    "metiche": {
+      "type": "http",
+      "url": "${METICHE_MCP_URL:-https://mcp.metiche.xyz/mcp}",
+      "headers": {
+        "Authorization": "Bearer ${METICHE_JOIN_CODE}"
+      }
+    }
+  }
+}

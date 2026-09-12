@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "metiche": {
+      "type": "http",
+      "url": "${METICHE_MCP_URL:-https://mcp.metiche.xyz/mcp}",
+      "headers": {
+        "Authorization": "Bearer ${METICHE_JOIN_CODE}"
+      }
+    }
+  }
+}

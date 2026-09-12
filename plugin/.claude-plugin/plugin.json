@@ -1,0 +1,20 @@
+{
+  "name": "metiche",
+  "displayName": "metiche",
+  "version": "0.1.0",
+  "description": "Live coordination between coding agents on one repo: the metiche-teamwork skill plus the metiche MCP server, so an agent declares what it is about to do and hears about collisions inside its own tool response.",
+  "author": {
+    "name": "mklfarha",
+    "url": "https://github.com/mklfarha"
+  },
+  "homepage": "https://metiche.xyz",
+  "repository": "https://github.com/mklfarha/metiche",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "coordination",
+    "multi-agent",
+    "teamwork",
+    "conflict-detection"
+  ]
+}
