@@ -1,6 +1,6 @@
 # The data model, in one page
 
-23 entities: 20 tables and 3 dependent shapes (typed JSON columns, not tables of their own).
+24 entities: 21 tables and 3 dependent shapes (typed JSON columns, not tables of their own).
 This is the "what is each thing for" summary. The full spec is in [PLAN.md](PLAN.md); the
 authoritative definitions, with every field described, live in the nuzur project.
 
@@ -52,7 +52,19 @@ one call: agents declare an intent with paths and never learn a second concept.
 | **`conflict`** | A detected collision. Deduped hard: re-detecting the same pair bumps a counter instead of inserting, and re-notifies only if it got worse. Carries a **suggested action**, because "you and Ana both hold auth.go" is noise and "Ana owns this handler, consume her endpoint instead" is signal. |
 | **`conflict_participant`** | A session caught up in a conflict. A child table rather than two columns, because three agents in one directory is ordinary — and because "conflicts involving my session" is the query behind the count on every tool response. |
 | **`judgement`** | The ledger that stops every agent re-judging the same question forever. A pair is shown to exactly one session, answered once, and never raised again — unless one side materially changes, which mints a new key and earns it exactly one more look. |
-| **`instruction`** | Something waiting for an agent: a person's stop or steer, a conflict notice, a request to judge a pair. This is the **entire push mechanism** — MCP cannot push, so a count of these rides on every tool response and the agent fetches the contents only when the count is non-zero. |
+| **`instruction`** | Something waiting for an agent — a person's stop or steer, a conflict notice, a request to judge a pair — or, since v2, something waiting for a **person**. This is the **entire push mechanism**: MCP cannot push, so a count of these rides on every tool response and the agent fetches the contents only when the count is non-zero. |
+
+## Reaching a person
+
+| | |
+|---|---|
+| **`notification_channel`** | An optional outbound channel per team — Slack, Discord, or a plain webhook — for the people who are not sitting at their terminal. Entirely opt-in, because the primary way somebody hears about a conflict is their own agent telling them, which needs no configuration at all. Tracks its own delivery health so a team learns their webhook died from the board rather than from the silence, and switches a persistently failing channel off instead of retrying forever. |
+
+The `target_url` on that row is the first real secret in the system: anyone
+holding an incoming-webhook URL can post into the team's channel. It is
+write-only from the outside — never returned by an API, never rendered on the
+board, never logged, never in an event payload. Even `last_error` is capped to
+a status line, because a response body can echo the URL back.
 
 ## The record
 
@@ -67,7 +79,7 @@ an opaque blob, without paying for a table nothing queries independently.
 
 | | |
 |---|---|
-| **`team_settings`** | On `team`. Detection tuning a team can change without a deploy: the notify floor, TTLs, and which rules have been auto-demoted for crying wolf. |
+| **`team_settings`** | On `team`. Detection tuning a team can change without a deploy: TTLs, which rules have been auto-demoted for crying wolf, and the two notify floors. There are three thresholds in total and they are deliberately different — what gets **recorded**, what interrupts another **agent**, and what is worth pulling a **person** away from what they are doing. The human floor sits highest: somebody interrupted as often as an agent stops reading the interruptions. |
 | **`conflict_evidence`** | On `conflict`. What the two sides actually said, frozen — so the call can still be judged later, after both subjects have moved on. |
 | **`event_payload`** | On `team_event`. The delta an event carries, with the fields every client needs typed and one escape hatch for the long tail. |
 
