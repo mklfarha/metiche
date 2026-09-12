@@ -67,7 +67,12 @@ func (s *Server) Handler() http.Handler {
 
 	r.Handle("/static/*", http.StripPrefix("/static/", cacheless(http.FileServer(http.FS(s.static)))))
 	r.Get("/healthz", s.healthz)
-	r.Get("/", s.join)
+	// The landing page is the front door: it explains the idea to somebody who
+	// has never heard of it, and it deliberately shows no team data. The team
+	// picker moved to /teams, which is only useful once you already know what
+	// this is.
+	r.Get("/", s.landing)
+	r.Get("/teams", s.join)
 	r.Get("/join", s.joinCode)
 
 	r.Route("/t/{slug}", func(r chi.Router) {
@@ -101,6 +106,17 @@ func (s *Server) join(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.SliceStable(cards, func(i, j int) bool { return cards[i].Live > cards[j].Live })
 	s.render(w, r, view.JoinPage(cards))
+}
+
+// landing serves the public page. It is handed at most one board URL, for the
+// "watch one live" link; with no teams configured it gets "" and the link is
+// omitted rather than pointing at a 404.
+func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
+	boardURL := ""
+	if len(s.order) > 0 {
+		boardURL = "/t/" + s.order[0]
+	}
+	s.render(w, r, view.Landing(boardURL))
 }
 
 func (s *Server) joinCode(w http.ResponseWriter, r *http.Request) {

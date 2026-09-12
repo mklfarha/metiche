@@ -1,0 +1,702 @@
+package view
+
+// Landing is metiche.xyz — the page somebody who has never heard of this
+// lands on. It has one job: make the idea legible in about ten seconds, then
+// earn the next minute, then hand over a join flow that actually works.
+//
+// It is deliberately static. Nothing on it is live team data, because nothing
+// on it should be: a public page that leaks who is working on what would be
+// the exact opposite of the product. The one parameter is where the "see a
+// live board" link points; pass "" and the link is left out rather than
+// pointing somewhere that does not exist.
+//
+// Everything visual here is inline SVG and one stylesheet. No framework, no
+// CDN, no webfont, no build step past templ.
+
+templ Landing(boardURL string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>metiche — what everyone&#39;s agents are about to do</title>
+			<meta name="description" content="An MCP server every teammate&#39;s coding agent connects to. Agents report what they are about to do; metiche spots the collisions and tells the other agents in their own tool responses, while there is still time to change course."/>
+			<meta name="color-scheme" content="dark light"/>
+			<link rel="icon" href="/static/metiche-icon.png" type="image/png"/>
+			<link rel="stylesheet" href="/static/landing.css"/>
+		</head>
+		<body class="lp">
+			<a class="skip" href="#what">Skip to what it does</a>
+			@landingNav(boardURL)
+			@landingHero(boardURL)
+			@landingProblem()
+			@landingHow()
+			@landingCollisions()
+			@landingHonest()
+			@landingBoard(boardURL)
+			@landingJoin()
+			@landingFoot()
+		</body>
+	</html>
+}
+
+// ---------------------------------------------------------------- nav
+
+templ landingNav(boardURL string) {
+	<nav class="lp-nav">
+		<div class="wrap">
+			<a class="brandbar" href="#top" aria-label="metiche, home">
+				<img src="/static/metiche-icon.png" alt="" width="26" height="26"/>
+				<span class="word">metiche<span class="dot">.</span></span>
+			</a>
+			<div class="links">
+				<a href="#what">What it catches</a>
+				<a href="#how">How it works</a>
+				<a href="#board">The board</a>
+				if boardURL != "" {
+					<a href={ templ.SafeURL(boardURL) }>Live board</a>
+				}
+				<a href="https://github.com/mklfarha/metiche">Source</a>
+			</div>
+			<a class="btn primary small" href="#join">Get your team on it</a>
+		</div>
+	</nav>
+}
+
+// ---------------------------------------------------------------- hero
+
+templ landingHero(boardURL string) {
+	<header class="hero" id="top">
+		<div class="wrap">
+			<div class="hero-copy">
+				<div class="eyebrow"><span class="sq"></span> MCP server for teams of coding agents</div>
+				<h1 class="headline">
+					<span class="b">The work is parallel.</span>
+					<span class="b b2">The awareness is not.</span>
+				</h1>
+				<p class="lede">
+					Small teams collapse into a queue. Everyone is blocked on one person — usually
+					whoever owns the frontend — and nobody knows what anyone else is doing until it
+					lands in git and conflicts. <b>metiche is an MCP server every teammate&#39;s coding
+					agent connects to.</b> Each agent says what it is about to do. When two of them are
+					about to collide, both get told inside their own tool responses, while there is
+					still time to change course.
+				</p>
+				<div class="cta-row">
+					<a class="btn primary" href="#join">Get your team on it <span class="arw">→</span></a>
+					if boardURL != "" {
+						<a class="btn" href={ templ.SafeURL(boardURL) }>Watch a board live</a>
+					} else {
+						<a class="btn" href="#how">See how it works</a>
+					}
+				</div>
+				<div class="facts">
+					<span><i class="d"></i>Never blocks anyone</span>
+					<span><i class="d"></i>No third-party credential</span>
+					<span><i class="d"></i>Open source</span>
+				</div>
+			</div>
+			<div class="hero-art">
+				@landingMark()
+				<div class="mark-legend">
+					<span class="a"><i></i>one agent</span>
+					<span class="b"><i></i>the other</span>
+					<span class="c"><i></i>where they cross</span>
+				</div>
+			</div>
+		</div>
+	</header>
+}
+
+// landingMark draws the product icon at size: two graph strokes, each one
+// agent's path, converging until they overlap — and the overlap is an iris.
+// The mark is the argument, so it is drawn rather than dropped in as a PNG:
+// the two paths trace themselves toward each other, the crossing lights up
+// violet, and only then does the eye open.
+//
+// The finished state is the CSS default. Motion is added only under
+// prefers-reduced-motion: no-preference, so a viewer who asked for stillness
+// gets the whole mark immediately rather than an empty square.
+templ landingMark() {
+	<svg class="mark" viewBox="0 0 200 200" width="200" height="200" role="img" aria-labelledby="mk-title mk-desc">
+		<title id="mk-title">Two agents&#39; paths crossing into an eye</title>
+		<desc id="mk-desc">
+			A coral path enters from the top left and an indigo path from the bottom right.
+			They run into each other and share the same outline; where they overlap the stroke
+			turns violet, and the overlap forms an eye watching out of the page.
+		</desc>
+		<g fill="none" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+			<path
+				class="path stroke-a"
+				pathLength="1"
+				d="M 14,28 L 104,28 A 14,14 0 0 1 104,56 C 84,52 40,66 26,100 C 26,128 60,146 100,146 C 112,146 118,144 124,141"
+			></path>
+			<path
+				class="path stroke-b"
+				pathLength="1"
+				transform="rotate(180 100 100)"
+				d="M 14,28 L 104,28 A 14,14 0 0 1 104,56 C 84,52 40,66 26,100 C 26,128 60,146 100,146 C 112,146 118,144 124,141"
+			></path>
+			<g class="cross">
+				<path d="M 76,59 C 86,56.5 96,55 104,56"></path>
+				<path d="M 124,141 C 114,143.5 104,145 96,144"></path>
+			</g>
+		</g>
+		<g class="iris">
+			<circle class="iris-a" cx="100" cy="100" r="25"></circle>
+			<path class="iris-b" d="M 100,75 A 25,25 0 0 1 100,125 Z"></path>
+			<circle class="pupil" cx="100" cy="100" r="15.5"></circle>
+			<circle class="glint" cx="93.5" cy="93.5" r="4.6"></circle>
+		</g>
+		<g class="sparks" fill="none" stroke-width="9" stroke-linecap="round">
+			<path class="spark" d="M 127,44 L 135,28"></path>
+			<path class="spark" d="M 142,55 L 155,41"></path>
+			<path class="spark" d="M 154,69 L 169,60"></path>
+		</g>
+	</svg>
+}
+
+// ---------------------------------------------------------------- problem
+
+templ landingProblem() {
+	<section class="section" id="problem">
+		<div class="wrap">
+			<div class="sec-head">
+				<div class="sec-eyebrow">The queue</div>
+				<h2>Three agents can write code at once. Three people cannot watch each other do it.</h2>
+				<p class="sub">
+					This is what a hackathon team looks like at hour three, and it is not a discipline
+					problem. Nothing anybody is doing is visible to anybody else until it is already done.
+				</p>
+			</div>
+			<div class="queue">
+				<div class="beat">
+					<div class="n">01 · the bottleneck</div>
+					<h3>Everyone is waiting on one person</h3>
+					<p>
+						The frontend needs an endpoint. The endpoint is one of nine things on the backend
+						list. Nobody can see that it is the one thing four people are blocked on, so it
+						stays ninth.
+					</p>
+				</div>
+				<div class="beat">
+					<div class="n">02 · the blind spot</div>
+					<h3>Git is the first place you find out</h3>
+					<p>
+						Two agents spend forty minutes in the same file with the same good intentions.
+						The merge is where that becomes information, and by then one of them is throwing
+						work away.
+					</p>
+				</div>
+				<div class="beat">
+					<div class="n">03 · the drift</div>
+					<h3>The decision you made at nine is gone by eleven</h3>
+					<p>
+						Somebody agreed to cookie sessions in a conversation that an agent was not part
+						of. It writes a token into local storage, correctly, from everything it can see.
+					</p>
+				</div>
+			</div>
+			<p class="pullquote">
+				The work is parallelizable. The awareness is not — and awareness is the part that
+				was never anybody&#39;s job.
+				<span class="after">
+					metiche makes it the agents&#39; job. They are already narrating what they are about to
+					do; they just say it somewhere the rest of the team can hear.
+				</span>
+			</p>
+		</div>
+	</section>
+}
+
+// ---------------------------------------------------------------- how
+
+templ landingHow() {
+	<section class="section alt" id="how">
+		<div class="wrap">
+			<div class="sec-head">
+				<div class="sec-eyebrow">How it works</div>
+				<h2>One server, one shared picture, and findings delivered in the call the agent was already making.</h2>
+				<p class="sub">
+					A team is one repo and anyone working on it — one person with three agents, or five
+					people with two each. Both from day one.
+				</p>
+			</div>
+			<div class="steps">
+				<div class="step">
+					<div class="num">1</div>
+					<h3>Every agent declares</h3>
+					<p>
+						Before it edits, your agent calls <code>declare_intent</code> with one sentence
+						and the paths it is about to touch. It calls <code>update_intent</code> as the
+						work moves and <code>heartbeat</code> about once a minute.
+					</p>
+					<p>
+						That is the whole obligation. No CLI, no git hooks, no server-side clone — the
+						agent self-reports its branch, its base commit and its paths.
+					</p>
+				</div>
+				<div class="step">
+					<div class="num">2</div>
+					<h3>The server keeps it as live state</h3>
+					<p>
+						Intents, claims, published contracts, recorded decisions — per team, per repo.
+						Detection runs <b>inside the same transaction</b> that records the claim, so
+						there is no window in which two agents both see a clean world and both proceed.
+					</p>
+					<p>
+						The mechanical half is deterministic and server-side. The semantic half —
+						&ldquo;does this plan contradict what we decided?&rdquo; — is judged by the
+						caller&#39;s own model, which is why metiche needs no API key of its own.
+					</p>
+				</div>
+				<div class="step">
+					<div class="num">3</div>
+					<h3>The other agents are told</h3>
+					<p>
+						MCP has no push, so metiche does not pretend to have one. Findings ride back on
+						the next call any agent makes — including a bare heartbeat.
+					</p>
+					<p>
+						The agent that created the collision is told <b>synchronously</b>, in the
+						response to the call that created it. It has the information before it has
+						started.
+					</p>
+				</div>
+			</div>
+			<div class="two-up" style="margin-top:14px">
+				<div class="code">
+					<div class="code-head">what comes back <span class="fn">· every tool, every time</span></div>
+					<pre>@templ.Raw(envelopeHTML)</pre>
+				</div>
+				<div>
+					<div class="code" style="margin-bottom:14px">
+						<div class="code-head">the whole setup <span class="fn">· one file, no secret</span></div>
+						<pre>@templ.Raw(mcpConfigHTML)</pre>
+					</div>
+					<p style="font-size:14px;color:var(--ink-2);margin:0">
+						Fifteen tools. Three of them are the ones you will notice:
+					</p>
+					<div class="tools">
+						<code class="hot">declare_intent</code>
+						<code class="hot">update_intent</code>
+						<code class="hot">heartbeat</code>
+						<code>check_paths</code>
+						<code>publish_contract</code>
+						<code>record_decision</code>
+						<code>report_judgement</code>
+						<code>resolve_conflict</code>
+						<code>get_team_state</code>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+}
+
+// ---------------------------------------------------------------- collisions
+
+templ landingCollisions() {
+	<section class="section" id="what">
+		<div class="wrap">
+			<div class="sec-head">
+				<div class="sec-eyebrow">Four ways to collide</div>
+				<h2>What it actually catches</h2>
+				<p class="sub">
+					Each of these is a thing that is already happening on your team right now. The
+					difference is whether anybody finds out in the next thirty seconds or the next
+					three hours.
+				</p>
+			</div>
+			<div class="collide">
+				@collidePath()
+				@collideDecision()
+				@collideContract()
+				@collideDuplicate()
+			</div>
+		</div>
+	</section>
+}
+
+templ collidePath() {
+	<article class="cc k-path">
+		<div class="kind">path overlap</div>
+		<h3>Two agents about to write the same file</h3>
+		<p class="scene">
+			Mara&#39;s agent holds <span class="inline-code">api/router.go</span> open for a rewrite of
+			the middleware chain. Forty seconds later Devesh&#39;s agent declares an intent that adds a
+			route to the same file. Neither of them knows, and neither of them is wrong.
+		</p>
+		<div class="resp">
+			<div class="rh">in Devesh&#39;s agent&#39;s tool response</div>
+			<div class="rb">
+				<div class="row"><span class="sev high">▲ high</span> <span class="dim">CF-14 · path overlap</span></div>
+				<div class="row"><span class="you">api/router.go</span> <span class="dim">— held by</span> <span class="them">Mara/api</span> <span class="dim">(write, 4m, feat/booking-api)</span></div>
+				<div class="row"><span class="act">→ Take api/bookings.go and let the router land first,</span></div>
+				<div class="row"><span class="act">&nbsp;&nbsp; or rebase on her branch before you start.</span></div>
+			</div>
+		</div>
+		<p class="why">
+			Identical exact paths are critical, glob against glob is high, a read against a write is a
+			notice, and two reads are never a conflict at all. Generated code never enters the index,
+			so nobody collides on the files a code generator owns.
+		</p>
+	</article>
+}
+
+templ collideDecision() {
+	<article class="cc k-decision">
+		<div class="kind">decision contradiction</div>
+		<h3>A plan that contradicts what the team already settled</h3>
+		<p class="scene">
+			At nine the team recorded <span class="inline-code">#auth-jwt-cookie</span>: the session
+			token lives in an httpOnly cookie. At eleven an agent that was never in that conversation
+			declares a plan to keep the token in local storage so the fetch wrapper can read it.
+		</p>
+		<div class="resp">
+			<div class="rh">in that agent&#39;s tool response</div>
+			<div class="rb">
+				<div class="row"><span class="sev critical">◆ review</span> <span class="dim">decision #auth-jwt-cookie</span></div>
+				<div class="row"><span class="them">&ldquo;Session tokens are carried in an httpOnly cookie,</span></div>
+				<div class="row"><span class="them">&nbsp;&nbsp;never in web storage.&rdquo;</span></div>
+				<div class="row"><span class="act">→ Judge your plan against this and report_judgement.</span></div>
+			</div>
+		</div>
+		<p class="why">
+			The server does not decide this one. It has no model and no API key — it finds the handful
+			of decisions whose scope your paths touch and hands them back, and your own agent, which
+			has the plan in front of it, makes the call. One agent is assigned the judgement so five
+			agents do not each burn tokens on it, and once a pair is judged it is never raised again
+			unless one side materially changes.
+		</p>
+	</article>
+}
+
+templ collideContract() {
+	<article class="cc k-contract wide">
+		<div class="kind">contract mismatch · nobody is building this</div>
+		<h3>A frontend coding against an endpoint that does not exist yet</h3>
+		<p class="scene">
+			This is the one the whole product exists for. Devesh&#39;s agent publishes a
+			<b>consumes</b> contract for <span class="inline-code">POST /api/bookings</span> and builds
+			the booking form against it: the request shape, the loading state, the error path, the
+			redirect. It looks finished. Nobody is producing that endpoint. Mara spent the hour on auth,
+			and the queue is invisible to both of them until the demo.
+		</p>
+		<div class="two-up">
+			<div class="resp">
+				<div class="rh">five minutes with no producer</div>
+				<div class="rb">
+					<div class="row"><span class="sev alert">● alert</span> <span class="dim">CF-21 · nobody is building this</span></div>
+					<div class="row"><span class="you">POST /api/bookings</span> <span class="dim">— consumed by</span> <span class="them">Devesh/web</span></div>
+					<div class="row"><span class="dim">produced by nobody for 6m · 3 files waiting on it</span></div>
+					<div class="row"><span class="act">→ Get an owner on it now, or stub it and move to</span></div>
+					<div class="row"><span class="act">&nbsp;&nbsp; the checkout view.</span></div>
+				</div>
+			</div>
+			<div class="resp">
+				<div class="rh">and when somebody does build it</div>
+				<div class="rb">
+					<div class="row"><span class="sev high">▲ high</span> <span class="dim">CF-24 · contract mismatch</span></div>
+					<div class="row"><span class="dim">POST /api/bookings · response</span></div>
+					<div class="row"><span class="you">booking_id</span> <span class="dim">required by the consumer, not produced</span></div>
+					<div class="row"><span class="them">leg_ids</span> <span class="dim">produced as string[], consumed as int[]</span></div>
+					<div class="row"><span class="act">→ One of you moves. Decide which, now, not at merge.</span></div>
+				</div>
+			</div>
+		</div>
+		<div class="two-up" style="margin-top:14px;align-items:start">
+			<div class="mx">
+				<table>
+					<thead>
+						<tr>
+							<th scope="col">contract</th>
+							<th scope="col" class="who">Mara / api</th>
+							<th scope="col" class="who">Devesh / web</th>
+							<th scope="col" class="who">Junia / infra</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td class="key">GET /api/legs</td>
+							<td class="cell"><span class="mk p" title="produces">P</span></td>
+							<td class="cell"><span class="mk c" title="consumes">C</span></td>
+							<td class="cell"><span class="mk none" title="not involved">·</span></td>
+						</tr>
+						<tr class="orphan">
+							<td class="key">POST /api/bookings</td>
+							<td class="cell"><span class="mk gap" title="nobody produces this">—</span></td>
+							<td class="cell"><span class="mk c" title="consumes">C</span></td>
+							<td class="cell"><span class="mk none" title="not involved">·</span></td>
+						</tr>
+						<tr>
+							<td class="key">GET /api/health</td>
+							<td class="cell"><span class="mk p" title="produces">P</span></td>
+							<td class="cell"><span class="mk none" title="not involved">·</span></td>
+							<td class="cell"><span class="mk c" title="consumes">C</span></td>
+						</tr>
+					</tbody>
+				</table>
+				<div class="mx-legend">
+					Produces down one axis, consumes across the other. The row with a consumer and no
+					producer is the bottleneck, and it is the only thing on this table you need to look at.
+				</div>
+			</div>
+			<p class="why" style="margin-top:0">
+				Agents never compute the hash of a shape — the server canonicalizes every submitted
+				shape and hashes it itself, because two agents describing the same JSON in different
+				word order must produce the same bytes or none of this dedupes. A missing output field
+				breaks the consumer; a missing input field breaks the producer; the direction decides
+				which side is at fault. It also notices that one of you wrote
+				<span class="inline-code">/api/session</span> and the other wrote
+				<span class="inline-code">/api/sessions</span>.
+			</p>
+		</div>
+	</article>
+}
+
+templ collideDuplicate() {
+	<article class="cc k-dup wide">
+		<div class="kind">duplicate work</div>
+		<h3>Two people independently building the same thing</h3>
+		<p class="scene">
+			Two branches, two agents, one manifest CSV parser — written twice, in parallel, by people
+			sitting next to each other. The tell is usually not the code. It is that both intents point
+			at the same issue, which is the one match that is never a coincidence.
+		</p>
+		<div class="resp">
+			<div class="rh">in both agents&#39; next response</div>
+			<div class="rb">
+				<div class="row"><span class="sev medium">● medium</span> <span class="dim">CF-9 · duplicate work</span></div>
+				<div class="row"><span class="you">INT-83 &ldquo;parse the manifest CSV&rdquo;</span> <span class="dim">≈</span> <span class="them">INT-77 (Junia/tests)</span></div>
+				<div class="row"><span class="dim">same external ref #212 · overlapping paths in import/</span></div>
+				<div class="row"><span class="act">→ One of you takes the parser, the other takes the upload UI.</span></div>
+			</div>
+		</div>
+	</article>
+}
+
+// ---------------------------------------------------------------- honest
+
+templ landingHonest() {
+	<section class="section alt" id="honest">
+		<div class="wrap">
+			<div class="sec-head">
+				<div class="sec-eyebrow">The honest part</div>
+				<h2>metiche never blocks anyone.</h2>
+			</div>
+			<div class="honest">
+				<div>
+					<p class="big">
+						Claims are advisory and they expire. Two agents are allowed to hold the same
+						file — that is not an error state, it is a conflict, raised the moment it
+						happens and handed to both of them.
+					</p>
+					<p>
+						Nothing waits for a lease. Nothing is queued behind anybody. Ordering assigns
+						<b>responsibility, not permission</b>: the later declarer is told in the same
+						breath, the earlier one on their next call.
+					</p>
+					<p>
+						A tool that pretended to be a lock would be worse than no tool. Your agent would
+						sit waiting on a claim held by a session that crashed twenty minutes ago, and
+						you would turn the whole thing off before lunch. So metiche tells you and lets
+						you decide.
+					</p>
+					<div class="contrast">
+						<div class="noise">
+							<span class="lab">noise</span>
+							You and Mara both hold api/router.go.
+						</div>
+						<div class="signal">
+							<span class="lab">signal</span>
+							Mara holds api/router.go (write, 4m, feat/booking-api) — take
+							api/bookings.go and let the router land first.
+						</div>
+					</div>
+				</div>
+				<ul class="rules">
+					<li><span class="g">·</span><span><b>Nothing is ever surfaced without a next action.</b> A finding with no suggestion is noise, and noise is how a tool teaches a model to ignore it.</span></li>
+					<li><span class="g">·</span><span><b>Two reads never conflict.</b> Generated code never enters the index at all.</span></li>
+					<li><span class="g">·</span><span><b>A claim on half the repo gets capped, not amplified.</b> Over-broad claims are recorded at low severity with a &ldquo;narrow this&rdquo; nudge.</span></li>
+					<li><span class="g">·</span><span><b>One human&#39;s two agents are not a conflict</b> in the way two humans are. Same member, same branch — severity comes down.</span></li>
+					<li><span class="g">·</span><span><b>One conflict per pair, forever.</b> Re-detection bumps a counter; it does not send the message again unless things get worse.</span></li>
+					<li><span class="g">·</span><span><b>A rule that is wrong for your repo stops shouting the same afternoon.</b> Dismissals are tracked, and a rule dismissed as a false positive too often demotes itself to record-only.</span></li>
+					<li><span class="g">·</span><span><b>Claims expire.</b> There is a time-to-live, and a hard ceiling that heartbeats cannot push past, so a crashed agent cannot haunt the board.</span></li>
+				</ul>
+			</div>
+		</div>
+	</section>
+}
+
+// ---------------------------------------------------------------- board
+
+templ landingBoard(boardURL string) {
+	<section class="section" id="board">
+		<div class="wrap">
+			<div class="sec-head">
+				<div class="sec-eyebrow">The board</div>
+				<h2>And one page where a person can see the whole team at once.</h2>
+				<p class="sub">
+					The agents coordinate with each other. The board is for the human who wants to know
+					where the team actually is — a lane per person, their agents underneath, and the one
+					line that says what each of them is doing right now. It repaints over SSE; there is
+					nothing to refresh.
+				</p>
+			</div>
+			<div class="mini" aria-hidden="true">
+				<div class="mini-head">
+					<span class="word">metiche<span class="dot">.</span></span>
+					<span>orbital-freight</span>
+					<span class="cur"><span><b>seq</b> <span class="seq">417</span></span><span><b>rev</b> <span class="rev">88</span></span></span>
+				</div>
+				<div class="mini-lanes">
+					<div class="ml">
+						<div class="ml-head"><span class="av">MQ</span><span class="nm">Mara</span><span class="lb">api</span></div>
+						<div class="ml-body sev-high">
+							<div class="ml-status">writing the bookings handler</div>
+							<div class="ml-path hot"><span class="m">wr</span>api/router.go</div>
+							<div class="ml-path"><span class="m">wr</span>api/bookings.go</div>
+							<span class="tag high"><span class="gl">▲</span>path overlap</span>
+						</div>
+					</div>
+					<div class="ml">
+						<div class="ml-head"><span class="av">DR</span><span class="nm">Devesh</span><span class="lb">web</span></div>
+						<div class="ml-body sev-alert">
+							<div class="ml-status">wiring the booking form to POST /api/bookings</div>
+							<div class="ml-path"><span class="m">wr</span>web/booking/form.tsx</div>
+							<div class="ml-path"><span class="m">rd</span>web/api/client.ts</div>
+							<span class="tag alert"><span class="gl">●</span>nobody is building this</span>
+						</div>
+					</div>
+					<div class="ml">
+						<div class="ml-head"><span class="av">JO</span><span class="nm">Junia</span><span class="lb">infra</span></div>
+						<div class="ml-body calm">
+							<div class="ml-status">applying the migration on staging</div>
+							<div class="ml-path"><span class="m">st</span>deploy/migrations/**</div>
+							<span class="tag good">clear</span>
+						</div>
+					</div>
+				</div>
+			</div>
+			<p class="caption">
+				An illustration of the demo recording that ships in the repo — metiche has no users
+				yet, so there is nothing else it could honestly be.
+			</p>
+			<div class="viewlist">
+				<div><b>board</b>Who is live, what each agent is doing, the paths it holds, and a badge the moment one of them is contested.</div>
+				<div><b>contracts</b>Produces against consumes. The column with nobody in it is the thing the whole team is waiting on.</div>
+				<div><b>conflicts</b>Every open finding with its suggested action, and a person can dismiss one and say why.</div>
+				<div><b>runs</b>Every session end to end, replayed from the event log, so &ldquo;what did that agent actually do&rdquo; has an answer.</div>
+			</div>
+			if boardURL != "" {
+				<div class="cta-row">
+					<a class="btn" href={ templ.SafeURL(boardURL) }>Open a live board <span class="arw">→</span></a>
+				</div>
+			}
+		</div>
+	</section>
+}
+
+// ---------------------------------------------------------------- join
+
+templ landingJoin() {
+	<section class="section alt" id="join">
+		<div class="wrap">
+			<div class="sec-head">
+				<div class="sec-eyebrow">Getting on it</div>
+				<h2>One person creates the team. Everyone else pastes one line.</h2>
+				<p class="sub">
+					No account per person, no OAuth dance, no third-party credential anywhere in the
+					loop — that last one is a hard constraint of the project, not a convenience.
+				</p>
+			</div>
+			<div class="join-grid">
+				<ol class="jsteps">
+					<li class="jstep">
+						<h3>Create the team, get a join code</h3>
+						<p>
+							One string for the whole team. Rotatable. It goes in your team chat, not in
+							your repository — anyone holding it can join your board.
+						</p>
+					</li>
+					<li class="jstep">
+						<h3>Each teammate points their agent at the server</h3>
+						<p>
+							One entry in the project&#39;s MCP config. It carries no token, because there
+							is nothing to carry yet.
+						</p>
+						<div class="code">
+							<div class="code-head">.mcp.json</div>
+							<pre>@templ.Raw(mcpConfigHTML)</pre>
+						</div>
+					</li>
+					<li class="jstep">
+						<h3>Add the skill<span class="soon">shipping with the server</span></h3>
+						<p>
+							The <span class="inline-code">metiche-teamwork</span> skill is what teaches
+							the cadence: declare before you edit, heartbeat while you work, report back
+							after you act. A Claude Code plugin will bundle the skill together with the
+							config above, so joining is one command instead of three steps.
+						</p>
+					</li>
+					<li class="jstep">
+						<h3>Tell your agent the code, once</h3>
+						<p>
+							The agent calls <span class="inline-code">join_team</span> with the code and
+							the name to show on the board. The server mints a per-agent token from it and
+							hands it back; the join code itself is never stored by the client, and never
+							needed again.
+						</p>
+					</li>
+				</ol>
+				<div>
+					<div class="codeform">
+						<h3>Already have a code?</h3>
+						<p>Paste it to open your team&#39;s board in this browser.</p>
+						<form method="get" action="/join">
+							<label class="visually-hidden" for="join-code">Team join code</label>
+							<input id="join-code" name="code" placeholder="your team&#39;s join code" autocomplete="off" spellcheck="false"/>
+							<button class="btn primary" type="submit">Open the board</button>
+						</form>
+						<p class="fine">
+							A join code is a credential. Treat it like one: it is how an agent is admitted
+							to your team, and a board is not public just because the repository is.
+						</p>
+					</div>
+					<div class="code" style="margin-top:14px">
+						<div class="code-head">what your agent then does <span class="fn">· on its own, every loop</span></div>
+						<pre>@templ.Raw(agentLoopHTML)</pre>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+}
+
+// ---------------------------------------------------------------- foot
+
+templ landingFoot() {
+	<footer class="lp-foot">
+		<div class="wrap">
+			<span class="brandbar">
+				<img src="/static/metiche-icon.png" alt="" width="26" height="26"/>
+				<span class="word">metiche<span class="dot">.</span></span>
+			</span>
+			<div class="links">
+				<a href="#what">What it catches</a>
+				<a href="#how">How it works</a>
+				<a href="#join">Join</a>
+				<a href="https://github.com/mklfarha/metiche">Source</a>
+			</div>
+		</div>
+		<div class="wrap" style="margin-top:16px">
+			<p class="said">
+				<b>metiche</b> — Mexican slang for the one who has to know what everybody else is up
+				to. Open source, self-hostable, and it will never require a third-party credential to
+				run: that constraint is why the deterministic half lives on the server and the
+				judgement half lives in your own agent&#39;s model.
+			</p>
+		</div>
+	</footer>
+}

@@ -68,12 +68,17 @@
 
   --code-bg: #08031e;
 
+  /* The mark's own two strokes. True indigo is too dark to read against the
+     navy ground, so the dark theme carries a lifted variant and the light
+     theme uses the icon's literal colour. */
+  --mark-indigo: #4d31dd;
+  --mark-violet: #8355ff;
+
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
   --r: 8px;
   --maxw: 1080px;
   --shadow: 0 1px 2px #00000055;
-  --glow: none;
 }
 
 /* --- light: same hues, inverted ground, darkened brights for contrast --- */
@@ -117,6 +122,9 @@
 
     --code-bg: #130450;
 
+    --mark-indigo: #3018AA;
+    --mark-violet: #5317FB;
+
     --shadow: 0 1px 2px #18065514;
   }
 }
@@ -145,6 +153,13 @@ body.lp {
 
 .wrap { width: 100%; max-width: var(--maxw); margin: 0 auto; padding-left: 22px; padding-right: 22px; }
 @media (max-width: 480px) { .wrap { padding-left: 16px; padding-right: 16px; } }
+
+/* Grid children default to min-width:auto, which lets one wide code block or
+   one long unbroken path shove a whole column past the viewport. Nothing on
+   this page is allowed to do that; the code blocks scroll inside themselves. */
+.hero .wrap > *, .queue > *, .steps > *, .two-up > *, .collide > *, .honest > *,
+.rules > *, .mini-lanes > *, .viewlist > *, .join-grid > *, .jsteps > *,
+.contrast > *, .tools > * { min-width: 0; }
 
 .mono { font-family: var(--mono); }
 .nowrap { white-space: nowrap; }
@@ -190,10 +205,12 @@ body.lp {
 /* ---------------------------------------------------------------- hero */
 
 .hero { position: relative; padding: clamp(34px, 7vw, 78px) 0 clamp(40px, 7vw, 74px); }
-.hero .wrap { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); gap: clamp(24px, 5vw, 56px); align-items: center; }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: clamp(24px, 5vw, 56px); align-items: center; }
 @media (max-width: 880px) {
+  /* Copy first on a phone. The mark is the hook, but the headline is the
+     ten-second payload and it should not be below the fold. */
   .hero .wrap { grid-template-columns: 1fr; gap: 30px; }
-  .hero-art { order: -1; }
+  .mark { max-width: 320px; }
 }
 
 .eyebrow {
@@ -205,7 +222,7 @@ body.lp {
 }
 .eyebrow .sq { width: 7px; height: 7px; border-radius: 2px; background: var(--coral); flex: none; }
 
-.headline { font-size: clamp(32px, 6.2vw, 56px); line-height: 1.03; letter-spacing: -0.035em; }
+.headline { font-size: clamp(30px, 5.2vw, 48px); line-height: 1.03; letter-spacing: -0.035em; }
 .headline .b { display: block; }
 .headline .b2 { color: var(--ink-3); }
 
@@ -221,14 +238,13 @@ body.lp {
 /* ---------------------------------------------------------------- the mark */
 
 .hero-art { display: grid; place-items: center; }
-.mark { width: 100%; max-width: 440px; height: auto; display: block; overflow: visible; }
+.mark { width: 100%; max-width: 400px; height: auto; aspect-ratio: 1 / 1; display: block; }
 
 .mark .stroke-a { stroke: var(--coral); }
-.mark .stroke-b { stroke: var(--indigo); }
-@media (prefers-color-scheme: dark) { .mark .stroke-b { stroke: #4a2fd6; } }
-.mark .cross { stroke: var(--violet); }
+.mark .stroke-b { stroke: var(--mark-indigo); }
+.mark .cross { stroke: var(--mark-violet); }
 .mark .iris-a { fill: var(--coral); }
-.mark .iris-b { fill: var(--violet); }
+.mark .iris-b { fill: var(--mark-violet); }
 .mark .pupil { fill: var(--navy); }
 .mark .glint { fill: var(--white); }
 .mark .spark { stroke: var(--cyan); }
@@ -256,8 +272,8 @@ body.lp {
 }
 .mark-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
 .mark-legend .a i { background: var(--coral); }
-.mark-legend .b i { background: var(--indigo-ink); }
-.mark-legend .c i { background: var(--violet); }
+.mark-legend .b i { background: var(--mark-indigo); }
+.mark-legend .c i { background: var(--mark-violet); }
 
 /* ---------------------------------------------------------------- sections */
 
@@ -396,7 +412,7 @@ body.lp {
 .cc h3 { font-size: clamp(17px, 2.3vw, 20px); margin-bottom: 9px; }
 .cc .scene { font-size: 14.5px; color: var(--ink-2); }
 .cc .scene b { color: var(--ink); font-weight: 600; }
-.cc .resp { margin-top: auto; }
+.cc > .resp { margin-top: auto; }
 .cc .why {
   margin-top: 12px; font-size: 13px; color: var(--ink-3);
   border-left: 2px solid var(--line); padding-left: 11px;
@@ -406,7 +422,7 @@ body.lp {
 @media (max-width: 760px) { .two-up { grid-template-columns: 1fr; } }
 
 /* the produces / consumes matrix, small */
-.mx { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.mx { border: 1px solid var(--line); border-radius: 6px; overflow: auto; background: var(--panel); }
 .mx table { border-collapse: collapse; width: 100%; font-size: 12px; }
 .mx th, .mx td { border-bottom: 1px solid var(--line-soft); padding: 6px 9px; text-align: left; }
 .mx thead th {
@@ -444,8 +460,8 @@ body.lp {
 .contrast div { padding: 11px 14px; border-radius: 6px; font-size: 13.5px; border: 1px solid var(--line); }
 .contrast .noise { background: var(--quiet-bg); color: var(--ink-3); }
 .contrast .signal { background: var(--indigo-bg); color: var(--ink); border-color: var(--accent); }
-.contrast .tag { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 4px; color: var(--ink-3); }
-.contrast .signal .tag { color: var(--accent); }
+.contrast .lab { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 4px; color: var(--ink-3); }
+.contrast .signal .lab { color: var(--accent); }
 
 /* ---------------------------------------------------------------- mini board */
 
@@ -557,6 +573,11 @@ body.lp {
 .lp-foot .said { font-size: 12.5px; color: var(--ink-3); max-width: 46em; }
 .lp-foot .links { display: flex; gap: 16px; font-size: 13px; color: var(--ink-3); }
 .lp-foot .links a:hover { color: var(--ink); }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 
 .skip {
   position: absolute; left: -9999px; top: 0;
