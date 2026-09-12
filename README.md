@@ -281,4 +281,8 @@ the spec this README summarizes.
 
 ## License
 
-Not chosen yet — a `LICENSE` file will land before anything is tagged.
+[Apache License 2.0](LICENSE).
+
+Permissive, so a team can run metiche inside a company without a licence review turning into a
+blocker — which matters more here than usual, because a coordination tool only works when
+*everyone* on the team installs it. Apache rather than MIT for the explicit patent grant.

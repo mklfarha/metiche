@@ -1,0 +1,20 @@
+{
+  "identifier": "metiche",
+  "go_module": "github.com/mklfarha/metiche/backend",
+  "db": "mysql",
+  "events": "disabled",
+  "proto_enabled": false,
+  "grpc_server_enabled": false,
+  "grpc_port": "9090",
+  "rest_enabled": true,
+  "http_port": "8080",
+  "auth": "disabled",
+  "dockerfile": true,
+  "helm": false,
+  "github_actions": false,
+  "monitoring": false,
+  "validation_disabled": false,
+  "custom_enabled": true,
+  "custom_dir": "app",
+  "storage_enabled": false
+}
