@@ -1,0 +1,143 @@
+# metiche-mysql — MySQL 8 on a PVC.
+#
+# THE PASSWORDS ARE NOT IN THIS FILE AND NEVER WILL BE. This chart consumes a
+# Secret that already exists in the namespace, created on the box by
+# deploy/scripts/gen-credentials.sh from a root-owned 0600 file. A chart that
+# templates a password puts it in `helm get values`, in the release Secret's
+# history, and — one careless `-f myvalues.yaml` later — in this public repo.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # Pinned to 8.0 rather than 8 or latest. 8.4 removed
+  # --default-authentication-plugin and changed several defaults; an unpinned
+  # tag turns that into an outage on whatever day the box next pulls.
+  repository: mysql
+  tag: "8.0"
+  # The only image here that comes from a registry, so IfNotPresent rather
+  # than Never. build-images.sh pre-pulls and imports it so a deploy does not
+  # depend on Docker Hub being reachable at that moment.
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# -- Database ---------------------------------------------------------------
+db:
+  # The database and the application user. Not secrets; the passwords are.
+  name: metiche
+  user: metiche
+
+# -- Credentials ------------------------------------------------------------
+# Created out-of-band. See deploy/scripts/gen-credentials.sh and
+# deploy/README.md. This chart reads it and never writes it.
+auth:
+  existingSecret: metiche-db
+  # Key names inside that Secret. They match the variable names in the
+  # root-owned credentials file on the box, so the two cannot drift.
+  rootPasswordKey: METICHE_DB_ROOT_PASSWORD
+  userPasswordKey: METICHE_DB_PASSWORD
+
+# -- Storage ----------------------------------------------------------------
+persistence:
+  enabled: true
+  # ASSUMPTION TO CHECK BEFORE RUNNING: the storage class on the box.
+  # microk8s's `hostpath-storage` addon provides "microk8s-hostpath". If the
+  # box has a default StorageClass you can set this to "" to use it.
+  # `kubectl get storageclass` settles it; deploy/scripts/preflight.sh prints it.
+  #
+  # A StorageClass is cluster-scoped: this chart REFERENCES one by name and
+  # never creates one. So is a PersistentVolume — only the namespaced PVC is
+  # created here, and the provisioner makes the PV.
+  storageClass: microk8s-hostpath
+  accessMode: ReadWriteOnce
+  size: 20Gi
+  # This is a StatefulSet with a volumeClaimTemplate, which means the PVC is
+  # NOT deleted by `helm uninstall`. That is deliberate: the one irreplaceable
+  # thing in this deployment is the data, and an uninstall typed at 2am must
+  # not be the last event in its life. Deleting it is an explicit
+  # `kubectl -n metiche delete pvc data-metiche-mysql-0`.
+  existingClaim: ""
+
+service:
+  type: ClusterIP
+  port: 3306
+
+# -- Health probes ----------------------------------------------------------
+# `mysqladmin ping` over the loopback interface, with the password read from
+# the mounted Secret file inside the probe's own shell — never from argv.
+# Anything on a command line is in /proc and in `ps` for every process in the
+# container, and it ends up in kubelet logs when a probe fails.
+probes:
+  # A first start initialises the datadir, which takes tens of seconds. The
+  # startup probe is what buys that time without making liveness lax forever.
+  startup:
+    enabled: true
+    periodSeconds: 5
+    failureThreshold: 60     # 5 minutes
+  liveness:
+    enabled: true
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 5
+  readiness:
+    enabled: true
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # Where the probe reads the root password from.
+  secretMountPath: /etc/metiche/db
+
+# -- Server configuration ---------------------------------------------------
+# Rendered into a ConfigMap and mounted at /etc/mysql/conf.d/metiche.cnf.
+# Set to "" to ship none and take the image's defaults.
+mysqlConf: |
+  [mysqld]
+  # The schema is utf8mb4 throughout (see create.sql); saying so here means a
+  # client that forgets the charset in its DSN still gets the right one.
+  character-set-server = utf8mb4
+  collation-server = utf8mb4_0900_ai_ci
+  # Every mutating call takes SELECT ... FOR UPDATE on the team row and holds
+  # it for ~5-15ms. 10s is long enough that a slow disk does not fail a call
+  # and short enough that a genuinely stuck transaction surfaces fast.
+  innodb_lock_wait_timeout = 10
+  # One process, one box: the default 151 is already generous for a pool that
+  # size, and a lower ceiling is a better failure mode than swapping.
+  max_connections = 200
+  skip_name_resolve = ON
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    # No CPU limit: see the metiche chart. Throttling the database is the
+    # worst possible place to discover CFS.
+    memory: 2Gi
+
+podAnnotations: {}
+podLabels: {}
+
+# The mysql image starts as root, fixes ownership of the datadir, then steps
+# down to the mysql user (uid 999) with gosu. Forcing runAsUser here breaks
+# that on a freshly provisioned volume. fsGroup instead, so the kubelet hands
+# the volume to the mysql group before the container starts.
+podSecurityContext:
+  fsGroup: 999
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  # false: the image writes to /var/run/mysqld and /tmp during startup.
+  readOnlyRootFilesystem: false
+
+terminationGracePeriodSeconds: 120
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false

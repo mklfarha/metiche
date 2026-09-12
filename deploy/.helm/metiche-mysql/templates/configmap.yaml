@@ -1,0 +1,14 @@
+{{- if .Values.mysqlConf }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "metiche-mysql.fullname" . }}-conf
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metiche-mysql.labels" . | nindent 4 }}
+data:
+  # Server settings only. Nothing here is or may become a credential —
+  # MySQL's own [client] password option must never appear in a ConfigMap.
+  metiche.cnf: |
+{{ .Values.mysqlConf | indent 4 }}
+{{- end }}

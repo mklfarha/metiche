@@ -1,0 +1,50 @@
+{{- if .Values.ingress.enabled -}}
+{{- $root := . -}}
+{{- $fullname := include "metiche.fullname" . -}}
+{{- range .Values.ingress.hosts }}
+{{- if has $root.Values.role (.roles | default (list "all")) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-%s" $fullname .name | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "metiche.labels" $root | nindent 4 }}
+    metiche.xyz/surface: {{ .name | quote }}
+  annotations:
+    {{- include "metiche.sseAnnotations" $root | nindent 4 }}
+    {{- if and .tls .tls.enabled $root.Values.ingress.clusterIssuer }}
+    # References a ClusterIssuer that ALREADY EXISTS on this box and is shared
+    # with the other projects on it. This chart never creates or edits one —
+    # a ClusterIssuer is cluster-scoped. cert-manager answers by creating a
+    # Certificate and its Secret inside this namespace only.
+    cert-manager.io/cluster-issuer: {{ $root.Values.ingress.clusterIssuer | quote }}
+    {{- end }}
+    {{- with $root.Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with $root.Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if and .tls .tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .host | quote }}
+      secretName: {{ .tls.secretName | quote }}
+  {{- end }}
+  rules:
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: {{ .path | default "/" }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ $root.Values.service.port }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,101 @@
+# metiche — runtime configuration overlay. TEMPLATE. COMMITTED. NO SECRETS.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT THIS FILE IS
+#
+# The image ships code/backend/metiche/config/base.yaml, which is generated on
+# every codegen run and carries `<< Database Password Here>>`-style
+# placeholders. It is committed, and it must stay a placeholder file forever.
+# The real values live in a copy of THIS file that exists only on the
+# deployment box, root-owned and chmod 600, and reaches the pod as a mounted
+# Secret. The container loads both, in order:
+#
+#   CONFIG=/root/config,/etc/metiche/config/prod.yaml
+#
+# and the second wins. That is the pattern base.yaml implies, and the whole
+# reason it is safe for this repo to be public.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW TO USE IT
+#
+# You do not copy this by hand. deploy/scripts/gen-credentials.sh renders it,
+# substituting the generated password, and creates the Kubernetes Secret from
+# the result. The real file is named prod.yaml, which the repository
+# .gitignore already refuses (`prod.yaml` ignored, `!prod.yaml.example` kept).
+#
+# If you do edit the real file by hand, on the box:
+#   sudo install -m 600 -o root -g root /dev/null /etc/metiche/prod.yaml
+#   sudo "$EDITOR" /etc/metiche/prod.yaml
+#   sudo deploy/scripts/gen-credentials.sh --secret-only
+# ─────────────────────────────────────────────────────────────────────────────
+
+ports:
+  # The generated REST server reads ports.http. The chart's Service and every
+  # probe target this; change them together or nothing resolves.
+  http: 8080
+  grpc: 9090
+
+db:
+  # ONE LIST ENTRY, FULLY SPECIFIED, ON PURPOSE.
+  #
+  # go.uber.org/config merges the files it is given, and a YAML sequence is
+  # replaced by a later file rather than merged element-wise. Supplying every
+  # field of this entry is correct under either behaviour; supplying only the
+  # password would leave the rest as literal "<< Database Host Here>>" strings
+  # if sequences are replaced, and the failure is a DSN full of angle brackets.
+  - name: metiche
+    # The in-cluster Service created by the metiche-mysql chart, in this
+    # namespace. Not a public hostname, not reachable from outside the
+    # cluster, and carries no credential of its own.
+    host: metiche-mysql
+    # QUOTED. config.DB.Port is a string field (config/config.go); an
+    # unquoted 3306 is a YAML integer and fails to decode.
+    port: "3306"
+    user: metiche
+
+    # ─── THE ONLY SECRET IN THIS FILE ───────────────────────────────────────
+    # Replaced by gen-credentials.sh with a password generated on the box and
+    # written to a root-owned file. If you are reading a copy of this file
+    # that still says __DB_PASSWORD__, it is the template and it is safe. If
+    # you are reading one that does not, it is the real config and it must
+    # never be committed, pasted, echoed, or attached to anything.
+    pswd: "__DB_PASSWORD__"
+
+    # interpolateParams=true is not optional for this workload. Without it
+    # go-sql-driver/mysql does a PREPARE/EXECUTE/CLOSE round trip per filtered
+    # query — three round trips instead of one — and the detection query runs
+    # inside the team row lock, where docs/PLAN.md's tripwire is a p99 hold
+    # over 25ms. See the comment in config/base.yaml.
+    #
+    # parseTime so DATETIME columns come back as time.Time; utf8mb4 to match
+    # the schema; UTC everywhere, because every timestamp the board renders is
+    # relative ("4m ago") and a server in local time makes that silently wrong.
+    params: "parseTime=true&interpolateParams=true&charset=utf8mb4&loc=UTC"
+    driver: "mysql"
+
+monitoring:
+  enabled: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT DOES *NOT* GO HERE
+#
+#   METICHE_ROLE       an environment variable, set by the Helm chart's
+#                      `role` value. Not config, because it decides which
+#                      surfaces the process serves and wants to be visible in
+#                      `kubectl get deploy` without decoding a Secret.
+#
+#   Per-project tuning ignore_patterns and hotspot_patterns are ROWS in the
+#                      project table, editable from the board without a
+#                      redeploy. That is deliberate (README, "Configuration").
+#
+#   Any third-party    metiche requires none. No model provider, no account,
+#   credential         no hosted service, and nothing in the coordination
+#                      package may make an outbound call. If a key ever
+#                      appears in a metiche config file, something has gone
+#                      badly wrong upstream of this file.
+#
+#   Slack/Discord      the notification_channel entity (docs/MODEL.md) keeps a
+#   webhook URLs       team's outbound webhook URL in the DATABASE, per team,
+#                      write-only from the outside. It is never configuration,
+#                      so it never appears here; and nothing in deploy/ reads,
+#                      dumps or displays a row from that table.

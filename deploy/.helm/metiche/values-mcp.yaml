@@ -1,0 +1,17 @@
+# The mcp half of the role split. NOT used by v1. See values-api.yaml.
+#
+#   helm upgrade --install metiche-mcp deploy/.helm/metiche \
+#     -n metiche -f deploy/.helm/metiche/values-mcp.yaml --set image.tag=...
+
+fullnameOverride: metiche-mcp
+role: mcp
+
+# Agent traffic is the reason to split, so this is the half that scales.
+# Safe above 1: every mutating call takes the team row lock in MySQL, so
+# correctness does not depend on there being one process (docs/PLAN.md,
+# "Races"). Browsers attached to the api release learn about these writes
+# through the 250ms database tailer.
+replicaCount: 1
+
+strategy:
+  type: RollingUpdate

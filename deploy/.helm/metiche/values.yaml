@@ -1,0 +1,272 @@
+# metiche — the Go backend.
+#
+# This chart is ONE implementation of the deployment contract in the project
+# README ("Deploy it"). It is not the blessed path: the contract is one Go
+# binary, one MySQL 8 database, two HTTP surfaces, a TLS terminator that does
+# not buffer and does not time out idle streams, and config from outside the
+# image. A VPS with systemd or a two-service docker-compose satisfies the same
+# contract. This chart is what that looks like on Kubernetes.
+#
+# NOTHING IN THIS FILE IS A SECRET, and nothing in it may ever become one.
+# The database password reaches the pod only through a Secret that is created
+# on the box by deploy/scripts/gen-credentials.sh. See deploy/README.md.
+
+# -- Release naming ---------------------------------------------------------
+nameOverride: ""
+# Set fullnameOverride when you run the api/mcp split (values-api.yaml and
+# values-mcp.yaml do), so two releases in one namespace get distinct names.
+fullnameOverride: ""
+
+# -- Role -------------------------------------------------------------------
+# METICHE_ROLE selects which surfaces this process serves.
+#
+#   all  — one process serves MCP, the web API and the SSE stream. This is v1,
+#          and it is not a compromise: with one process the in-process SSE
+#          fan-out covers 100% of writes and the database tailer never has to
+#          be the delivery path (docs/PLAN.md, "Realtime").
+#   api  — web API + SSE only.
+#   mcp  — the agent-facing MCP endpoint only.
+#
+# Splitting is a values change and a second release, not a rewrite. Do it when
+# agent load needs isolating from the board, which PLAN.md says is not yet.
+role: all
+
+replicaCount: 1
+
+# NOTE ON REPLICAS: the backend keeps an in-process SSE fan-out, and the
+# database tailer is the cross-process backstop that makes >1 replica correct
+# (app/stream/hub.go). It is still 1 here because PLAN.md's v1 target is a
+# single `all` pod. Raising this is safe for correctness and costs each browser
+# up to TailInterval (250ms) for events committed by another replica.
+
+image:
+  # Built on the box by deploy/scripts/build-images.sh and imported straight
+  # into microk8s's containerd — there is no registry in this deployment, which
+  # is why pullPolicy is Never. Point repository at a registry and set
+  # pullPolicy: IfNotPresent to use one instead.
+  repository: metiche
+  tag: ""            # "" → .Chart.AppVersion
+  pullPolicy: Never
+imagePullSecrets: []
+
+# -- Configuration ----------------------------------------------------------
+# The image ships config/base.yaml with `<< Database Host Here>>`-style
+# placeholders (it is generated, and regenerated on every codegen run). The
+# real values arrive at runtime as a Secret mounted as a file, and the loader
+# merges the two in order — later file wins.
+#
+# A mounted Secret rather than a hostPath, deliberately:
+#   * hostPath pins the pod to whichever node holds the file, silently, and
+#     the failure when it is missing is an empty config rather than an error;
+#   * a Secret is namespaced, so it cannot be read from another project's
+#     namespace on this shared box;
+#   * it is the same mechanism on a single-node microk8s and on a real
+#     cluster, so the runbook does not change if this ever moves.
+# The file still exists on the box, root-owned 0600 — it is the *source* the
+# Secret is created from, not what the pod reads.
+config:
+  # Created by deploy/scripts/gen-credentials.sh. Never by this chart: a chart
+  # that templates a password puts it in `helm get values` and in the repo.
+  secretName: metiche-config
+  key: prod.yaml
+  mountPath: /etc/metiche/config
+  # The generated image's own config directory, holding base.yaml.
+  imageConfigDir: /root/config
+  # File mode of the mounted overlay: 0400, owner read only, and the pod runs
+  # as root (see podSecurityContext below), so root is the owner.
+  #
+  # YAML reads the leading zero as octal, so this renders as `defaultMode: 256`
+  # in the manifest. 256 decimal IS 0400 octal — that is correct, not a bug,
+  # and it is written here in the form a person reads rather than the form the
+  # API stores.
+  defaultMode: 0400
+
+# Extra plain environment variables. NOT for secrets — anything here is
+# visible in `kubectl get deploy -o yaml` to everyone with namespace read.
+env: {}
+#  METICHE_LOG_LEVEL: info
+
+# Extra environment from existing Secrets/ConfigMaps in this namespace.
+envFrom: []
+#  - secretRef:
+#      name: metiche-extra
+
+service:
+  type: ClusterIP
+  port: 8080
+  # The generated REST server reads ports.http from the config; base.yaml says
+  # 8080 and prod.yaml.example keeps it there. Change both together.
+  containerPort: 8080
+
+# -- Health probes ----------------------------------------------------------
+# THE RULE: liveness must not touch the database.
+#
+# A momentary database blip — a MySQL restart, a full disk, a network hiccup —
+# must not make Kubernetes kill backend pods that are otherwise fine. Killing
+# them turns a 10-second database outage into a CrashLoopBackOff that outlives
+# it, and the SSE connections every browser holds are torn down for nothing.
+#
+# /healthz is the generated REST server's static handler (rest/server/router.go:
+# it writes {"status":"OK"} and touches nothing). That is exactly what liveness
+# wants: "is this process still serving HTTP".
+#
+# Readiness MAY check the database, and should once the backend exposes an
+# endpoint that does — pulling a pod out of the Service while its database is
+# unreachable is correct, because it has nothing useful to answer with. Until
+# then readiness points at /healthz too. Change readiness.path, not liveness.
+livenessProbe:
+  enabled: true
+  path: /healthz
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 6
+readinessProbe:
+  enabled: true
+  # Point this at a database-aware endpoint when one lands. Do NOT point
+  # livenessProbe at the same one.
+  path: /healthz
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+startupProbe:
+  # Covers a slow first start (config load, connection pool) without making
+  # livenessProbe.failureThreshold absurd.
+  enabled: true
+  path: /healthz
+  periodSeconds: 5
+  failureThreshold: 30
+
+# -- Ingress ----------------------------------------------------------------
+ingress:
+  enabled: true
+
+  # ASSUMPTION TO CHECK BEFORE RUNNING: the IngressClass name on the box.
+  # microk8s's `ingress` addon registers the class as "public"; an
+  # ingress-nginx installed from its own chart registers "nginx".
+  # `kubectl get ingressclass` settles it — deploy/scripts/preflight.sh prints it.
+  className: public
+
+  # ASSUMPTION TO CHECK: a ClusterIssuer with this name already exists on the
+  # box and is used by the other projects on it. This chart REFERENCES it and
+  # never creates one — a ClusterIssuer is cluster-scoped, and creating or
+  # editing one would reach outside the metiche namespace.
+  # Set to "" to skip the annotation entirely (bring your own certificate).
+  clusterIssuer: letsencrypt-prod
+
+  # Applied to every Ingress this chart creates, after the SSE annotations.
+  annotations: {}
+
+  # One entry → one Ingress resource, so api and mcp get their own certificate
+  # and can be moved to separate releases without re-cutting a shared object.
+  hosts:
+    - name: api
+      host: api.metiche.xyz
+      path: /
+      pathType: Prefix
+      # Which roles serve this host. An entry is rendered only if `role` above
+      # is in this list, so values-mcp.yaml does not accidentally claim
+      # api.metiche.xyz and take the hostname away from the api release.
+      roles: [all, api]
+      tls:
+        enabled: true
+        secretName: metiche-api-tls
+    - name: mcp
+      host: mcp.metiche.xyz
+      path: /
+      pathType: Prefix
+      roles: [all, mcp]
+      tls:
+        enabled: true
+        secretName: metiche-mcp-tls
+
+# -- SSE / proxy timeouts ---------------------------------------------------
+# READ THIS BEFORE CHANGING ANYTHING HERE.
+#
+# Both of these hosts carry Server-Sent Events: api.metiche.xyz serves
+# /v1/teams/{slug}/stream (app/stream/sse.go) and the MCP streamable-HTTP
+# transport on mcp.metiche.xyz streams responses the same way. An SSE response
+# is one HTTP response that never ends and that dribbles a few bytes at a time.
+#
+# nginx's defaults are wrong for that in two independent ways, and both fail
+# in a way that looks like a frontend bug:
+#
+#   proxy_buffering on (the default) makes nginx hold the response until its
+#   buffer fills, so events arrive in clumps minutes late, or never. The board
+#   renders nothing and the browser shows an open connection.
+#
+#   proxy_read_timeout / proxy_send_timeout default to 60s, so an idle stream —
+#   a team where nobody has done anything for a minute, which is most teams
+#   most of the time — is cut by the proxy. htmx's SSE extension reconnects, so
+#   what you see is a board that silently reloads every 60 seconds and loses
+#   nothing, or drops events, depending on timing. Nobody suspects the proxy.
+#
+# The project README names this as "the single most likely way to make a
+# correct deployment look broken". If you move this off ingress-nginx, the
+# equivalent knobs are Caddy's flush_interval -1, Traefik's
+# responseForwarding.flushInterval, and Envoy's per-route idle_timeout.
+sse:
+  enabled: true
+  # 1 hour. Longer than any plausible quiet period on a board; short enough
+  # that a genuinely dead connection is eventually reaped.
+  readTimeout: 3600
+  sendTimeout: 3600
+  # Request buffering off as well: the MCP transport POSTs and then streams,
+  # and a buffered request body delays the first byte of the response.
+  disableRequestBuffering: true
+
+# -- Pod -------------------------------------------------------------------
+podAnnotations: {}
+podLabels: {}
+
+# The generated image puts the binary in /root and runs it from there
+# (code/backend/metiche/Dockerfile: WORKDIR /root/, ENTRYPOINT bash -c
+# /root/metiche). /root is mode 0700 and owned by root, so forcing
+# runAsNonRoot/runAsUser here makes the container unable to execute its own
+# binary — it fails with "permission denied" and looks like a bad image.
+# So: no user override, and everything else locked down instead. If the image
+# ever moves the binary out of /root, set runAsNonRoot: true here.
+podSecurityContext: {}
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  # false because the entrypoint is `bash -c` and the config loader writes
+  # nothing but bash wants a writable /tmp. Set true and add an emptyDir at
+  # /tmp if you want it; it is not the default because an image change that
+  # needs a scratch file would then fail at 3am rather than at review.
+  readOnlyRootFilesystem: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    # No CPU limit on purpose: CFS throttling on a latency-sensitive path
+    # (detection runs inside the team row lock, and PLAN.md's tripwire is a
+    # p99 lock hold over 25ms) is a bad trade for a box with headroom.
+    memory: 512Mi
+
+# One pod, one PVC-less workload: Recreate avoids two processes briefly both
+# holding the team lock during a rollout. Switch to RollingUpdate when you run
+# more than one replica.
+strategy:
+  type: Recreate
+
+terminationGracePeriodSeconds: 30
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # The backend calls no Kubernetes API. Do not mount a token it cannot use.
+  automountServiceAccountToken: false
+
+# Extra volumes/mounts, for the rare case the config needs a companion file.
+extraVolumes: []
+extraVolumeMounts: []

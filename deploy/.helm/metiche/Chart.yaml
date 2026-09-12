@@ -1,0 +1,22 @@
+apiVersion: v2
+name: metiche
+description: |
+  The metiche Go backend — the MCP endpoint agents call and the web/API surface
+  (JSON + SSE) the board reads. One binary; METICHE_ROLE selects what it serves.
+type: application
+
+# Chart version: bumped when the templates change.
+version: 0.1.0
+# appVersion is the default image tag. deploy/scripts/build-images.sh builds a
+# content-specific tag and passes it with --set image.tag=..., so this is only
+# the fallback for a hand-run `helm install`.
+appVersion: "0.1.0"
+
+kubeVersion: ">=1.25.0-0"
+
+keywords:
+  - mcp
+  - coordination
+home: https://metiche.xyz
+sources:
+  - https://github.com/mklfarha/metiche

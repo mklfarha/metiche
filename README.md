@@ -263,21 +263,30 @@ metiche/
 
 ## Status
 
-**Early. Nothing is deployed and there are no users.** Two pieces are real:
+**Early, and there are no users.** The board is live at
+**[metiche.xyz](https://metiche.xyz)**, rendering from recorded fixtures over the real SSE
+mechanism — the seam for the live backend is one flag. The MCP endpoint is not up yet.
 
-- **`code/backend/coordination`** — path normalization, ancestor/prefix computation, glob overlap,
-  the severity matrix and its adjusters, dedupe keys, shape canonicalization and stable hashing,
-  the directional field comparison, key distance, and revision-scoped `pair_key`. Table-driven
-  tests, no database required, `go test ./...` green. It is a temporary standalone module; it
-  folds into the backend module once the generated tree exists.
-- **`code/frontend`** — the board, entanglement graph, contracts matrix, conflicts, decisions and
-  run history, rendering live from recorded fixtures over the real SSE mechanism. The seam for the
-  live backend exists and is one flag.
+What is built and tested:
 
-Not built yet: the schema and the generated backend, the MCP server and all fifteen tools, MySQL
-persistence, the TTL sweeper, the live event stream from the backend, the skill and plugin, and
-the deploy charts. The plan for every one of those is in [`docs/PLAN.md`](docs/PLAN.md), which is
-the spec this README summarizes.
+- **`app/coordination`** — path normalization, ancestor/prefix computation, glob overlap, the
+  severity matrix and its adjusters, dedupe keys, shape canonicalization and stable hashing, the
+  directional field comparison, and revision-scoped `pair_key`. Table-driven, no database needed.
+- **`app/mcp`** — the transactional core: team-row sequence lock, append-only event log,
+  idempotent verbatim replay, the response envelope, panic-safe tool wrapper, bearer auth and rate
+  limiting. Seven of the fifteen tools are registered. Proven against real MySQL: 24 concurrent
+  writers, gapless sequence, no lost update, lock-hold p99 3ms against a 25ms budget.
+- **`app/stream` + `app/webapi`** — in-process fan-out plus a 250ms database tailer, exact
+  reconnect-by-cursor, and the board's read API.
+- **`code/frontend`** — landing page, board, entanglement graph, contracts matrix, conflicts,
+  decisions, run history.
+- The schema (three published versions), the skill, the Claude Code plugin, `install.sh`, and the
+  Helm charts.
+
+Not finished: the nine detection tools that wire the tested detection functions onto the tested
+write path, the TTL and retention sweepers, accounts/invites/plans code for the v3 schema, and
+GitHub sign-in. Until those land the end-to-end loop is not closed. The plan for every one of them
+is in [`docs/PLAN.md`](docs/PLAN.md).
 
 ## License
 

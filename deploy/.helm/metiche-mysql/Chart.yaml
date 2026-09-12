@@ -1,0 +1,13 @@
+apiVersion: v2
+name: metiche-mysql
+description: |
+  MySQL 8 on a PersistentVolumeClaim — the single stateful part of metiche.
+  One instance, one database, no replication: the project's capacity analysis
+  (docs/PLAN.md, "Realtime") puts peak load at 1-5 writes/sec against a
+  ceiling near 70-200, so this is twenty to a hundred times oversized already.
+type: application
+version: 0.1.0
+appVersion: "8.0"
+kubeVersion: ">=1.25.0-0"
+sources:
+  - https://github.com/mklfarha/metiche

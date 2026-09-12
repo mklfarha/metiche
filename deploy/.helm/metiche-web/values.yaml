@@ -1,0 +1,184 @@
+# metiche-web — the board.
+#
+# code/frontend built into a single Go binary. Static assets and the fixture
+# recordings are compiled in with go:embed (code/frontend/embed.go), so there
+# is no asset volume, no sidecar and no init container: one binary, one port.
+#
+# It holds no state and needs no database. Everything it shows comes from the
+# backend's SSE stream, or — with backend.url empty — from the recordings
+# baked into the image.
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+# NOTE ON REPLICAS: each pod keeps its own in-memory fold of the event stream
+# and its own SSE subscribers. Two pods are independently correct (each opens
+# its own upstream stream and replays from its own cursor), but a browser that
+# reconnects to the OTHER pod resumes from a cursor that pod may not have
+# reached yet. One replica until that is worth solving; the board is cheap.
+
+image:
+  # Built on the box by deploy/scripts/build-images.sh from
+  # deploy/docker/metiche-web.Dockerfile with code/frontend as the context,
+  # then imported straight into microk8s's containerd. No registry, hence
+  # pullPolicy: Never.
+  repository: metiche-web
+  tag: ""            # "" → .Chart.AppVersion
+  pullPolicy: Never
+imagePullSecrets: []
+
+# -- Where the board gets its data -----------------------------------------
+# THE BACKEND ADDRESS IS CONFIGURATION, NOT A CONSTANT. It is never baked into
+# the image and never written into a template: the same image runs against a
+# local backend, a staging one, or none at all.
+backend:
+  # Leave url empty and the address is derived from the values below, which is
+  # how a normal in-cluster install works — it resolves to the backend
+  # Service in this same namespace, so nothing leaves the cluster and no
+  # public hostname is involved in the board→backend hop.
+  #
+  # Set url explicitly to point somewhere else (a backend in another
+  # namespace, or https://api.metiche.xyz if you want the hop to go out and
+  # back through the ingress, which you do not).
+  url: ""
+  # Used to derive url when it is empty. serviceName must match the metiche
+  # release's fullname — the default "metiche" is what `helm install metiche
+  # deploy/.helm/metiche` produces. With the api/mcp split this becomes
+  # "metiche-api".
+  serviceName: metiche
+  port: 8080
+  # Comma-separated team slugs, passed as -teams.
+  #
+  # The board's main.go requires an explicit list when running against a live
+  # backend (it has no team-discovery call yet), so this is the one place a
+  # real team slug has to be named. A slug is not a credential — the join code
+  # is, and it never appears here or anywhere else in deploy/.
+  teams: "demo"
+
+# -- Fixture mode ----------------------------------------------------------
+# With backend.url empty AND backend.serviceName empty, the binary gets no
+# -backend flag and replays the embedded recordings instead. That is the
+# board-only deploy: it renders a full, live-looking team with no backend and
+# no database, which is exactly what you want for a first smoke test of
+# ingress + TLS + SSE before the backend exists.
+#
+#   helm upgrade --install metiche-web ... --set backend.serviceName=""
+fixtures:
+  # Replay speed multiplier and the number of events delivered instantly on
+  # connect. Ignored unless the board is in fixture mode.
+  speed: 6
+  warmup: 30
+  loop: true
+
+# Extra flags appended verbatim to the binary's argv.
+extraArgs: []
+
+env: {}
+envFrom: []
+
+service:
+  type: ClusterIP
+  port: 80
+  containerPort: 8787
+
+# -- Health probes ----------------------------------------------------------
+# The board has no database, so the liveness/readiness split has less to say
+# here than it does for the backend — but the rule is the same and is worth
+# keeping visible: liveness answers "is this process serving HTTP" and nothing
+# else. /healthz (internal/web/server.go) reports the feed name and both
+# cursors per team from memory; it makes no outbound call, so a backend
+# outage does not get board pods killed. That is deliberate: the board is
+# still worth serving when the backend is down — it shows the last state it
+# folded and reconnects on its own.
+livenessProbe:
+  enabled: true
+  path: /healthz
+  initialDelaySeconds: 5
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 6
+readinessProbe:
+  enabled: true
+  path: /healthz
+  initialDelaySeconds: 3
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+ingress:
+  enabled: true
+  # See the metiche chart's values.yaml: "public" is the microk8s ingress
+  # addon's class, "nginx" is upstream ingress-nginx's. Check the box.
+  className: public
+  # A ClusterIssuer that already exists on the box. Referenced, never created.
+  clusterIssuer: letsencrypt-prod
+  annotations: {}
+  hosts:
+    - name: board
+      host: metiche.xyz
+      path: /
+      pathType: Prefix
+      tls:
+        enabled: true
+        secretName: metiche-web-tls
+  # Add the apex's www alias here if DNS points it at the box too:
+  #  - name: www
+  #    host: www.metiche.xyz
+  #    ...
+
+# -- SSE --------------------------------------------------------------------
+# THE BOARD'S OWN STREAM IS THE ONE USERS SEE. /t/{slug}/stream is a
+# text/event-stream held open for as long as a tab is open, carrying rendered
+# HTML fragments (two event names: `timeline` appends, `board` re-renders).
+#
+# nginx buffers proxied responses by default and cuts idle upstreams after
+# 60s. Both are fatal here and neither looks like a proxy problem: with
+# buffering on the board simply never paints, and with the 60s timeout it
+# silently reconnects every minute — htmx's SSE extension is good enough at
+# recovering that the only symptom is a flicker and the occasional missed
+# frame. Somebody will spend a day in the frontend. Do not remove these.
+sse:
+  enabled: true
+  readTimeout: 3600
+  sendTimeout: 3600
+  disableRequestBuffering: true
+
+podAnnotations: {}
+podLabels: {}
+
+# Unlike the backend image, this one is built by deploy/docker/metiche-web.Dockerfile
+# with the binary in /usr/local/bin, so it can and does run as a non-root user.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  # The board writes nothing to disk: assets are embedded and state is in
+  # memory. A read-only root filesystem costs nothing and is real containment.
+  readOnlyRootFilesystem: true
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+strategy:
+  type: RollingUpdate
+
+terminationGracePeriodSeconds: 30
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false

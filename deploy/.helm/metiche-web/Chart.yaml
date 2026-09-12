@@ -1,0 +1,13 @@
+apiVersion: v2
+name: metiche-web
+description: |
+  The metiche board — a Go binary (templ + htmx + SSE) serving embedded
+  assets. It consumes the backend's JSON SSE and re-broadcasts rendered HTML
+  fragments, so the browser does no templating.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+home: https://metiche.xyz
+sources:
+  - https://github.com/mklfarha/metiche

@@ -1,0 +1,24 @@
+# The api half of the role split. NOT used by v1.
+#
+# v1 runs ONE release with role=all, because with a single process the
+# in-process SSE fan-out covers 100% of writes (docs/PLAN.md, "Realtime").
+# This file exists so splitting agent load away from the board is a second
+# `helm upgrade --install`, not a rewrite.
+#
+#   helm upgrade --install metiche-api deploy/.helm/metiche \
+#     -n metiche -f deploy/.helm/metiche/values-api.yaml --set image.tag=...
+#
+# Deploy it together with values-mcp.yaml, and take role=all out of service
+# first — three releases would all claim the same hostnames.
+#
+# When the two roles run as separate processes, the in-process fan-out no
+# longer sees MCP writes; the 250ms database tailer becomes the delivery path
+# for them. That is the designed backstop, not a regression, but it is the
+# reason the split is not free.
+
+fullnameOverride: metiche-api
+role: api
+
+# Only api.metiche.xyz. The `roles` list on each host entry does the filtering,
+# so this release cannot accidentally take mcp.metiche.xyz away from the mcp
+# release even though it inherits both entries from values.yaml.

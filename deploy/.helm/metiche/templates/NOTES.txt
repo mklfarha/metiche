@@ -1,0 +1,27 @@
+metiche backend deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+  role          METICHE_ROLE={{ .Values.role }}
+  image         {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }} (pullPolicy {{ .Values.image.pullPolicy }})
+  config        {{ include "metiche.configPath" . }}
+                the second path is Secret/{{ .Values.config.secretName }}, key {{ .Values.config.key }}
+{{ if .Values.ingress.enabled }}
+Hostnames served by this release:
+{{- range .Values.ingress.hosts }}
+{{- if has $.Values.role (.roles | default (list "all")) }}
+  https://{{ .host }}{{ if and .tls .tls.enabled }}   (TLS secret {{ .tls.secretName }}){{ end }}
+{{- end }}
+{{- end }}
+{{ if .Values.sse.enabled }}
+SSE is on: proxy buffering is off and read/send timeouts are {{ .Values.sse.readTimeout }}s.
+If the board's stream dies after ~60s, something has overridden those annotations —
+check the rendered Ingress before looking at the frontend.
+{{- else }}
+WARNING: sse.enabled is false. The board's event stream WILL be buffered and cut
+by nginx's 60s idle default, and it will look like a frontend bug.
+{{- end }}
+{{- end }}
+
+Check it:
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "metiche.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "metiche.fullname" . }} 8080:{{ .Values.service.port }}
+  curl -s localhost:8080/healthz

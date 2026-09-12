@@ -1,0 +1,25 @@
+MySQL {{ .Values.image.tag }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+  service    {{ include "metiche-mysql.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+  database   {{ .Values.db.name }}
+  user       {{ .Values.db.user }}
+  secret     {{ .Values.auth.existingSecret }} (created out of band; not by this chart)
+{{- if .Values.persistence.enabled }}
+{{- if .Values.persistence.existingClaim }}
+  storage    existing PVC {{ .Values.persistence.existingClaim }}
+{{- else }}
+  storage    PVC data-{{ include "metiche-mysql.fullname" . }}-0, {{ .Values.persistence.size }}{{ if .Values.persistence.storageClass }}, class {{ .Values.persistence.storageClass }}{{ end }}
+             It survives `helm uninstall` on purpose. Deleting the data is:
+               kubectl -n {{ .Release.Namespace }} delete pvc data-{{ include "metiche-mysql.fullname" . }}-0
+{{- end }}
+{{- else }}
+  storage    NONE — emptyDir. Every restart loses the database.
+{{- end }}
+
+The schema is NOT applied by this chart. Run:
+  deploy/scripts/apply-schema.sh
+
+An interactive shell, with the password read from the pod's own environment
+rather than typed on a command line:
+  kubectl -n {{ .Release.Namespace }} exec -it {{ include "metiche-mysql.fullname" . }}-0 -- \
+    sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -u root {{ .Values.db.name }}'

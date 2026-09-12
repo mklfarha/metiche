@@ -1,0 +1,22 @@
+{{- $backendURL := include "metiche-web.backendURL" . -}}
+metiche board deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+  image     {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }} (pullPolicy {{ .Values.image.pullPolicy }})
+{{ if $backendURL }}  backend   {{ $backendURL }}  (teams: {{ .Values.backend.teams }})
+{{- else }}  backend   NONE — replaying the recordings embedded in the image.
+            Set backend.serviceName or backend.url to go live.
+{{- end }}
+{{ if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}{{ if and .tls .tls.enabled }}   (TLS secret {{ .tls.secretName }}){{ end }}
+{{- end }}
+{{- end }}
+
+Check it:
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "metiche-web.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "metiche-web.fullname" . }} 8787:{{ .Values.service.port }}
+  curl -s localhost:8787/healthz
+
+Prove the stream is not being buffered or cut (this must keep printing, and
+must not stop after 60 seconds):
+  curl -N https://{{ (first .Values.ingress.hosts).host }}/t/{{ (splitList "," .Values.backend.teams) | first }}/stream
