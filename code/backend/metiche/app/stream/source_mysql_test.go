@@ -69,16 +69,20 @@ func seedStreamTeam(t *testing.T, db *sql.DB) (uuid.UUID, string) {
 	teamID := newUUID(t)
 	slug := "stream-" + teamID[:8]
 
-	mustExec(t, db, "INSERT INTO `team` (`id`,`name`,`slug`,`join_code`,`sequence`,`board_revision`,`status`) VALUES (?,?,?,?,?,?,?)",
-		teamID, "Stream Test", slug, "JOINCODE-"+teamID[:4], 3, 2, 1)
+	mustExec(t, db, "INSERT INTO `team` (`id`,`name`,`slug`,`sequence`,`board_revision`,`status`) VALUES (?,?,?,?,?,?)",
+		teamID, "Stream Test", slug, 3, 2, 1)
 	t.Cleanup(func() { mustExec(t, db, "DELETE FROM `team` WHERE `id` = ?", teamID) })
 
+	accountID := newUUID(t)
+	mustExec(t, db, "INSERT INTO `account` (`id`,`key`,`display_name`,`token_hash`,`identity_provider`,`status`) VALUES (?,?,?,?,?,?)",
+		accountID, "acct-"+accountID[:8], "Ana", "not-a-real-hash", 1, 1)
+	t.Cleanup(func() { mustExec(t, db, "DELETE FROM `account` WHERE `id` = ?", accountID) })
 	memberID := newUUID(t)
-	mustExec(t, db, "INSERT INTO `member` (`id`,`team_uuid`,`key`,`display_name`,`role`,`status`) VALUES (?,?,?,?,?,?)",
-		memberID, teamID, "M-1", "Ana", 1, 1)
+	mustExec(t, db, "INSERT INTO `member` (`id`,`account_uuid`,`team_uuid`,`key`,`display_name`,`role`,`status`) VALUES (?,?,?,?,?,?,?)",
+		memberID, accountID, teamID, "M-1", "Ana", 1, 1)
 	agentID := newUUID(t)
-	mustExec(t, db, "INSERT INTO `agent` (`id`,`team_uuid`,`member_uuid`,`key`,`label`,`token_hash`,`client_key`,`status`) VALUES (?,?,?,?,?,?,?,?)",
-		agentID, teamID, memberID, "A-1", "claude-1", "not-a-real-hash", "client-1", 1)
+	mustExec(t, db, "INSERT INTO `agent` (`id`,`account_uuid`,`key`,`label`,`client_key`,`status`) VALUES (?,?,?,?,?,?)",
+		agentID, accountID, "A-1", "claude-1", "client-1", 1)
 	projectID := newUUID(t)
 	mustExec(t, db, "INSERT INTO `project` (`id`,`team_uuid`,`key`,`name`,`status`) VALUES (?,?,?,?,?)",
 		projectID, teamID, "api", "API", 1)

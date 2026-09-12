@@ -86,21 +86,40 @@ func seedBoard(t *testing.T, db *sql.DB) seeded {
 
 	teamID := newUUID(t)
 	slug := "board-" + teamID[:8]
-	mustExec(t, db, "INSERT INTO `team` (`id`,`name`,`slug`,`join_code`,`sequence`,`board_revision`,`status`) VALUES (?,?,?,?,?,?,?)",
-		teamID, "Board Demo", slug, fakeJoinCode, 42, 7, 1)
+	mustExec(t, db, "INSERT INTO `team` (`id`,`name`,`slug`,`sequence`,`board_revision`,`status`) VALUES (?,?,?,?,?,?)",
+		teamID, "Board Demo", slug, 42, 7, 1)
+	// The join code moved off `team` and onto `invite` in v3. Seed one anyway:
+	// assertNoSecrets below is only worth running if the secret it looks for is
+	// actually in the database, one join away from what these endpoints read.
+	// Deleting the secret to make the test compile would have deleted the test.
+	inviteID := newUUID(t)
+	mustExec(t, db, "INSERT INTO `invite` (`id`,`team_uuid`,`code`,`uses`,`status`) VALUES (?,?,?,?,?)",
+		inviteID, teamID, fakeJoinCode, 0, 1)
 	t.Cleanup(func() { mustExec(t, db, "DELETE FROM `team` WHERE `id` = ?", teamID) })
 
+	// v3: the token hash lives on `account`, not `agent`, and `member` is the
+	// join between an account and a team. fakeTokenHash stays on the account
+	// so assertNoSecrets still has a real secret to hunt for.
+	acctA, acctB := newUUID(t), newUUID(t)
+	mustExec(t, db, "INSERT INTO `account` (`id`,`key`,`display_name`,`token_hash`,`identity_provider`,`status`) VALUES (?,?,?,?,?,?)",
+		acctA, "acct-"+acctA[:8], "Ana", fakeTokenHash, 1, 1)
+	mustExec(t, db, "INSERT INTO `account` (`id`,`key`,`display_name`,`token_hash`,`identity_provider`,`status`) VALUES (?,?,?,?,?,?)",
+		acctB, "acct-"+acctB[:8], "Beto", fakeTokenHash, 1, 1)
+	t.Cleanup(func() {
+		mustExec(t, db, "DELETE FROM `account` WHERE `id` IN (?,?)", acctA, acctB)
+	})
+
 	ana, beto := newUUID(t), newUUID(t)
-	mustExec(t, db, "INSERT INTO `member` (`id`,`team_uuid`,`key`,`display_name`,`role`,`status`) VALUES (?,?,?,?,?,?)",
-		ana, teamID, "M-1", "Ana", 1, 1)
-	mustExec(t, db, "INSERT INTO `member` (`id`,`team_uuid`,`key`,`display_name`,`role`,`status`) VALUES (?,?,?,?,?,?)",
-		beto, teamID, "M-2", "Beto", 2, 1)
+	mustExec(t, db, "INSERT INTO `member` (`id`,`account_uuid`,`team_uuid`,`key`,`display_name`,`role`,`status`) VALUES (?,?,?,?,?,?,?)",
+		ana, acctA, teamID, "M-1", "Ana", 1, 1)
+	mustExec(t, db, "INSERT INTO `member` (`id`,`account_uuid`,`team_uuid`,`key`,`display_name`,`role`,`status`) VALUES (?,?,?,?,?,?,?)",
+		beto, acctB, teamID, "M-2", "Beto", 2, 1)
 
 	agentA, agentB := newUUID(t), newUUID(t)
-	mustExec(t, db, "INSERT INTO `agent` (`id`,`team_uuid`,`member_uuid`,`key`,`label`,`client_kind`,`token_hash`,`client_key`,`status`) VALUES (?,?,?,?,?,?,?,?,?)",
-		agentA, teamID, ana, "A-1", "claude-1", "claude-code", fakeTokenHash, "client-a", 1)
-	mustExec(t, db, "INSERT INTO `agent` (`id`,`team_uuid`,`member_uuid`,`key`,`label`,`client_kind`,`token_hash`,`client_key`,`status`) VALUES (?,?,?,?,?,?,?,?,?)",
-		agentB, teamID, beto, "A-2", "claude-2", "claude-code", fakeTokenHash, "client-b", 1)
+	mustExec(t, db, "INSERT INTO `agent` (`id`,`account_uuid`,`key`,`label`,`client_kind`,`client_key`,`status`) VALUES (?,?,?,?,?,?,?)",
+		agentA, acctA, "A-1", "claude-1", "claude-code", "client-a", 1)
+	mustExec(t, db, "INSERT INTO `agent` (`id`,`account_uuid`,`key`,`label`,`client_kind`,`client_key`,`status`) VALUES (?,?,?,?,?,?,?)",
+		agentB, acctB, "A-2", "claude-2", "claude-code", "client-b", 1)
 
 	project := newUUID(t)
 	mustExec(t, db, "INSERT INTO `project` (`id`,`team_uuid`,`key`,`name`,`status`) VALUES (?,?,?,?,?)",
