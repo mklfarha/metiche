@@ -257,6 +257,32 @@ your repo stops shouting within an afternoon.
 
 ---
 
+## Binding a repo to a team — ask, never infer
+
+One person is on several teams: a personal project and a hackathon, at least. So every
+repo has to say which team its work belongs to, and **getting that wrong is the worst
+failure this system has** — it puts private file paths, branch names and decisions on a
+board other people can read.
+
+The rule is therefore: **the agent asks, and never guesses.**
+
+- A repo declares its team in a committed `.metiche` file naming the team slug. A slug is
+  not a credential, so committing it is safe.
+- No `.metiche` and the account is on exactly one team → use it.
+- No `.metiche` and the account is on more than one → **stop and ask the person**, then
+  write the answer to `.metiche` so it is asked once per repo, not once per session.
+- **Never derive a team from the directory name**, the repo name, or the remote URL. A
+  plausible guess that is wrong is worse than a question, because nobody reviews a guess.
+
+What limits the blast radius if it still goes wrong: a slug is not access. Boards are
+private by default and reading requires membership, so a mis-bound or leaked `.metiche`
+exposes nothing to somebody who is not already in that team. The exposure that matters is
+declaring private work into a team you really are a member of, and that is precisely the
+case the question prevents.
+
+This is a skill and convention change, not a schema one: the server never reads your disk.
+The agent reads `.metiche` and passes `team_slug`.
+
 ## MCP tool surface — 15 tools
 
 Bias: collapse verbs onto few nouns. Agents pick correctly when each tool maps to something they
