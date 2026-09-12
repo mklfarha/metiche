@@ -9,34 +9,30 @@ import (
 func (e Agent) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 	return map[string]entitytypes.FieldType{
 		"id":           entitytypes.StringFieldType,
-		"team_uuid":    entitytypes.StringFieldType,
-		"member_uuid":  entitytypes.StringFieldType,
 		"key":          entitytypes.StringFieldType,
 		"label":        entitytypes.StringFieldType,
 		"client_kind":  entitytypes.StringFieldType,
-		"token_hash":   entitytypes.StringFieldType,
 		"client_key":   entitytypes.StringFieldType,
 		"status":       entitytypes.SingleEnumFieldType,
 		"last_seen_at": entitytypes.TimestampFieldType,
 		"created_at":   entitytypes.TimestampFieldType,
 		"updated_at":   entitytypes.TimestampFieldType,
+		"account_uuid": entitytypes.StringFieldType,
 	}
 }
 
 func (e Agent) OrderedFieldIdentifiers() []string {
 	res := []string{}
 	res = append(res, "id")
-	res = append(res, "team_uuid")
-	res = append(res, "member_uuid")
 	res = append(res, "key")
 	res = append(res, "label")
 	res = append(res, "client_kind")
-	res = append(res, "token_hash")
 	res = append(res, "client_key")
 	res = append(res, "status")
 	res = append(res, "last_seen_at")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "account_uuid")
 
 	return res
 }

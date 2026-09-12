@@ -17,6 +17,8 @@ func (e Member) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 		"status":       entitytypes.SingleEnumFieldType,
 		"created_at":   entitytypes.TimestampFieldType,
 		"updated_at":   entitytypes.TimestampFieldType,
+		"account_uuid": entitytypes.StringFieldType,
+		"revoked_at":   entitytypes.TimestampFieldType,
 	}
 }
 
@@ -31,6 +33,8 @@ func (e Member) OrderedFieldIdentifiers() []string {
 	res = append(res, "status")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "account_uuid")
+	res = append(res, "revoked_at")
 
 	return res
 }

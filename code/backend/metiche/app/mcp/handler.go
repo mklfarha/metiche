@@ -18,8 +18,9 @@
 //	envelope.go  the one response shape every tool returns, and the pending
 //	             counts that ride on it. That count is the entire push
 //	             mechanism: MCP cannot push.
-//	auth.go      join code -> per-agent bearer token; the middleware that
-//	             resolves a token to an agent on every request.
+//	auth.go      invite redemption -> per-ACCOUNT bearer token; the
+//	             middleware that resolves a token to an account on every
+//	             request, and the Resolved scope every work tool starts from.
 //	safetool.go  the wrapper that turns a panicking tool into a failed call
 //	             rather than a dead process.
 //	server.go    role split, tool registration, annotations.
@@ -44,14 +45,11 @@ import (
 	member_types "github.com/mklfarha/metiche/backend/core/module/member/types"
 	projectmod "github.com/mklfarha/metiche/backend/core/module/project"
 	project_types "github.com/mklfarha/metiche/backend/core/module/project/types"
-	sessionmod "github.com/mklfarha/metiche/backend/core/module/session"
-	session_types "github.com/mklfarha/metiche/backend/core/module/session/types"
 	teammod "github.com/mklfarha/metiche/backend/core/module/team"
 	team_types "github.com/mklfarha/metiche/backend/core/module/team/types"
 	agent_entity "github.com/mklfarha/metiche/backend/entity/agent"
 	member_entity "github.com/mklfarha/metiche/backend/entity/member"
 	project_entity "github.com/mklfarha/metiche/backend/entity/project"
-	session_entity "github.com/mklfarha/metiche/backend/entity/session"
 	team_entity "github.com/mklfarha/metiche/backend/entity/team"
 	"github.com/mklfarha/metiche/backend/enums"
 )
@@ -147,21 +145,21 @@ func (h *Handler) teamByID(ctx context.Context, id uuid.UUID) (team_entity.Team,
 	return res.Results[0], nil
 }
 
-func (h *Handler) teamByJoinCode(ctx context.Context, code string) (team_entity.Team, error) {
-	code = normalizeJoinCode(code)
-	if code == "" {
-		return team_entity.Team{}, errors.New("join_code is required")
+// teamBySlug resolves the readable team name a caller types instead of a
+// uuid. The answer is deliberately the same whether the slug names no team or
+// a retired one.
+func (h *Handler) teamBySlug(ctx context.Context, slug string) (team_entity.Team, error) {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" {
+		return team_entity.Team{}, errors.New("team_slug is required")
 	}
-	res, err := h.core.Team().FetchTeamByJoinCode(ctx,
-		team_types.FetchTeamByJoinCodeRequest{JoinCode: code, Limit: 1}, teammod.WithSkipCache())
+	res, err := h.core.Team().FetchTeamBySlug(ctx,
+		team_types.FetchTeamBySlugRequest{Slug: slug, Limit: 1}, teammod.WithSkipCache())
 	if err != nil {
-		return team_entity.Team{}, retryable(err, "looking up the join code")
+		return team_entity.Team{}, retryable(err, "looking up the team")
 	}
 	if len(res.Results) == 0 || res.Results[0].Status != enums.RECORD_STATUS_ACTIVE {
-		// Deliberately vague and identical for "no such code" and "retired
-		// code": a join code is a credential, and a distinguishable answer
-		// turns this tool into an oracle for enumerating teams.
-		return team_entity.Team{}, errors.New("that join code is not valid for any active team")
+		return team_entity.Team{}, fmt.Errorf("no active team with slug %q", slug)
 	}
 	return res.Results[0], nil
 }
@@ -182,13 +180,40 @@ func (h *Handler) memberByKey(ctx context.Context, tx *sql.Tx, teamUUID uuid.UUI
 	return res.Results[0], true, nil
 }
 
-func (h *Handler) agentByClientKey(ctx context.Context, tx *sql.Tx, memberUUID uuid.UUID, clientKey string) (agent_entity.Agent, bool, error) {
+// memberByAccount is the v3 lookup: `member` is the join of an account and a
+// team, unique on (account_uuid, team_uuid), so this — not the display-name
+// slug — is the identity question. memberByKey survives only for the one
+// thing the key is still for: keeping two DIFFERENT people called Ana from
+// colliding on uq_member_team_key.
+func (h *Handler) memberByAccount(ctx context.Context, tx *sql.Tx, accountUUID, teamUUID uuid.UUID) (member_entity.Member, bool, error) {
+	opts := []membermod.Option{membermod.WithSkipCache()}
+	if tx != nil {
+		opts = append(opts, membermod.WithSQLTransaction(tx))
+	}
+	res, err := h.core.Member().FetchMemberByAccountUUIDAndTeamUUID(ctx,
+		member_types.FetchMemberByAccountUUIDAndTeamUUIDRequest{
+			AccountUUID: accountUUID, TeamUUID: teamUUID, Limit: 1}, opts...)
+	if err != nil {
+		return member_entity.Member{}, false, retryable(err, "looking up your membership")
+	}
+	if len(res.Results) == 0 {
+		return member_entity.Member{}, false, nil
+	}
+	return res.Results[0], true, nil
+}
+
+// agentByClientKey finds one of an ACCOUNT's agents. v3 moved the uniqueness
+// from (member, client_key) to (account, client_key): an agent belongs to a
+// person, not to a team, so one agent process can now work across the teams
+// its person belongs to without re-joining.
+func (h *Handler) agentByClientKey(ctx context.Context, tx *sql.Tx, accountUUID uuid.UUID, clientKey string) (agent_entity.Agent, bool, error) {
 	opts := []agentmod.Option{agentmod.WithSkipCache()}
 	if tx != nil {
 		opts = append(opts, agentmod.WithSQLTransaction(tx))
 	}
-	res, err := h.core.Agent().FetchAgentByMemberUUIDAndClientKey(ctx,
-		agent_types.FetchAgentByMemberUUIDAndClientKeyRequest{MemberUUID: memberUUID, ClientKey: clientKey, Limit: 1}, opts...)
+	res, err := h.core.Agent().FetchAgentByAccountUUIDAndClientKey(ctx,
+		agent_types.FetchAgentByAccountUUIDAndClientKeyRequest{
+			AccountUUID: accountUUID, ClientKey: clientKey, Limit: 1}, opts...)
 	if err != nil {
 		return agent_entity.Agent{}, false, retryable(err, "looking up the agent")
 	}
@@ -212,34 +237,6 @@ func (h *Handler) projectByKey(ctx context.Context, tx *sql.Tx, teamUUID uuid.UU
 		return project_entity.Project{}, false, nil
 	}
 	return res.Results[0], true, nil
-}
-
-// sessionByKey resolves an agent-supplied session key, and refuses a session
-// that belongs to another agent.
-//
-// The ownership check is not paranoia: session keys are short and predictable
-// (S-7), the endpoint is public, and without it any authenticated agent on any
-// team could end any other agent's session by guessing.
-func (h *Handler) sessionByKey(ctx context.Context, ag agent_entity.Agent, key string) (session_entity.Session, error) {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return session_entity.Session{}, errors.New("session_key is required")
-	}
-	res, err := h.core.Session().FetchSessionByTeamUUIDAndKey(ctx,
-		session_types.FetchSessionByTeamUUIDAndKeyRequest{TeamUUID: ag.TeamUUID, Key: key, Limit: 1},
-		sessionmod.WithSkipCache())
-	if err != nil {
-		return session_entity.Session{}, retryable(err, "looking up the session")
-	}
-	if len(res.Results) == 0 {
-		return session_entity.Session{}, fmt.Errorf(
-			"no session with key %q on this team — call start_session first (session keys are per team and case-sensitive)", key)
-	}
-	s := res.Results[0]
-	if s.AgentUUID != ag.ID {
-		return session_entity.Session{}, fmt.Errorf("session %q belongs to another agent", key)
-	}
-	return s, nil
 }
 
 // ─────────────────────────────────────────────

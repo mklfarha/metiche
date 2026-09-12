@@ -11,8 +11,260 @@ import (
 	null "github.com/guregu/null/v6"
 )
 
+const fetchAccountByID = `-- name: FetchAccountByID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `identity_provider` + "`" + `,` + "`" + `identity_subject` + "`" + `,` + "`" + `identity_handle` + "`" + `,` + "`" + `email` + "`" + `,` + "`" + `claimed_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `account` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ?
+`
+
+// account selects:
+func (q *Queries) FetchAccountByID(ctx context.Context, id string) ([]Account, error) {
+	rows, err := q.db.QueryContext(ctx, fetchAccountByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Account
+	for rows.Next() {
+		var i Account
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.DisplayName,
+			&i.TokenHash,
+			&i.IdentityProvider,
+			&i.IdentitySubject,
+			&i.IdentityHandle,
+			&i.Email,
+			&i.ClaimedAt,
+			&i.Status,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchAccountByIDForUpdate = `-- name: FetchAccountByIDForUpdate :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `identity_provider` + "`" + `,` + "`" + `identity_subject` + "`" + `,` + "`" + `identity_handle` + "`" + `,` + "`" + `email` + "`" + `,` + "`" + `claimed_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `account` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ? 
+FOR UPDATE
+`
+
+func (q *Queries) FetchAccountByIDForUpdate(ctx context.Context, id string) ([]Account, error) {
+	rows, err := q.db.QueryContext(ctx, fetchAccountByIDForUpdate, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Account
+	for rows.Next() {
+		var i Account
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.DisplayName,
+			&i.TokenHash,
+			&i.IdentityProvider,
+			&i.IdentitySubject,
+			&i.IdentityHandle,
+			&i.Email,
+			&i.ClaimedAt,
+			&i.Status,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchAccountByIdentityProviderAndIdentitySubject = `-- name: FetchAccountByIdentityProviderAndIdentitySubject :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `identity_provider` + "`" + `,` + "`" + `identity_subject` + "`" + `,` + "`" + `identity_handle` + "`" + `,` + "`" + `email` + "`" + `,` + "`" + `claimed_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `account` + "`" + `
+WHERE 
+    ` + "`" + `identity_provider` + "`" + ` = ? AND ` + "`" + `identity_subject` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchAccountByIdentityProviderAndIdentitySubjectParams struct {
+	IdentityProvider int64       `json:"identity_provider"`
+	IdentitySubject  null.String `json:"identity_subject"`
+	Offset           int32       `json:"offset"`
+	Limit            int32       `json:"limit"`
+}
+
+func (q *Queries) FetchAccountByIdentityProviderAndIdentitySubject(ctx context.Context, arg FetchAccountByIdentityProviderAndIdentitySubjectParams) ([]Account, error) {
+	rows, err := q.db.QueryContext(ctx, fetchAccountByIdentityProviderAndIdentitySubject,
+		arg.IdentityProvider,
+		arg.IdentitySubject,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Account
+	for rows.Next() {
+		var i Account
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.DisplayName,
+			&i.TokenHash,
+			&i.IdentityProvider,
+			&i.IdentitySubject,
+			&i.IdentityHandle,
+			&i.Email,
+			&i.ClaimedAt,
+			&i.Status,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchAccountByKey = `-- name: FetchAccountByKey :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `identity_provider` + "`" + `,` + "`" + `identity_subject` + "`" + `,` + "`" + `identity_handle` + "`" + `,` + "`" + `email` + "`" + `,` + "`" + `claimed_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `account` + "`" + `
+WHERE 
+    ` + "`" + `key` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchAccountByKeyParams struct {
+	Key    string `json:"key"`
+	Offset int32  `json:"offset"`
+	Limit  int32  `json:"limit"`
+}
+
+func (q *Queries) FetchAccountByKey(ctx context.Context, arg FetchAccountByKeyParams) ([]Account, error) {
+	rows, err := q.db.QueryContext(ctx, fetchAccountByKey, arg.Key, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Account
+	for rows.Next() {
+		var i Account
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.DisplayName,
+			&i.TokenHash,
+			&i.IdentityProvider,
+			&i.IdentitySubject,
+			&i.IdentityHandle,
+			&i.Email,
+			&i.ClaimedAt,
+			&i.Status,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchAgentByAccountUUIDAndClientKey = `-- name: FetchAgentByAccountUUIDAndClientKey :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `
+FROM ` + "`" + `agent` + "`" + `
+WHERE 
+    ` + "`" + `account_uuid` + "`" + ` = ? AND ` + "`" + `client_key` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchAgentByAccountUUIDAndClientKeyParams struct {
+	AccountUUID string `json:"account_uuid"`
+	ClientKey   string `json:"client_key"`
+	Offset      int32  `json:"offset"`
+	Limit       int32  `json:"limit"`
+}
+
+func (q *Queries) FetchAgentByAccountUUIDAndClientKey(ctx context.Context, arg FetchAgentByAccountUUIDAndClientKeyParams) ([]Agent, error) {
+	rows, err := q.db.QueryContext(ctx, fetchAgentByAccountUUIDAndClientKey,
+		arg.AccountUUID,
+		arg.ClientKey,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Agent
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Label,
+			&i.ClientKind,
+			&i.ClientKey,
+			&i.Status,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AccountUUID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchAgentByID = `-- name: FetchAgentByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `
 FROM ` + "`" + `agent` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -30,17 +282,15 @@ func (q *Queries) FetchAgentByID(ctx context.Context, id string) ([]Agent, error
 		var i Agent
 		if err := rows.Scan(
 			&i.ID,
-			&i.TeamUUID,
-			&i.MemberUUID,
 			&i.Key,
 			&i.Label,
 			&i.ClientKind,
-			&i.TokenHash,
 			&i.ClientKey,
 			&i.Status,
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AccountUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -56,7 +306,7 @@ func (q *Queries) FetchAgentByID(ctx context.Context, id string) ([]Agent, error
 }
 
 const fetchAgentByIDForUpdate = `-- name: FetchAgentByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `
 FROM ` + "`" + `agent` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -74,73 +324,15 @@ func (q *Queries) FetchAgentByIDForUpdate(ctx context.Context, id string) ([]Age
 		var i Agent
 		if err := rows.Scan(
 			&i.ID,
-			&i.TeamUUID,
-			&i.MemberUUID,
 			&i.Key,
 			&i.Label,
 			&i.ClientKind,
-			&i.TokenHash,
 			&i.ClientKey,
 			&i.Status,
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const fetchAgentByMemberUUIDAndClientKey = `-- name: FetchAgentByMemberUUIDAndClientKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
-FROM ` + "`" + `agent` + "`" + `
-WHERE 
-    ` + "`" + `client_key` + "`" + ` = ? AND ` + "`" + `member_uuid` + "`" + ` = ? 
-LIMIT ?, ?
-`
-
-type FetchAgentByMemberUUIDAndClientKeyParams struct {
-	ClientKey  string `json:"client_key"`
-	MemberUUID string `json:"member_uuid"`
-	Offset     int32  `json:"offset"`
-	Limit      int32  `json:"limit"`
-}
-
-func (q *Queries) FetchAgentByMemberUUIDAndClientKey(ctx context.Context, arg FetchAgentByMemberUUIDAndClientKeyParams) ([]Agent, error) {
-	rows, err := q.db.QueryContext(ctx, fetchAgentByMemberUUIDAndClientKey,
-		arg.ClientKey,
-		arg.MemberUUID,
-		arg.Offset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Agent
-	for rows.Next() {
-		var i Agent
-		if err := rows.Scan(
-			&i.ID,
-			&i.TeamUUID,
-			&i.MemberUUID,
-			&i.Key,
-			&i.Label,
-			&i.ClientKind,
-			&i.TokenHash,
-			&i.ClientKey,
-			&i.Status,
-			&i.LastSeenAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.AccountUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -2247,7 +2439,7 @@ func (q *Queries) FetchDecisionTokenByTeamUUIDAndToken(ctx context.Context, arg 
 }
 
 const fetchInstructionByID = `-- name: FetchInstructionByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `target_member_uuid` + "`" + `
 FROM ` + "`" + `instruction` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -2284,6 +2476,7 @@ func (q *Queries) FetchInstructionByID(ctx context.Context, id string) ([]Instru
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TargetMemberUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -2299,7 +2492,7 @@ func (q *Queries) FetchInstructionByID(ctx context.Context, id string) ([]Instru
 }
 
 const fetchInstructionByIDForUpdate = `-- name: FetchInstructionByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `target_member_uuid` + "`" + `
 FROM ` + "`" + `instruction` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -2336,6 +2529,72 @@ func (q *Queries) FetchInstructionByIDForUpdate(ctx context.Context, id string) 
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TargetMemberUUID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchInstructionByTargetMemberUUIDAndStatus = `-- name: FetchInstructionByTargetMemberUUIDAndStatus :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `target_member_uuid` + "`" + `
+FROM ` + "`" + `instruction` + "`" + `
+WHERE 
+    ` + "`" + `status` + "`" + ` = ? AND ` + "`" + `target_member_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchInstructionByTargetMemberUUIDAndStatusParams struct {
+	Status           int64       `json:"status"`
+	TargetMemberUUID null.String `json:"target_member_uuid"`
+	Offset           int32       `json:"offset"`
+	Limit            int32       `json:"limit"`
+}
+
+func (q *Queries) FetchInstructionByTargetMemberUUIDAndStatus(ctx context.Context, arg FetchInstructionByTargetMemberUUIDAndStatusParams) ([]Instruction, error) {
+	rows, err := q.db.QueryContext(ctx, fetchInstructionByTargetMemberUUIDAndStatus,
+		arg.Status,
+		arg.TargetMemberUUID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Instruction
+	for rows.Next() {
+		var i Instruction
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.TargetSessionUUID,
+			&i.TargetAgentUUID,
+			&i.Key,
+			&i.Source,
+			&i.Kind,
+			&i.Body,
+			&i.RefKind,
+			&i.RefUUID,
+			&i.RequiresReport,
+			&i.Status,
+			&i.RaisedByMemberUUID,
+			&i.DeliveredAt,
+			&i.ActedAt,
+			&i.Action,
+			&i.ActionNote,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TargetMemberUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -2351,7 +2610,7 @@ func (q *Queries) FetchInstructionByIDForUpdate(ctx context.Context, id string) 
 }
 
 const fetchInstructionByTargetSessionUUIDAndStatus = `-- name: FetchInstructionByTargetSessionUUIDAndStatus :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `target_member_uuid` + "`" + `
 FROM ` + "`" + `instruction` + "`" + `
 WHERE 
     ` + "`" + `status` + "`" + ` = ? AND ` + "`" + `target_session_uuid` + "`" + ` = ? 
@@ -2400,6 +2659,7 @@ func (q *Queries) FetchInstructionByTargetSessionUUIDAndStatus(ctx context.Conte
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TargetMemberUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -2415,7 +2675,7 @@ func (q *Queries) FetchInstructionByTargetSessionUUIDAndStatus(ctx context.Conte
 }
 
 const fetchInstructionByTeamUUIDAndKey = `-- name: FetchInstructionByTeamUUIDAndKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `target_member_uuid` + "`" + `
 FROM ` + "`" + `instruction` + "`" + `
 WHERE 
     ` + "`" + `key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -2464,6 +2724,7 @@ func (q *Queries) FetchInstructionByTeamUUIDAndKey(ctx context.Context, arg Fetc
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TargetMemberUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -2896,6 +3157,208 @@ func (q *Queries) FetchIntentTokenByProjectUUIDAndToken(ctx context.Context, arg
 	return items, nil
 }
 
+const fetchInviteByCode = `-- name: FetchInviteByCode :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `code` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `max_uses` + "`" + `,` + "`" + `uses` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `revoked_by_member_uuid` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_used_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `invite` + "`" + `
+WHERE 
+    ` + "`" + `code` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchInviteByCodeParams struct {
+	Code   string `json:"code"`
+	Offset int32  `json:"offset"`
+	Limit  int32  `json:"limit"`
+}
+
+func (q *Queries) FetchInviteByCode(ctx context.Context, arg FetchInviteByCodeParams) ([]Invite, error) {
+	rows, err := q.db.QueryContext(ctx, fetchInviteByCode, arg.Code, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Invite
+	for rows.Next() {
+		var i Invite
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.Code,
+			&i.Label,
+			&i.CreatedByMemberUUID,
+			&i.MaxUses,
+			&i.Uses,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedByMemberUUID,
+			&i.Status,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchInviteByID = `-- name: FetchInviteByID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `code` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `max_uses` + "`" + `,` + "`" + `uses` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `revoked_by_member_uuid` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_used_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `invite` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ?
+`
+
+// invite selects:
+func (q *Queries) FetchInviteByID(ctx context.Context, id string) ([]Invite, error) {
+	rows, err := q.db.QueryContext(ctx, fetchInviteByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Invite
+	for rows.Next() {
+		var i Invite
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.Code,
+			&i.Label,
+			&i.CreatedByMemberUUID,
+			&i.MaxUses,
+			&i.Uses,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedByMemberUUID,
+			&i.Status,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchInviteByIDForUpdate = `-- name: FetchInviteByIDForUpdate :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `code` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `max_uses` + "`" + `,` + "`" + `uses` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `revoked_by_member_uuid` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_used_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `invite` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ? 
+FOR UPDATE
+`
+
+func (q *Queries) FetchInviteByIDForUpdate(ctx context.Context, id string) ([]Invite, error) {
+	rows, err := q.db.QueryContext(ctx, fetchInviteByIDForUpdate, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Invite
+	for rows.Next() {
+		var i Invite
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.Code,
+			&i.Label,
+			&i.CreatedByMemberUUID,
+			&i.MaxUses,
+			&i.Uses,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedByMemberUUID,
+			&i.Status,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchInviteByTeamUUIDAndStatus = `-- name: FetchInviteByTeamUUIDAndStatus :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `code` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `max_uses` + "`" + `,` + "`" + `uses` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `revoked_by_member_uuid` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_used_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `invite` + "`" + `
+WHERE 
+    ` + "`" + `status` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchInviteByTeamUUIDAndStatusParams struct {
+	Status   int64  `json:"status"`
+	TeamUUID string `json:"team_uuid"`
+	Offset   int32  `json:"offset"`
+	Limit    int32  `json:"limit"`
+}
+
+func (q *Queries) FetchInviteByTeamUUIDAndStatus(ctx context.Context, arg FetchInviteByTeamUUIDAndStatusParams) ([]Invite, error) {
+	rows, err := q.db.QueryContext(ctx, fetchInviteByTeamUUIDAndStatus,
+		arg.Status,
+		arg.TeamUUID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Invite
+	for rows.Next() {
+		var i Invite
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.Code,
+			&i.Label,
+			&i.CreatedByMemberUUID,
+			&i.MaxUses,
+			&i.Uses,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedByMemberUUID,
+			&i.Status,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchJudgementByID = `-- name: FetchJudgementByID :many
 SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
 FROM ` + "`" + `judgement` + "`" + `
@@ -3132,8 +3595,207 @@ func (q *Queries) FetchJudgementByTeamUUIDAndPairKey(ctx context.Context, arg Fe
 	return items, nil
 }
 
+const fetchLimitEventByID = `-- name: FetchLimitEventByID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `plan_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `dimension` + "`" + `,` + "`" + `observed` + "`" + `,` + "`" + `allowed` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `note` + "`" + `,` + "`" + `occurred_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `limit_event` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ?
+`
+
+// limit_event selects:
+func (q *Queries) FetchLimitEventByID(ctx context.Context, id string) ([]LimitEvent, error) {
+	rows, err := q.db.QueryContext(ctx, fetchLimitEventByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LimitEvent
+	for rows.Next() {
+		var i LimitEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.PlanUUID,
+			&i.SessionUUID,
+			&i.Dimension,
+			&i.Observed,
+			&i.Allowed,
+			&i.Outcome,
+			&i.Note,
+			&i.OccurredAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchLimitEventByIDForUpdate = `-- name: FetchLimitEventByIDForUpdate :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `plan_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `dimension` + "`" + `,` + "`" + `observed` + "`" + `,` + "`" + `allowed` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `note` + "`" + `,` + "`" + `occurred_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `limit_event` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ? 
+FOR UPDATE
+`
+
+func (q *Queries) FetchLimitEventByIDForUpdate(ctx context.Context, id string) ([]LimitEvent, error) {
+	rows, err := q.db.QueryContext(ctx, fetchLimitEventByIDForUpdate, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LimitEvent
+	for rows.Next() {
+		var i LimitEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.PlanUUID,
+			&i.SessionUUID,
+			&i.Dimension,
+			&i.Observed,
+			&i.Allowed,
+			&i.Outcome,
+			&i.Note,
+			&i.OccurredAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchLimitEventByTeamUUIDAndDimension = `-- name: FetchLimitEventByTeamUUIDAndDimension :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `plan_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `dimension` + "`" + `,` + "`" + `observed` + "`" + `,` + "`" + `allowed` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `note` + "`" + `,` + "`" + `occurred_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `limit_event` + "`" + `
+WHERE 
+    ` + "`" + `dimension` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchLimitEventByTeamUUIDAndDimensionParams struct {
+	Dimension string `json:"dimension"`
+	TeamUUID  string `json:"team_uuid"`
+	Offset    int32  `json:"offset"`
+	Limit     int32  `json:"limit"`
+}
+
+func (q *Queries) FetchLimitEventByTeamUUIDAndDimension(ctx context.Context, arg FetchLimitEventByTeamUUIDAndDimensionParams) ([]LimitEvent, error) {
+	rows, err := q.db.QueryContext(ctx, fetchLimitEventByTeamUUIDAndDimension,
+		arg.Dimension,
+		arg.TeamUUID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LimitEvent
+	for rows.Next() {
+		var i LimitEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.PlanUUID,
+			&i.SessionUUID,
+			&i.Dimension,
+			&i.Observed,
+			&i.Allowed,
+			&i.Outcome,
+			&i.Note,
+			&i.OccurredAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchMemberByAccountUUIDAndTeamUUID = `-- name: FetchMemberByAccountUUIDAndTeamUUID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `revoked_at` + "`" + `
+FROM ` + "`" + `member` + "`" + `
+WHERE 
+    ` + "`" + `account_uuid` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchMemberByAccountUUIDAndTeamUUIDParams struct {
+	AccountUUID string `json:"account_uuid"`
+	TeamUUID    string `json:"team_uuid"`
+	Offset      int32  `json:"offset"`
+	Limit       int32  `json:"limit"`
+}
+
+func (q *Queries) FetchMemberByAccountUUIDAndTeamUUID(ctx context.Context, arg FetchMemberByAccountUUIDAndTeamUUIDParams) ([]Member, error) {
+	rows, err := q.db.QueryContext(ctx, fetchMemberByAccountUUIDAndTeamUUID,
+		arg.AccountUUID,
+		arg.TeamUUID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Member
+	for rows.Next() {
+		var i Member
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.Key,
+			&i.DisplayName,
+			&i.Role,
+			&i.LastSeenAt,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AccountUUID,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchMemberByID = `-- name: FetchMemberByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `revoked_at` + "`" + `
 FROM ` + "`" + `member` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -3159,6 +3821,8 @@ func (q *Queries) FetchMemberByID(ctx context.Context, id string) ([]Member, err
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AccountUUID,
+			&i.RevokedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -3174,7 +3838,7 @@ func (q *Queries) FetchMemberByID(ctx context.Context, id string) ([]Member, err
 }
 
 const fetchMemberByIDForUpdate = `-- name: FetchMemberByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `revoked_at` + "`" + `
 FROM ` + "`" + `member` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -3200,6 +3864,8 @@ func (q *Queries) FetchMemberByIDForUpdate(ctx context.Context, id string) ([]Me
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AccountUUID,
+			&i.RevokedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -3215,7 +3881,7 @@ func (q *Queries) FetchMemberByIDForUpdate(ctx context.Context, id string) ([]Me
 }
 
 const fetchMemberByTeamUUIDAndKey = `-- name: FetchMemberByTeamUUIDAndKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `revoked_at` + "`" + `
 FROM ` + "`" + `member` + "`" + `
 WHERE 
     ` + "`" + `key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -3250,6 +3916,435 @@ func (q *Queries) FetchMemberByTeamUUIDAndKey(ctx context.Context, arg FetchMemb
 			&i.DisplayName,
 			&i.Role,
 			&i.LastSeenAt,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AccountUUID,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchNotificationChannelByID = `-- name: FetchNotificationChannelByID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `target_url` + "`" + `,` + "`" + `min_severity` + "`" + `,` + "`" + `notify_human_requests` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `delivery_status` + "`" + `,` + "`" + `consecutive_failures` + "`" + `,` + "`" + `last_attempt_at` + "`" + `,` + "`" + `last_success_at` + "`" + `,` + "`" + `last_error` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `notification_channel` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ?
+`
+
+// notification_channel selects:
+func (q *Queries) FetchNotificationChannelByID(ctx context.Context, id string) ([]NotificationChannel, error) {
+	rows, err := q.db.QueryContext(ctx, fetchNotificationChannelByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NotificationChannel
+	for rows.Next() {
+		var i NotificationChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.ProjectUUID,
+			&i.Key,
+			&i.Kind,
+			&i.Label,
+			&i.TargetURL,
+			&i.MinSeverity,
+			&i.NotifyHumanRequests,
+			&i.Status,
+			&i.DeliveryStatus,
+			&i.ConsecutiveFailures,
+			&i.LastAttemptAt,
+			&i.LastSuccessAt,
+			&i.LastError,
+			&i.CreatedByMemberUUID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchNotificationChannelByIDForUpdate = `-- name: FetchNotificationChannelByIDForUpdate :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `target_url` + "`" + `,` + "`" + `min_severity` + "`" + `,` + "`" + `notify_human_requests` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `delivery_status` + "`" + `,` + "`" + `consecutive_failures` + "`" + `,` + "`" + `last_attempt_at` + "`" + `,` + "`" + `last_success_at` + "`" + `,` + "`" + `last_error` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `notification_channel` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ? 
+FOR UPDATE
+`
+
+func (q *Queries) FetchNotificationChannelByIDForUpdate(ctx context.Context, id string) ([]NotificationChannel, error) {
+	rows, err := q.db.QueryContext(ctx, fetchNotificationChannelByIDForUpdate, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NotificationChannel
+	for rows.Next() {
+		var i NotificationChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.ProjectUUID,
+			&i.Key,
+			&i.Kind,
+			&i.Label,
+			&i.TargetURL,
+			&i.MinSeverity,
+			&i.NotifyHumanRequests,
+			&i.Status,
+			&i.DeliveryStatus,
+			&i.ConsecutiveFailures,
+			&i.LastAttemptAt,
+			&i.LastSuccessAt,
+			&i.LastError,
+			&i.CreatedByMemberUUID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchNotificationChannelByTeamUUIDAndKey = `-- name: FetchNotificationChannelByTeamUUIDAndKey :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `target_url` + "`" + `,` + "`" + `min_severity` + "`" + `,` + "`" + `notify_human_requests` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `delivery_status` + "`" + `,` + "`" + `consecutive_failures` + "`" + `,` + "`" + `last_attempt_at` + "`" + `,` + "`" + `last_success_at` + "`" + `,` + "`" + `last_error` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `notification_channel` + "`" + `
+WHERE 
+    ` + "`" + `key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchNotificationChannelByTeamUUIDAndKeyParams struct {
+	Key      string `json:"key"`
+	TeamUUID string `json:"team_uuid"`
+	Offset   int32  `json:"offset"`
+	Limit    int32  `json:"limit"`
+}
+
+func (q *Queries) FetchNotificationChannelByTeamUUIDAndKey(ctx context.Context, arg FetchNotificationChannelByTeamUUIDAndKeyParams) ([]NotificationChannel, error) {
+	rows, err := q.db.QueryContext(ctx, fetchNotificationChannelByTeamUUIDAndKey,
+		arg.Key,
+		arg.TeamUUID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NotificationChannel
+	for rows.Next() {
+		var i NotificationChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.ProjectUUID,
+			&i.Key,
+			&i.Kind,
+			&i.Label,
+			&i.TargetURL,
+			&i.MinSeverity,
+			&i.NotifyHumanRequests,
+			&i.Status,
+			&i.DeliveryStatus,
+			&i.ConsecutiveFailures,
+			&i.LastAttemptAt,
+			&i.LastSuccessAt,
+			&i.LastError,
+			&i.CreatedByMemberUUID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchNotificationChannelByTeamUUIDAndStatusAndDeliveryStatus = `-- name: FetchNotificationChannelByTeamUUIDAndStatusAndDeliveryStatus :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `target_url` + "`" + `,` + "`" + `min_severity` + "`" + `,` + "`" + `notify_human_requests` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `delivery_status` + "`" + `,` + "`" + `consecutive_failures` + "`" + `,` + "`" + `last_attempt_at` + "`" + `,` + "`" + `last_success_at` + "`" + `,` + "`" + `last_error` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `notification_channel` + "`" + `
+WHERE 
+    ` + "`" + `delivery_status` + "`" + ` = ? AND ` + "`" + `status` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchNotificationChannelByTeamUUIDAndStatusAndDeliveryStatusParams struct {
+	DeliveryStatus int64  `json:"delivery_status"`
+	Status         int64  `json:"status"`
+	TeamUUID       string `json:"team_uuid"`
+	Offset         int32  `json:"offset"`
+	Limit          int32  `json:"limit"`
+}
+
+func (q *Queries) FetchNotificationChannelByTeamUUIDAndStatusAndDeliveryStatus(ctx context.Context, arg FetchNotificationChannelByTeamUUIDAndStatusAndDeliveryStatusParams) ([]NotificationChannel, error) {
+	rows, err := q.db.QueryContext(ctx, fetchNotificationChannelByTeamUUIDAndStatusAndDeliveryStatus,
+		arg.DeliveryStatus,
+		arg.Status,
+		arg.TeamUUID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NotificationChannel
+	for rows.Next() {
+		var i NotificationChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.ProjectUUID,
+			&i.Key,
+			&i.Kind,
+			&i.Label,
+			&i.TargetURL,
+			&i.MinSeverity,
+			&i.NotifyHumanRequests,
+			&i.Status,
+			&i.DeliveryStatus,
+			&i.ConsecutiveFailures,
+			&i.LastAttemptAt,
+			&i.LastSuccessAt,
+			&i.LastError,
+			&i.CreatedByMemberUUID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchPlanByID = `-- name: FetchPlanByID :many
+
+
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `description` + "`" + `,` + "`" + `max_concurrent_agents` + "`" + `,` + "`" + `retention_days` + "`" + `,` + "`" + `max_members` + "`" + `,` + "`" + `max_projects` + "`" + `,` + "`" + `is_instance_default` + "`" + `,` + "`" + `sort_order` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `plan` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ?
+`
+
+// Code generated by nuzur go-code-gen. DO NOT EDIT.
+// plan selects:
+func (q *Queries) FetchPlanByID(ctx context.Context, id string) ([]Plan, error) {
+	rows, err := q.db.QueryContext(ctx, fetchPlanByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Name,
+			&i.Description,
+			&i.MaxConcurrentAgents,
+			&i.RetentionDays,
+			&i.MaxMembers,
+			&i.MaxProjects,
+			&i.IsInstanceDefault,
+			&i.SortOrder,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchPlanByIDForUpdate = `-- name: FetchPlanByIDForUpdate :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `description` + "`" + `,` + "`" + `max_concurrent_agents` + "`" + `,` + "`" + `retention_days` + "`" + `,` + "`" + `max_members` + "`" + `,` + "`" + `max_projects` + "`" + `,` + "`" + `is_instance_default` + "`" + `,` + "`" + `sort_order` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `plan` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ? 
+FOR UPDATE
+`
+
+func (q *Queries) FetchPlanByIDForUpdate(ctx context.Context, id string) ([]Plan, error) {
+	rows, err := q.db.QueryContext(ctx, fetchPlanByIDForUpdate, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Name,
+			&i.Description,
+			&i.MaxConcurrentAgents,
+			&i.RetentionDays,
+			&i.MaxMembers,
+			&i.MaxProjects,
+			&i.IsInstanceDefault,
+			&i.SortOrder,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchPlanByIsInstanceDefaultAndStatus = `-- name: FetchPlanByIsInstanceDefaultAndStatus :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `description` + "`" + `,` + "`" + `max_concurrent_agents` + "`" + `,` + "`" + `retention_days` + "`" + `,` + "`" + `max_members` + "`" + `,` + "`" + `max_projects` + "`" + `,` + "`" + `is_instance_default` + "`" + `,` + "`" + `sort_order` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `plan` + "`" + `
+WHERE 
+    ` + "`" + `is_instance_default` + "`" + ` = ? AND ` + "`" + `status` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchPlanByIsInstanceDefaultAndStatusParams struct {
+	IsInstanceDefault bool  `json:"is_instance_default"`
+	Status            int64 `json:"status"`
+	Offset            int32 `json:"offset"`
+	Limit             int32 `json:"limit"`
+}
+
+func (q *Queries) FetchPlanByIsInstanceDefaultAndStatus(ctx context.Context, arg FetchPlanByIsInstanceDefaultAndStatusParams) ([]Plan, error) {
+	rows, err := q.db.QueryContext(ctx, fetchPlanByIsInstanceDefaultAndStatus,
+		arg.IsInstanceDefault,
+		arg.Status,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Name,
+			&i.Description,
+			&i.MaxConcurrentAgents,
+			&i.RetentionDays,
+			&i.MaxMembers,
+			&i.MaxProjects,
+			&i.IsInstanceDefault,
+			&i.SortOrder,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchPlanByKey = `-- name: FetchPlanByKey :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `description` + "`" + `,` + "`" + `max_concurrent_agents` + "`" + `,` + "`" + `retention_days` + "`" + `,` + "`" + `max_members` + "`" + `,` + "`" + `max_projects` + "`" + `,` + "`" + `is_instance_default` + "`" + `,` + "`" + `sort_order` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `plan` + "`" + `
+WHERE 
+    ` + "`" + `key` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchPlanByKeyParams struct {
+	Key    string `json:"key"`
+	Offset int32  `json:"offset"`
+	Limit  int32  `json:"limit"`
+}
+
+func (q *Queries) FetchPlanByKey(ctx context.Context, arg FetchPlanByKeyParams) ([]Plan, error) {
+	rows, err := q.db.QueryContext(ctx, fetchPlanByKey, arg.Key, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Name,
+			&i.Description,
+			&i.MaxConcurrentAgents,
+			&i.RetentionDays,
+			&i.MaxMembers,
+			&i.MaxProjects,
+			&i.IsInstanceDefault,
+			&i.SortOrder,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -3711,15 +4806,12 @@ func (q *Queries) FetchSessionByTeamUUIDAndStatus(ctx context.Context, arg Fetch
 }
 
 const fetchTeamByID = `-- name: FetchTeamByID :many
-
-
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `join_code` + "`" + `,` + "`" + `join_code_rotated_at` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `plan_uuid` + "`" + `,` + "`" + `plan_source` + "`" + `,` + "`" + `plan_granted_reason` + "`" + `,` + "`" + `plan_expires_at` + "`" + `,` + "`" + `retention_floor_sequence` + "`" + `,` + "`" + `last_retention_sweep_at` + "`" + `,` + "`" + `visibility` + "`" + `,` + "`" + `requires_claimed_accounts` + "`" + `
 FROM ` + "`" + `team` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
 `
 
-// Code generated by nuzur go-code-gen. DO NOT EDIT.
 // team selects:
 func (q *Queries) FetchTeamByID(ctx context.Context, id string) ([]Team, error) {
 	rows, err := q.db.QueryContext(ctx, fetchTeamByID, id)
@@ -3734,14 +4826,20 @@ func (q *Queries) FetchTeamByID(ctx context.Context, id string) ([]Team, error) 
 			&i.ID,
 			&i.Name,
 			&i.Slug,
-			&i.JoinCode,
-			&i.JoinCodeRotatedAt,
 			&i.Sequence,
 			&i.BoardRevision,
 			&i.Settings,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PlanUUID,
+			&i.PlanSource,
+			&i.PlanGrantedReason,
+			&i.PlanExpiresAt,
+			&i.RetentionFloorSequence,
+			&i.LastRetentionSweepAt,
+			&i.Visibility,
+			&i.RequiresClaimedAccounts,
 		); err != nil {
 			return nil, err
 		}
@@ -3757,7 +4855,7 @@ func (q *Queries) FetchTeamByID(ctx context.Context, id string) ([]Team, error) 
 }
 
 const fetchTeamByIDForUpdate = `-- name: FetchTeamByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `join_code` + "`" + `,` + "`" + `join_code_rotated_at` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `plan_uuid` + "`" + `,` + "`" + `plan_source` + "`" + `,` + "`" + `plan_granted_reason` + "`" + `,` + "`" + `plan_expires_at` + "`" + `,` + "`" + `retention_floor_sequence` + "`" + `,` + "`" + `last_retention_sweep_at` + "`" + `,` + "`" + `visibility` + "`" + `,` + "`" + `requires_claimed_accounts` + "`" + `
 FROM ` + "`" + `team` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -3777,63 +4875,20 @@ func (q *Queries) FetchTeamByIDForUpdate(ctx context.Context, id string) ([]Team
 			&i.ID,
 			&i.Name,
 			&i.Slug,
-			&i.JoinCode,
-			&i.JoinCodeRotatedAt,
 			&i.Sequence,
 			&i.BoardRevision,
 			&i.Settings,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const fetchTeamByJoinCode = `-- name: FetchTeamByJoinCode :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `join_code` + "`" + `,` + "`" + `join_code_rotated_at` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
-FROM ` + "`" + `team` + "`" + `
-WHERE 
-    ` + "`" + `join_code` + "`" + ` = ? 
-LIMIT ?, ?
-`
-
-type FetchTeamByJoinCodeParams struct {
-	JoinCode string `json:"join_code"`
-	Offset   int32  `json:"offset"`
-	Limit    int32  `json:"limit"`
-}
-
-func (q *Queries) FetchTeamByJoinCode(ctx context.Context, arg FetchTeamByJoinCodeParams) ([]Team, error) {
-	rows, err := q.db.QueryContext(ctx, fetchTeamByJoinCode, arg.JoinCode, arg.Offset, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Team
-	for rows.Next() {
-		var i Team
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Slug,
-			&i.JoinCode,
-			&i.JoinCodeRotatedAt,
-			&i.Sequence,
-			&i.BoardRevision,
-			&i.Settings,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.PlanUUID,
+			&i.PlanSource,
+			&i.PlanGrantedReason,
+			&i.PlanExpiresAt,
+			&i.RetentionFloorSequence,
+			&i.LastRetentionSweepAt,
+			&i.Visibility,
+			&i.RequiresClaimedAccounts,
 		); err != nil {
 			return nil, err
 		}
@@ -3849,7 +4904,7 @@ func (q *Queries) FetchTeamByJoinCode(ctx context.Context, arg FetchTeamByJoinCo
 }
 
 const fetchTeamBySlug = `-- name: FetchTeamBySlug :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `join_code` + "`" + `,` + "`" + `join_code_rotated_at` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `plan_uuid` + "`" + `,` + "`" + `plan_source` + "`" + `,` + "`" + `plan_granted_reason` + "`" + `,` + "`" + `plan_expires_at` + "`" + `,` + "`" + `retention_floor_sequence` + "`" + `,` + "`" + `last_retention_sweep_at` + "`" + `,` + "`" + `visibility` + "`" + `,` + "`" + `requires_claimed_accounts` + "`" + `
 FROM ` + "`" + `team` + "`" + `
 WHERE 
     ` + "`" + `slug` + "`" + ` = ? 
@@ -3875,14 +4930,20 @@ func (q *Queries) FetchTeamBySlug(ctx context.Context, arg FetchTeamBySlugParams
 			&i.ID,
 			&i.Name,
 			&i.Slug,
-			&i.JoinCode,
-			&i.JoinCodeRotatedAt,
 			&i.Sequence,
 			&i.BoardRevision,
 			&i.Settings,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PlanUUID,
+			&i.PlanSource,
+			&i.PlanGrantedReason,
+			&i.PlanExpiresAt,
+			&i.RetentionFloorSequence,
+			&i.LastRetentionSweepAt,
+			&i.Visibility,
+			&i.RequiresClaimedAccounts,
 		); err != nil {
 			return nil, err
 		}

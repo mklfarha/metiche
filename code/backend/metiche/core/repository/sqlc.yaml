@@ -15,6 +15,7 @@ sql:
           a_label: ALabel
           a_pattern: APattern
           a_summary: ASummary
+          account_uuid: AccountUUID
           acked_at: AckedAt
           acted_at: ActedAt
           action: Action
@@ -22,6 +23,7 @@ sql:
           active_marker: ActiveMarker
           adjusters: Adjusters
           agent_uuid: AgentUUID
+          allowed: Allowed
           always_show: AlwaysShow
           asserted_at: AssertedAt
           assertion_uuid: AssertionUUID
@@ -37,12 +39,16 @@ sql:
           case_insensitive_paths: CaseInsensitivePaths
           claim_ttl_seconds: ClaimTtlSeconds
           claim_uuid: ClaimUUID
+          claimed_at: ClaimedAt
           client_key: ClientKey
           client_kind: ClientKind
+          code: Code
           confidence: Confidence
           conflict_uuid: ConflictUUID
+          consecutive_failures: ConsecutiveFailures
           contract_uuid: ContractUUID
           created_at: CreatedAt
+          created_by_member_uuid: CreatedByMemberUUID
           current_intent_uuid: CurrentIntentUUID
           decided_at: DecidedAt
           decided_by_member_uuid: DecidedByMemberUUID
@@ -51,14 +57,18 @@ sql:
           dedupe_key: DedupeKey
           default_branch: DefaultBranch
           delivered_at: DeliveredAt
+          delivery_status: DeliveryStatus
           demoted_rules: DemotedRules
           depth: Depth
+          description: Description
           detail: Detail
           detected_by: DetectedBy
           detector_rule: DetectorRule
+          dimension: Dimension
           direction: Direction
           dismiss_reason: DismissReason
           display_name: DisplayName
+          email: Email
           ended_at: EndedAt
           evidence: Evidence
           expires_at: ExpiresAt
@@ -70,13 +80,16 @@ sql:
           hard_expires_at: HardExpiresAt
           head_commit: HeadCommit
           hotspot_patterns: HotspotPatterns
+          human_notify_floor: HumanNotifyFloor
           id: ID
           idempotency_key: IdempotencyKey
+          identity_handle: IdentityHandle
+          identity_provider: IdentityProvider
+          identity_subject: IdentitySubject
           ignore_patterns: IgnorePatterns
           instruction_uuid: InstructionUUID
           intent_uuid: IntentUUID
-          join_code: JoinCode
-          join_code_rotated_at: JoinCodeRotatedAt
+          is_instance_default: IsInstanceDefault
           judge_session_uuid: JudgeSessionUUID
           judge_window_seconds: JudgeWindowSeconds
           judging_expires_at: JudgingExpiresAt
@@ -84,20 +97,33 @@ sql:
           key_norm: KeyNorm
           kind: Kind
           label: Label
+          last_attempt_at: LastAttemptAt
           last_detected_at: LastDetectedAt
+          last_error: LastError
           last_heartbeat_at: LastHeartbeatAt
+          last_retention_sweep_at: LastRetentionSweepAt
           last_seen_at: LastSeenAt
+          last_success_at: LastSuccessAt
+          last_used_at: LastUsedAt
+          max_concurrent_agents: MaxConcurrentAgents
+          max_members: MaxMembers
+          max_projects: MaxProjects
           max_reviews_per_minute: MaxReviewsPerMinute
           max_severity_notified: MaxSeverityNotified
+          max_uses: MaxUses
           member_uuid: MemberUUID
           message: Message
+          min_severity: MinSeverity
           mode: Mode
           name: Name
           new_status: NewStatus
+          note: Note
           notes: Notes
           notified_at: NotifiedAt
           notify_floor: NotifyFloor
+          notify_human_requests: NotifyHumanRequests
           nullable: Nullable
+          observed: Observed
           occurred_at: OccurredAt
           occurrence_count: OccurrenceCount
           outcome: Outcome
@@ -111,6 +137,10 @@ sql:
           pattern_norm: PatternNorm
           payload: Payload
           pinned: Pinned
+          plan_expires_at: PlanExpiresAt
+          plan_granted_reason: PlanGrantedReason
+          plan_source: PlanSource
+          plan_uuid: PlanUUID
           prefix: Prefix
           previous_status: PreviousStatus
           project_uuid: ProjectUUID
@@ -122,6 +152,7 @@ sql:
           released_at: ReleasedAt
           repo_url: RepoURL
           required: Required
+          requires_claimed_accounts: RequiresClaimedAccounts
           requires_report: RequiresReport
           resolution: Resolution
           resolution_note: ResolutionNote
@@ -129,8 +160,12 @@ sql:
           resolved_by_member_uuid: ResolvedByMemberUUID
           response: Response
           response_snapshot: ResponseSnapshot
+          retention_days: RetentionDays
+          retention_floor_sequence: RetentionFloorSequence
           review_block_enabled: ReviewBlockEnabled
           revision: Revision
+          revoked_at: RevokedAt
+          revoked_by_member_uuid: RevokedByMemberUUID
           role: Role
           sequence: Sequence
           session_abandoned_seconds: SessionAbandonedSeconds
@@ -142,6 +177,7 @@ sql:
           shape_fingerprint: ShapeFingerprint
           shape_hash: ShapeHash
           slug: Slug
+          sort_order: SortOrder
           source: Source
           started_at: StartedAt
           statement: Statement
@@ -165,7 +201,9 @@ sql:
           superseded_by_uuid: SupersededByUUID
           supersedes_uuid: SupersedesUUID
           target_agent_uuid: TargetAgentUUID
+          target_member_uuid: TargetMemberUUID
           target_session_uuid: TargetSessionUUID
+          target_url: TargetURL
           team_uuid: TeamUUID
           title: Title
           token: Token
@@ -173,7 +211,9 @@ sql:
           ttl_seconds: TtlSeconds
           type: Type
           updated_at: UpdatedAt
+          uses: Uses
           verdict: Verdict
+          visibility: Visibility
           weight: Weight        
         # sqlc type overrides. Keys are the db_type strings sqlc derives from the
         # schema, which DIFFER by engine (MySQL bare names vs Postgres catalog
@@ -356,6 +396,7 @@ sql:
 overrides:
   go: 
     rename:
+      account: Account
       agent: Agent
       claim: Claim
       claim_path: ClaimPath
@@ -372,8 +413,12 @@ overrides:
       instruction: Instruction
       intent: Intent
       intent_token: IntentToken
+      invite: Invite
       judgement: Judgement
+      limit_event: LimitEvent
       member: Member
+      notification_channel: NotificationChannel
+      plan: Plan
       project: Project
       session: Session
       team: Team

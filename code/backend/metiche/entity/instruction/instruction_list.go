@@ -28,6 +28,7 @@ func (e Instruction) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType
 		"expires_at":            entitytypes.TimestampFieldType,
 		"created_at":            entitytypes.TimestampFieldType,
 		"updated_at":            entitytypes.TimestampFieldType,
+		"target_member_uuid":    entitytypes.StringFieldType,
 	}
 }
 
@@ -53,6 +54,7 @@ func (e Instruction) OrderedFieldIdentifiers() []string {
 	res = append(res, "expires_at")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "target_member_uuid")
 
 	return res
 }

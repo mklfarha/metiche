@@ -21,6 +21,7 @@ type TeamSettings struct {
 	SessionAbandonedSeconds null.Int64             `json:"session_abandoned_seconds"`
 	MaxReviewsPerMinute     null.Int64             `json:"max_reviews_per_minute"`
 	DemotedRules            []string               `json:"demoted_rules"`
+	HumanNotifyFloor        enums.ConflictSeverity `json:"human_notify_floor"`
 }
 
 func (e TeamSettings) String() string {

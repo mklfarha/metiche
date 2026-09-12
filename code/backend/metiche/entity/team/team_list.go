@@ -10,17 +10,23 @@ import (
 
 func (e Team) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 	return map[string]entitytypes.FieldType{
-		"id":                   entitytypes.StringFieldType,
-		"name":                 entitytypes.StringFieldType,
-		"slug":                 entitytypes.StringFieldType,
-		"join_code":            entitytypes.StringFieldType,
-		"join_code_rotated_at": entitytypes.TimestampFieldType,
-		"sequence":             entitytypes.IntFieldType,
-		"board_revision":       entitytypes.IntFieldType,
-		"settings":             entitytypes.SingleDependantEntityFieldType,
-		"status":               entitytypes.SingleEnumFieldType,
-		"created_at":           entitytypes.TimestampFieldType,
-		"updated_at":           entitytypes.TimestampFieldType,
+		"id":                        entitytypes.StringFieldType,
+		"name":                      entitytypes.StringFieldType,
+		"slug":                      entitytypes.StringFieldType,
+		"sequence":                  entitytypes.IntFieldType,
+		"board_revision":            entitytypes.IntFieldType,
+		"settings":                  entitytypes.SingleDependantEntityFieldType,
+		"status":                    entitytypes.SingleEnumFieldType,
+		"created_at":                entitytypes.TimestampFieldType,
+		"updated_at":                entitytypes.TimestampFieldType,
+		"plan_uuid":                 entitytypes.StringFieldType,
+		"plan_source":               entitytypes.SingleEnumFieldType,
+		"plan_granted_reason":       entitytypes.StringFieldType,
+		"plan_expires_at":           entitytypes.TimestampFieldType,
+		"retention_floor_sequence":  entitytypes.IntFieldType,
+		"last_retention_sweep_at":   entitytypes.TimestampFieldType,
+		"visibility":                entitytypes.SingleEnumFieldType,
+		"requires_claimed_accounts": entitytypes.BooleanFieldType,
 	}
 }
 
@@ -29,14 +35,20 @@ func (e Team) OrderedFieldIdentifiers() []string {
 	res = append(res, "id")
 	res = append(res, "name")
 	res = append(res, "slug")
-	res = append(res, "join_code")
-	res = append(res, "join_code_rotated_at")
 	res = append(res, "sequence")
 	res = append(res, "board_revision")
 	res = append(res, "settings")
 	res = append(res, "status")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "plan_uuid")
+	res = append(res, "plan_source")
+	res = append(res, "plan_granted_reason")
+	res = append(res, "plan_expires_at")
+	res = append(res, "retention_floor_sequence")
+	res = append(res, "last_retention_sweep_at")
+	res = append(res, "visibility")
+	res = append(res, "requires_claimed_accounts")
 
 	return res
 }

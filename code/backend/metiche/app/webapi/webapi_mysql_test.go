@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,18 +11,28 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofrs/uuid"
 
+	"github.com/mklfarha/metiche/backend/app/authz"
+	metichemcp "github.com/mklfarha/metiche/backend/app/mcp"
 	"github.com/mklfarha/metiche/backend/app/stream"
+	"github.com/mklfarha/metiche/backend/enums"
 )
 
 // The read API is SQL over the generated schema, so every one of these tests
 // needs a real MySQL holding create.sql. Point METICHE_TEST_MYSQL_DSN at one:
 //
-//	METICHE_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/metiche_test?parseTime=true' go test ./app/webapi/
+//	METICHE_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/metiche_test?parseTime=true&interpolateParams=true' go test ./app/webapi/
+//
+// interpolateParams=true is not decoration: it is what production runs
+// (config/base.yaml recommends it), and it changes how []byte arguments reach
+// MySQL. Without it, a []byte bound to a JSON column works; with it, the
+// driver sends a binary literal and MySQL rejects it with error 3144. Leaving
+// it off here once hid exactly that bug until a real deployment found it.
 //
 // Without it every test here SKIPS with that reason rather than being deleted:
 // there is nothing in this package that can be meaningfully faked, because
@@ -79,15 +90,38 @@ type execer interface {
 type seeded struct {
 	teamID string
 	slug   string
+
+	// memberToken authenticates Ana, who IS a member of this team.
+	// outsiderToken authenticates a perfectly valid account that is NOT.
+	// Both are minted from crypto/rand at run time by the real MintToken, so
+	// no credential is ever written down in this repository, and the pair is
+	// what separates "a bad token" from "a good token for the wrong person" —
+	// the case a naive membership check gets wrong.
+	memberToken     string
+	memberTokenHash string
+	outsiderToken   string
 }
 
+// seedBoard seeds the fixture as a PUBLIC team.
+//
+// Public because everything below it is about the SQL — the joins, the
+// isolation level, the lazy expiry filter — and a gate returning 404 would
+// just get in the way of testing any of that. The gate is not untested as a
+// result: it has its own cases at the bottom of this file, on a private team
+// seeded by seedBoardVisibility, plus the decision's own unit tests in
+// app/authz.
 func seedBoard(t *testing.T, db *sql.DB) seeded {
+	t.Helper()
+	return seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PUBLIC)
+}
+
+func seedBoardVisibility(t *testing.T, db *sql.DB, visibility enums.TeamVisibility) seeded {
 	t.Helper()
 
 	teamID := newUUID(t)
 	slug := "board-" + teamID[:8]
-	mustExec(t, db, "INSERT INTO `team` (`id`,`name`,`slug`,`sequence`,`board_revision`,`status`) VALUES (?,?,?,?,?,?)",
-		teamID, "Board Demo", slug, 42, 7, 1)
+	mustExec(t, db, "INSERT INTO `team` (`id`,`name`,`slug`,`sequence`,`board_revision`,`status`,`visibility`) VALUES (?,?,?,?,?,?,?)",
+		teamID, "Board Demo", slug, 42, 7, 1, visibility.ToInt64())
 	// The join code moved off `team` and onto `invite` in v3. Seed one anyway:
 	// assertNoSecrets below is only worth running if the secret it looks for is
 	// actually in the database, one join away from what these endpoints read.
@@ -100,13 +134,33 @@ func seedBoard(t *testing.T, db *sql.DB) seeded {
 	// v3: the token hash lives on `account`, not `agent`, and `member` is the
 	// join between an account and a team. fakeTokenHash stays on the account
 	// so assertNoSecrets still has a real secret to hunt for.
+	// Ana gets a REAL minted token, because the authorization tests need one
+	// that the production lookup path will actually resolve. Beto keeps
+	// fakeTokenHash so assertNoSecrets still has a genuine secret to hunt for,
+	// sitting on a row one join away from everything these endpoints read.
+	memberToken, memberHash, err := metichemcp.MintToken()
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	outsiderToken, outsiderHash, err := metichemcp.MintToken()
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+
 	acctA, acctB := newUUID(t), newUUID(t)
 	mustExec(t, db, "INSERT INTO `account` (`id`,`key`,`display_name`,`token_hash`,`identity_provider`,`status`) VALUES (?,?,?,?,?,?)",
-		acctA, "acct-"+acctA[:8], "Ana", fakeTokenHash, 1, 1)
+		acctA, "acct-"+acctA[:8], "Ana", memberHash, 1, 1)
 	mustExec(t, db, "INSERT INTO `account` (`id`,`key`,`display_name`,`token_hash`,`identity_provider`,`status`) VALUES (?,?,?,?,?,?)",
 		acctB, "acct-"+acctB[:8], "Beto", fakeTokenHash, 1, 1)
+
+	// A third account that exists, is active, and holds a token this server
+	// will happily resolve — and is a member of NOTHING. "Authenticated" is
+	// not "authorized", and this row is what proves the gate knows that.
+	acctOutsider := newUUID(t)
+	mustExec(t, db, "INSERT INTO `account` (`id`,`key`,`display_name`,`token_hash`,`identity_provider`,`status`) VALUES (?,?,?,?,?,?)",
+		acctOutsider, "acct-"+acctOutsider[:8], "Outsider", outsiderHash, 1, 1)
 	t.Cleanup(func() {
-		mustExec(t, db, "DELETE FROM `account` WHERE `id` IN (?,?)", acctA, acctB)
+		mustExec(t, db, "DELETE FROM `account` WHERE `id` IN (?,?,?)", acctA, acctB, acctOutsider)
 	})
 
 	ana, beto := newUUID(t), newUUID(t)
@@ -235,7 +289,13 @@ func seedBoard(t *testing.T, db *sql.DB) seeded {
 			"seed-"+teamID[:8]+"-"+e.summary)
 	}
 
-	return seeded{teamID: teamID, slug: slug}
+	return seeded{
+		teamID:          teamID,
+		slug:            slug,
+		memberToken:     memberToken,
+		memberTokenHash: memberHash,
+		outsiderToken:   outsiderToken,
+	}
 }
 
 func newBoardServer(t *testing.T, db *sql.DB) *httptest.Server {
@@ -653,9 +713,12 @@ func TestTeamResolvesByUUIDToo(t *testing.T) {
 // assertNoSecrets is run against every response body in this file. The join
 // code and the token hash both live one join away from what these endpoints
 // read, and "we were careful" is not a guarantee — this is.
-func assertNoSecrets(t *testing.T, body string) {
+func assertNoSecrets(t *testing.T, body string, extra ...string) {
 	t.Helper()
-	for _, secret := range []string{fakeJoinCode, fakeTokenHash} {
+	for _, secret := range append([]string{fakeJoinCode, fakeTokenHash}, extra...) {
+		if secret == "" {
+			t.Fatal("assertNoSecrets was handed an empty needle, so it is checking nothing")
+		}
 		if strings.Contains(body, secret) {
 			t.Fatalf("a response carried a secret (%s): %s", secret, body)
 		}
@@ -691,7 +754,7 @@ func TestBoardAndStreamRoutesCoexist(t *testing.T) {
 	NewAPI(db, nil).RegisterOn(r)
 	hub := stream.NewHub(stream.NewDBSource(db), nil)
 	defer hub.Close()
-	stream.NewServer(hub, stream.NewDBTeamLookup(db), nil).RegisterOn(r)
+	stream.NewServer(hub, stream.NewDBTeamLookup(db), authz.NewGuard(db), nil).RegisterOn(r)
 
 	srv := httptest.NewServer(r)
 	defer func() {
@@ -726,5 +789,329 @@ func TestBoardAndStreamRoutesCoexist(t *testing.T) {
 	_ = sresp.Body.Close()
 	if ct != "text/event-stream" {
 		t.Fatalf("stream route did not resolve: Content-Type = %q", ct)
+	}
+}
+
+// ─────────────────────────────────────────────
+// Authorization: team.visibility, and membership
+// ─────────────────────────────────────────────
+//
+// These are the end-to-end proofs for app/authz over a real database, and
+// they cover BOTH halves of the board's surface — the JSON reads in this
+// package and the SSE stream in app/stream — because they are mounted on the
+// same public router, gated by the same decision, and a hole in either is the
+// same hole.
+//
+// The rule being pinned:
+//
+//	public team   -> readable by anyone, no token.
+//	private team  -> a bearer token whose account is a live member. Anything
+//	                 else is 404, NEVER 403. A 403 would confirm the team
+//	                 exists, which is exactly how the slug namespace leaks.
+
+// newGuardedServer mounts both halves behind the real database-backed guard,
+// the way app/rest.go does in production.
+func newGuardedServer(t *testing.T, db *sql.DB) *httptest.Server {
+	t.Helper()
+	r := chi.NewRouter()
+	NewAPI(db, nil).RegisterOn(r)
+	hub := stream.NewHub(stream.NewDBSource(db), nil)
+	stream.NewServer(hub, stream.NewDBTeamLookup(db), authz.NewGuard(db), nil).RegisterOn(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(func() {
+		// CloseClientConnections before Close: Close waits on outstanding
+		// requests and an SSE handler is outstanding until its client hangs
+		// up, so a failing test would hang the suite instead of reporting.
+		srv.CloseClientConnections()
+		srv.Close()
+		hub.Close()
+	})
+	return srv
+}
+
+// boardPaths is every read this package and app/stream expose for a team.
+// Each new case below walks the whole list: a gate that covers four routes
+// out of five is not a gate.
+func boardPaths() []string {
+	return []string{"", "/conflicts", "/contracts", "/decisions", "/sessions/S-1", "/stream?after=41"}
+}
+
+// get issues a request, optionally bearing a token, and returns the status
+// and the body. The token always rides in the Authorization HEADER — never in
+// the query string, which is where it would end up in the access log, the
+// Referer and the browser history.
+func get(t *testing.T, url, token string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("request %s: %v", url, err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	// A stream that is allowed through never ends on its own, so every read
+	// here is bounded and the body is closed immediately after.
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("get %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// An allowed SSE response never ends on its own, so reading it to EOF
+	// would just burn the client timeout. Take the first frame instead —
+	// which also turns "the stream was allowed" into "the stream delivered",
+	// a stronger thing to assert.
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		return resp.StatusCode, readOneSSEFrame(t, resp.Body, 5*time.Second)
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return resp.StatusCode, string(body)
+}
+
+// TestPublicTeamIsReadableWithNoToken is the property the demo board depends
+// on: visibility=public means public, on every route including the stream.
+func TestPublicTeamIsReadableWithNoToken(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PUBLIC)
+	srv := newGuardedServer(t, db)
+
+	for _, p := range boardPaths() {
+		url := srv.URL + "/v1/teams/" + fx.slug + p
+		code, body := get(t, url, "")
+		if code != http.StatusOK {
+			t.Fatalf("%q on a PUBLIC team with no token: got %d, want 200 (body %s)", p, code, body)
+		}
+		if p == "/stream?after=41" && !strings.Contains(body, "id: 42") {
+			t.Fatalf("the public stream did not deliver the event after the cursor; got:\n%s", body)
+		}
+		assertNoSecrets(t, body, fx.memberToken, fx.memberTokenHash, fx.outsiderToken)
+	}
+}
+
+// TestPrivateTeamWithNoTokenIs404 is the hole this work closes. Before the
+// guard existed, every one of these returned 200 and the whole board with it.
+func TestPrivateTeamWithNoTokenIs404(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	for _, p := range boardPaths() {
+		code, body := get(t, srv.URL+"/v1/teams/"+fx.slug+p, "")
+		if code != http.StatusNotFound {
+			t.Fatalf("%q on a PRIVATE team with no token: got %d, want 404 (body %s)", p, code, body)
+		}
+		// Nothing about the team may come back with the refusal.
+		if strings.Contains(body, "Board Demo") || strings.Contains(body, "feat/auth") ||
+			strings.Contains(body, "#auth-jwt-cookie") {
+			t.Fatalf("%q leaked board content in its refusal: %s", p, body)
+		}
+	}
+}
+
+// TestPrivateTeamWithANonMemberTokenIs404 is the case a check that only asks
+// "is this a valid token?" gets wrong. The token is real, the account is real
+// and active, and it is a member of nothing.
+func TestPrivateTeamWithANonMemberTokenIs404(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	// Sanity: the token really does resolve to an account, so a 404 below is
+	// the MEMBERSHIP check talking and not a broken credential.
+	if _, err := metichemcp.AccountByToken(context.Background(), db, fx.outsiderToken); err != nil {
+		t.Fatalf("the outsider's token should resolve to an account: %v", err)
+	}
+
+	for _, p := range boardPaths() {
+		code, body := get(t, srv.URL+"/v1/teams/"+fx.slug+p, fx.outsiderToken)
+		if code != http.StatusNotFound {
+			t.Fatalf("%q on a PRIVATE team with a NON-MEMBER token: got %d, want 404 (body %s)", p, code, body)
+		}
+	}
+}
+
+// TestPrivateTeamWithAMemberTokenIs200AndStreams is the other half: the gate
+// has to let the right person through, and the stream has to actually stream.
+func TestPrivateTeamWithAMemberTokenIs200AndStreams(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	for _, p := range []string{"", "/conflicts", "/contracts", "/decisions", "/sessions/S-1"} {
+		code, body := get(t, srv.URL+"/v1/teams/"+fx.slug+p, fx.memberToken)
+		if code != http.StatusOK {
+			t.Fatalf("%q on a PRIVATE team with a MEMBER token: got %d, want 200 (body %s)", p, code, body)
+		}
+		assertNoSecrets(t, body, fx.memberToken, fx.memberTokenHash, fx.outsiderToken)
+	}
+
+	// The stream, for real: 200, the SSE content type, and a frame off the
+	// wire. ?after=41 leaves exactly one seeded event (sequence 42) to deliver,
+	// which is what makes "it streamed" observable rather than assumed.
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/teams/"+fx.slug+"/stream?after=41", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+fx.memberToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stream with a member token: got %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("stream Content-Type = %q, want text/event-stream", ct)
+	}
+
+	frame := readOneSSEFrame(t, resp.Body, 5*time.Second)
+	if !strings.Contains(frame, "id: 42") {
+		t.Fatalf("the stream did not deliver the event after the cursor; got:\n%s", frame)
+	}
+	assertNoSecrets(t, frame, fx.memberToken, fx.memberTokenHash, fx.outsiderToken)
+}
+
+// TestPrivateTeamRefusalIsIndistinguishableFromAnUnknownTeam is the 404-not-403
+// rule, stated as an assertion instead of as a comment.
+//
+// If the refusal for a team that EXISTS differed from the refusal for a slug
+// that does not — in status, in Content-Type, or in a single byte of body —
+// then that difference would be a 403 in all but name, and a script could walk
+// the slug namespace with it.
+func TestPrivateTeamRefusalIsIndistinguishableFromAnUnknownTeam(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	for _, p := range boardPaths() {
+		realCode, realBody := get(t, srv.URL+"/v1/teams/"+fx.slug+p, "")
+		fakeCode, fakeBody := get(t, srv.URL+"/v1/teams/no-such-team-at-all"+p, "")
+		if realCode != fakeCode || realBody != fakeBody {
+			t.Fatalf("%q distinguishes a private team from a missing one: %d %q vs %d %q",
+				p, realCode, realBody, fakeCode, fakeBody)
+		}
+		// And with a valid token belonging to somebody else, too.
+		outCode, outBody := get(t, srv.URL+"/v1/teams/"+fx.slug+p, fx.outsiderToken)
+		if outCode != fakeCode || outBody != fakeBody {
+			t.Fatalf("%q distinguishes \"not your team\" from \"no such team\": %d %q vs %d %q",
+				p, outCode, outBody, fakeCode, fakeBody)
+		}
+	}
+}
+
+// TestRevokedMemberLosesTheBoard covers the soft-removal case: member rows are
+// revoked, not deleted, so a check that only looked at status would keep
+// letting an ejected teammate read everything.
+func TestRevokedMemberLosesTheBoard(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	if code, _ := get(t, srv.URL+"/v1/teams/"+fx.slug, fx.memberToken); code != http.StatusOK {
+		t.Fatalf("the member should start with access: got %d", code)
+	}
+
+	mustExec(t, db, "UPDATE `member` SET `revoked_at` = NOW() WHERE `team_uuid` = ? AND `key` = ?",
+		fx.teamID, "M-1")
+
+	for _, p := range boardPaths() {
+		if code, body := get(t, srv.URL+"/v1/teams/"+fx.slug+p, fx.memberToken); code != http.StatusNotFound {
+			t.Fatalf("%q after revocation: got %d, want 404 (body %s)", p, code, body)
+		}
+	}
+}
+
+// TestPrivateTeamByUUIDIsAlsoGated closes the obvious way around a slug gate.
+//
+// These routes shadow the generated /v1/teams/{id}, so both resolvers accept a
+// uuid — and a guard that only understood slugs would be bypassed by anyone
+// who had ever seen the team's id.
+func TestPrivateTeamByUUIDIsAlsoGated(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	if code, body := get(t, srv.URL+"/v1/teams/"+fx.teamID, ""); code != http.StatusNotFound {
+		t.Fatalf("uuid-addressed private team with no token: got %d, want 404 (body %s)", code, body)
+	}
+	if code, _ := get(t, srv.URL+"/v1/teams/"+fx.teamID, fx.memberToken); code != http.StatusOK {
+		t.Fatalf("uuid-addressed private team with a member token: got %d, want 200", code)
+	}
+}
+
+// readOneSSEFrame reads until the first blank-line-terminated frame, or the
+// deadline. It exists because an allowed SSE response never ends on its own.
+func readOneSSEFrame(t *testing.T, body io.Reader, within time.Duration) string {
+	t.Helper()
+	out := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		sc := bufio.NewScanner(body)
+		for sc.Scan() {
+			line := sc.Text()
+			b.WriteString(line)
+			b.WriteString("\n")
+			if line == "" && strings.Contains(b.String(), "id: ") {
+				break
+			}
+		}
+		out <- b.String()
+	}()
+	select {
+	case s := <-out:
+		return s
+	case <-time.After(within):
+		t.Fatal("no SSE frame arrived before the deadline")
+		return ""
+	}
+}
+
+// TestTheLeakTestHasARealSecretToHuntFor keeps assertNoSecrets honest.
+//
+// A leak test is only worth the line it occupies if the string it looks for is
+// genuinely in the database, on a row one join away from what these endpoints
+// read. The easy way to make a leak test green is to stop seeding the secret,
+// and that is indistinguishable from passing — so this asserts the needles are
+// really there, and fails loudly if a future refactor of the fixture quietly
+// removes them.
+func TestTheLeakTestHasARealSecretToHuntFor(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoard(t, db)
+
+	var code string
+	if err := db.QueryRow("SELECT `code` FROM `invite` WHERE `team_uuid` = ?", fx.teamID).Scan(&code); err != nil {
+		t.Fatalf("the fixture no longer seeds an invite code for assertNoSecrets to hunt: %v", err)
+	}
+	if code != fakeJoinCode {
+		t.Fatalf("invite.code = %q, but assertNoSecrets hunts for %q", code, fakeJoinCode)
+	}
+
+	var n int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM `account` a JOIN `member` m ON m.`account_uuid` = a.`id` "+
+			"WHERE m.`team_uuid` = ? AND a.`token_hash` = ?", fx.teamID, fakeTokenHash).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n == 0 {
+		t.Fatalf("no member account carries %q, so assertNoSecrets is hunting for nothing", fakeTokenHash)
+	}
+
+	// And the minted credentials the authorization tests use are real rows
+	// too — the same needles, passed to assertNoSecrets as extras.
+	var hash string
+	if err := db.QueryRow("SELECT `token_hash` FROM `account` a JOIN `member` m ON m.`account_uuid` = a.`id` "+
+		"WHERE m.`team_uuid` = ? AND m.`key` = ?", fx.teamID, "M-1").Scan(&hash); err != nil {
+		t.Fatalf("the member account is missing: %v", err)
+	}
+	if hash != fx.memberTokenHash || fx.memberToken == "" {
+		t.Fatal("the member's minted token is not the one on the row the guard will read")
+	}
+
+	// Belt and braces: the needle finder actually finds.
+	if !strings.Contains("prefix "+fakeJoinCode+" suffix", fakeJoinCode) {
+		t.Fatal("unreachable")
 	}
 }

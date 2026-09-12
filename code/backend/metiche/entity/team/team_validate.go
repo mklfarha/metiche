@@ -28,12 +28,6 @@ func (e Team) Validate() error {
 		c.Field("team.slug", validation.String(e.Slug, 0, 0, ""))
 
 	}
-	if e.JoinCode == "" {
-		c.Require("team.join_code")
-	} else {
-		c.Field("team.join_code", validation.String(e.JoinCode, 0, 16, ""))
-
-	}
 	c.Field("team.sequence", validation.Integer(e.Sequence, false, 0, 0, false, false, false, true, -9223372036854775808, 9223372036854775807))
 	c.Field("team.board_revision", validation.Integer(e.BoardRevision, false, 0, 0, false, false, false, true, -9223372036854775808, 9223372036854775807))
 	if !validation.IsZeroEntity(e.Settings) {
@@ -43,6 +37,23 @@ func (e Team) Validate() error {
 		c.Require("team.status")
 	} else {
 		c.Field("team.status", validation.EnumMember(e.Status.ToInt64(), []int64{0, 1, 2}, "record_status"))
+
+	}
+	if e.PlanSource.ToInt64() == 0 {
+		c.Require("team.plan_source")
+	} else {
+		c.Field("team.plan_source", validation.EnumMember(e.PlanSource.ToInt64(), []int64{0, 1, 2, 3}, "plan_source"))
+
+	}
+	if e.PlanGrantedReason.Valid && e.PlanGrantedReason.String != "" {
+		c.Field("team.plan_granted_reason", validation.String(e.PlanGrantedReason.String, 0, 200, ""))
+
+	}
+	c.Field("team.retention_floor_sequence", validation.Integer(e.RetentionFloorSequence, false, 0, 0, false, false, false, true, -9223372036854775808, 9223372036854775807))
+	if e.Visibility.ToInt64() == 0 {
+		c.Require("team.visibility")
+	} else {
+		c.Field("team.visibility", validation.EnumMember(e.Visibility.ToInt64(), []int64{0, 1, 2}, "team_visibility"))
 
 	}
 

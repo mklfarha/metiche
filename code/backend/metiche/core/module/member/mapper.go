@@ -31,5 +31,7 @@ func mapModelToEntity(m metichedb.Member) main_entity.Member {
 		Status:      enums.RecordStatus(m.Status),
 		CreatedAt:   m.CreatedAt,
 		UpdatedAt:   m.UpdatedAt,
+		AccountUUID: mapper.StringToUUID(m.AccountUUID),
+		RevokedAt:   null.NewTime(m.RevokedAt.Time, m.RevokedAt.Valid),
 	}
 }

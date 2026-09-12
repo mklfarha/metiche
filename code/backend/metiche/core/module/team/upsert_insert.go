@@ -97,10 +97,6 @@ func mapUpsertRequestToInsertParams(req types.UpsertRequest) metichedb.InsertTea
 
 		Slug: req.Team.Slug,
 
-		JoinCode: req.Team.JoinCode,
-
-		JoinCodeRotatedAt: req.Team.JoinCodeRotatedAt,
-
 		Sequence: req.Team.Sequence,
 
 		BoardRevision: req.Team.BoardRevision,
@@ -112,5 +108,21 @@ func mapUpsertRequestToInsertParams(req types.UpsertRequest) metichedb.InsertTea
 		CreatedAt: req.Team.CreatedAt,
 
 		UpdatedAt: req.Team.UpdatedAt,
+
+		PlanUUID: mapper.UUIDPtrToNullString(req.Team.PlanUUID),
+
+		PlanSource: req.Team.PlanSource.ToInt64(),
+
+		PlanGrantedReason: req.Team.PlanGrantedReason,
+
+		PlanExpiresAt: req.Team.PlanExpiresAt,
+
+		RetentionFloorSequence: req.Team.RetentionFloorSequence,
+
+		LastRetentionSweepAt: req.Team.LastRetentionSweepAt,
+
+		Visibility: req.Team.Visibility.ToInt64(),
+
+		RequiresClaimedAccounts: req.Team.RequiresClaimedAccounts,
 	}
 }

@@ -91,7 +91,16 @@ func TestToolSurface(t *testing.T) {
 		"end_session":    {false, true},
 		"heartbeat":      {false, true},
 		"get_team_state": {true, false},
+		"list_teams":     {true, false},
 		"health":         {true, false},
+
+		// Tools 5-7, registered by RegisterWorkTools. declare_intent is
+		// additive and NOT idempotent: two calls are two real intents, and
+		// what makes a retry safe is the idempotency key, which is a
+		// different promise.
+		"declare_intent": {false, false},
+		"update_intent":  {false, true},
+		"check_paths":    {true, false},
 	}
 
 	if len(registered) != len(want) {
@@ -155,7 +164,7 @@ func TestAddToolRefusesUnannotatedTools(t *testing.T) {
 		}
 	}()
 	s := newServer(NewHandler(nil, zap.NewNop()), zap.NewNop())
-	addTool(s, zap.NewNop(), &mcp.Tool{Name: "unannotated", Description: "x"},
+	addTool(s, nil, zap.NewNop(), &mcp.Tool{Name: "unannotated", Description: "x"},
 		func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
 			return nil, nil, nil
 		})

@@ -89,17 +89,11 @@ func mapUpsertRequestToInsertParams(req types.UpsertRequest) metichedb.InsertAge
 	return metichedb.InsertAgentParams{
 		ID: req.Agent.ID.String(),
 
-		TeamUUID: req.Agent.TeamUUID.String(),
-
-		MemberUUID: req.Agent.MemberUUID.String(),
-
 		Key: req.Agent.Key,
 
 		Label: req.Agent.Label,
 
 		ClientKind: req.Agent.ClientKind,
-
-		TokenHash: req.Agent.TokenHash,
 
 		ClientKey: req.Agent.ClientKey,
 
@@ -110,5 +104,7 @@ func mapUpsertRequestToInsertParams(req types.UpsertRequest) metichedb.InsertAge
 		CreatedAt: req.Agent.CreatedAt,
 
 		UpdatedAt: req.Agent.UpdatedAt,
+
+		AccountUUID: req.Agent.AccountUUID.String(),
 	}
 }

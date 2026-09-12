@@ -11,19 +11,33 @@ import (
 	mapper "github.com/mklfarha/metiche/backend/entity/mapper"
 )
 
+type Account struct {
+	ID               string      `json:"id"`
+	Key              string      `json:"key"`
+	DisplayName      string      `json:"display_name"`
+	TokenHash        string      `json:"token_hash"`
+	IdentityProvider int64       `json:"identity_provider"`
+	IdentitySubject  null.String `json:"identity_subject"`
+	IdentityHandle   null.String `json:"identity_handle"`
+	Email            null.String `json:"email"`
+	ClaimedAt        null.Time   `json:"claimed_at"`
+	Status           int64       `json:"status"`
+	LastSeenAt       null.Time   `json:"last_seen_at"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+}
+
 type Agent struct {
-	ID         string      `json:"id"`
-	TeamUUID   string      `json:"team_uuid"`
-	MemberUUID string      `json:"member_uuid"`
-	Key        string      `json:"key"`
-	Label      string      `json:"label"`
-	ClientKind null.String `json:"client_kind"`
-	TokenHash  string      `json:"token_hash"`
-	ClientKey  string      `json:"client_key"`
-	Status     int64       `json:"status"`
-	LastSeenAt null.Time   `json:"last_seen_at"`
-	CreatedAt  time.Time   `json:"created_at"`
-	UpdatedAt  time.Time   `json:"updated_at"`
+	ID          string      `json:"id"`
+	Key         string      `json:"key"`
+	Label       string      `json:"label"`
+	ClientKind  null.String `json:"client_kind"`
+	ClientKey   string      `json:"client_key"`
+	Status      int64       `json:"status"`
+	LastSeenAt  null.Time   `json:"last_seen_at"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	AccountUUID string      `json:"account_uuid"`
 }
 
 type Claim struct {
@@ -226,6 +240,7 @@ type Instruction struct {
 	ExpiresAt          null.Time   `json:"expires_at"`
 	CreatedAt          time.Time   `json:"created_at"`
 	UpdatedAt          time.Time   `json:"updated_at"`
+	TargetMemberUUID   null.String `json:"target_member_uuid"`
 }
 
 type Intent struct {
@@ -260,6 +275,23 @@ type IntentToken struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type Invite struct {
+	ID                  string      `json:"id"`
+	TeamUUID            string      `json:"team_uuid"`
+	Code                string      `json:"code"`
+	Label               null.String `json:"label"`
+	CreatedByMemberUUID null.String `json:"created_by_member_uuid"`
+	MaxUses             null.Int    `json:"max_uses"`
+	Uses                int64       `json:"uses"`
+	ExpiresAt           null.Time   `json:"expires_at"`
+	RevokedAt           null.Time   `json:"revoked_at"`
+	RevokedByMemberUUID null.String `json:"revoked_by_member_uuid"`
+	Status              int64       `json:"status"`
+	LastUsedAt          null.Time   `json:"last_used_at"`
+	CreatedAt           time.Time   `json:"created_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+}
+
 type Judgement struct {
 	ID               string      `json:"id"`
 	TeamUUID         string      `json:"team_uuid"`
@@ -284,6 +316,21 @@ type Judgement struct {
 	UpdatedAt        time.Time   `json:"updated_at"`
 }
 
+type LimitEvent struct {
+	ID          string      `json:"id"`
+	TeamUUID    string      `json:"team_uuid"`
+	PlanUUID    null.String `json:"plan_uuid"`
+	SessionUUID null.String `json:"session_uuid"`
+	Dimension   string      `json:"dimension"`
+	Observed    int64       `json:"observed"`
+	Allowed     null.Int    `json:"allowed"`
+	Outcome     int64       `json:"outcome"`
+	Note        null.String `json:"note"`
+	OccurredAt  time.Time   `json:"occurred_at"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+}
+
 type Member struct {
 	ID          string    `json:"id"`
 	TeamUUID    string    `json:"team_uuid"`
@@ -294,6 +341,45 @@ type Member struct {
 	Status      int64     `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	AccountUUID string    `json:"account_uuid"`
+	RevokedAt   null.Time `json:"revoked_at"`
+}
+
+type NotificationChannel struct {
+	ID                  string      `json:"id"`
+	TeamUUID            string      `json:"team_uuid"`
+	ProjectUUID         null.String `json:"project_uuid"`
+	Key                 string      `json:"key"`
+	Kind                int64       `json:"kind"`
+	Label               string      `json:"label"`
+	TargetURL           string      `json:"target_url"`
+	MinSeverity         int64       `json:"min_severity"`
+	NotifyHumanRequests bool        `json:"notify_human_requests"`
+	Status              int64       `json:"status"`
+	DeliveryStatus      int64       `json:"delivery_status"`
+	ConsecutiveFailures int64       `json:"consecutive_failures"`
+	LastAttemptAt       null.Time   `json:"last_attempt_at"`
+	LastSuccessAt       null.Time   `json:"last_success_at"`
+	LastError           null.String `json:"last_error"`
+	CreatedByMemberUUID null.String `json:"created_by_member_uuid"`
+	CreatedAt           time.Time   `json:"created_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+}
+
+type Plan struct {
+	ID                  string      `json:"id"`
+	Key                 string      `json:"key"`
+	Name                string      `json:"name"`
+	Description         null.String `json:"description"`
+	MaxConcurrentAgents null.Int    `json:"max_concurrent_agents"`
+	RetentionDays       null.Int    `json:"retention_days"`
+	MaxMembers          null.Int    `json:"max_members"`
+	MaxProjects         null.Int    `json:"max_projects"`
+	IsInstanceDefault   bool        `json:"is_instance_default"`
+	SortOrder           int64       `json:"sort_order"`
+	Status              int64       `json:"status"`
+	CreatedAt           time.Time   `json:"created_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
 }
 
 type Project struct {
@@ -336,17 +422,23 @@ type Session struct {
 }
 
 type Team struct {
-	ID                string      `json:"id"`
-	Name              string      `json:"name"`
-	Slug              string      `json:"slug"`
-	JoinCode          string      `json:"join_code"`
-	JoinCodeRotatedAt null.Time   `json:"join_code_rotated_at"`
-	Sequence          int64       `json:"sequence"`
-	BoardRevision     int64       `json:"board_revision"`
-	Settings          mapper.JSON `json:"settings"`
-	Status            int64       `json:"status"`
-	CreatedAt         time.Time   `json:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at"`
+	ID                      string      `json:"id"`
+	Name                    string      `json:"name"`
+	Slug                    string      `json:"slug"`
+	Sequence                int64       `json:"sequence"`
+	BoardRevision           int64       `json:"board_revision"`
+	Settings                mapper.JSON `json:"settings"`
+	Status                  int64       `json:"status"`
+	CreatedAt               time.Time   `json:"created_at"`
+	UpdatedAt               time.Time   `json:"updated_at"`
+	PlanUUID                null.String `json:"plan_uuid"`
+	PlanSource              int64       `json:"plan_source"`
+	PlanGrantedReason       null.String `json:"plan_granted_reason"`
+	PlanExpiresAt           null.Time   `json:"plan_expires_at"`
+	RetentionFloorSequence  int64       `json:"retention_floor_sequence"`
+	LastRetentionSweepAt    null.Time   `json:"last_retention_sweep_at"`
+	Visibility              int64       `json:"visibility"`
+	RequiresClaimedAccounts bool        `json:"requires_claimed_accounts"`
 }
 
 type TeamEvent struct {

@@ -17,7 +17,6 @@ import (
 type Module interface {
 	FetchTeamByID(ctx context.Context, req types.FetchTeamByIDRequest, opts ...Option) (types.FetchTeamByIDResponse, error)
 	FetchTeamBySlug(ctx context.Context, req types.FetchTeamBySlugRequest, opts ...Option) (types.FetchTeamBySlugResponse, error)
-	FetchTeamByJoinCode(ctx context.Context, req types.FetchTeamByJoinCodeRequest, opts ...Option) (types.FetchTeamByJoinCodeResponse, error)
 
 	List(ctx context.Context, req types.ListRequest, opts ...Option) (types.ListResponse, error)
 

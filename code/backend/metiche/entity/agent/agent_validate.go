@@ -16,12 +16,6 @@ func (e Agent) Validate() error {
 	if e.ID.IsNil() {
 		c.Require("agent.id")
 	}
-	if e.TeamUUID.IsNil() {
-		c.Require("agent.team_uuid")
-	}
-	if e.MemberUUID.IsNil() {
-		c.Require("agent.member_uuid")
-	}
 	if e.Key == "" {
 		c.Require("agent.key")
 	} else {
@@ -38,12 +32,6 @@ func (e Agent) Validate() error {
 		c.Field("agent.client_kind", validation.String(e.ClientKind.String, 0, 60, ""))
 
 	}
-	if e.TokenHash == "" {
-		c.Require("agent.token_hash")
-	} else {
-		c.Field("agent.token_hash", validation.String(e.TokenHash, 0, 64, ""))
-
-	}
 	if e.ClientKey == "" {
 		c.Require("agent.client_key")
 	} else {
@@ -55,6 +43,9 @@ func (e Agent) Validate() error {
 	} else {
 		c.Field("agent.status", validation.EnumMember(e.Status.ToInt64(), []int64{0, 1, 2}, "agent_status"))
 
+	}
+	if e.AccountUUID.IsNil() {
+		c.Require("agent.account_uuid")
 	}
 
 	return c.Result()

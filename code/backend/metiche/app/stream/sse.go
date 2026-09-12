@@ -12,6 +12,7 @@ import (
 	"github.com/gofrs/uuid"
 	"go.uber.org/zap"
 
+	"github.com/mklfarha/metiche/backend/app/authz"
 	"github.com/mklfarha/metiche/backend/core"
 )
 
@@ -33,28 +34,59 @@ type Server struct {
 	lookup TeamLookup
 	logger *zap.Logger
 
+	// guard decides whether this caller may read this team, BEFORE the first
+	// byte. See RegisterOn.
+	guard authz.Middleware
+
 	// keepalive is a field rather than a constant only so a test can observe a
 	// comment frame without waiting twenty seconds for one.
 	keepalive time.Duration
 }
 
-// NewServer builds the SSE handler over a hub and a team lookup. Both are
-// parameters rather than constructed here so a test can drive the exact
-// reconnect semantics with a faked event source and no database.
-func NewServer(hub *Hub, lookup TeamLookup, logger *zap.Logger) *Server {
+// NewServer builds the SSE handler over a hub, a team lookup and the
+// authorization decision. All three are parameters rather than constructed
+// here so a test can drive the exact reconnect semantics with a faked event
+// source and no database.
+//
+// authorizer is not optional and must not be nil: this route is mounted on the
+// public router, and authz.Middleware treats a missing decision as "nobody
+// gets in" rather than as "let everyone through".
+func NewServer(hub *Hub, lookup TeamLookup, authorizer authz.Authorizer, logger *zap.Logger) *Server {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &Server{hub: hub, lookup: lookup, logger: logger, keepalive: keepaliveInterval}
+	s := &Server{hub: hub, lookup: lookup, logger: logger, keepalive: keepaliveInterval}
+	s.guard = authz.Middleware{
+		Authorizer: authorizer,
+		// Byte-identical to the "no such team" this handler already writes for
+		// an unresolvable slug — same status, same plain-text body. A private
+		// team must be indistinguishable from one that does not exist: 404,
+		// never 403, because a 403 confirms the team is real and turns the
+		// endpoint into a slug oracle.
+		NotFound: func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "no such team", http.StatusNotFound)
+		},
+		Logger: logger,
+	}
+	return s
 }
 
-// RegisterOn mounts the stream route on r.
+// RegisterOn mounts the stream route on r, gated.
 //
 // Spell the full path including /v1: r is the server's ROOT router and the
 // generated CRUD already occupies /v1, so re-mounting it would panic at
 // startup.
+//
+// The gate WRAPS the handler instead of being installed with r.Use, for two
+// reasons. chi panics — while the router is being built, so the container
+// compiles, ships and then crash-loops — if middleware is added to a mux that
+// already has routes, and this one does. And, the reason that matters here:
+// handle writes 200 and flushes its headers almost immediately, and after
+// that the status code is spent. Authorizing inside the handler would mean a
+// refused client sees a healthy stream that dies, which every EventSource on
+// earth silently retries forever. Wrapping means it sees an HTTP STATUS.
 func (s *Server) RegisterOn(r chi.Router) {
-	r.Get(StreamPath, s.Handle)
+	r.Get(StreamPath, s.guard.Wrap(s.handle))
 }
 
 // Register wires the stream into the REST server and returns the Hub.
@@ -69,18 +101,21 @@ func (s *Server) RegisterOn(r chi.Router) {
 func Register(r chi.Router, coreImpl *core.Implementation, logger *zap.Logger) *Hub {
 	db := coreImpl.DB()
 	hub := NewHub(NewDBSource(db), logger)
-	NewServer(hub, NewDBTeamLookup(db), logger).RegisterOn(r)
+	NewServer(hub, NewDBTeamLookup(db), authz.NewGuard(db), logger).RegisterOn(r)
 	return hub
 }
 
-// Handle serves GET /v1/teams/{slug}/stream?after=N.
+// handle serves GET /v1/teams/{slug}/stream?after=N.
+//
+// Unexported, and reachable only through RegisterOn, so there is no way to
+// mount this route without the authorization gate in front of it.
 //
 // The contract, which the board depends on being exact: everything with a
 // sequence strictly greater than after is delivered, once each, in order. A
 // client that drops off for thirty seconds and reconnects with its last good
 // sequence receives precisely what it missed — no hole to reason about, no
 // duplicate to filter.
-func (s *Server) Handle(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	team, err := s.lookup(r.Context(), chi.URLParam(r, "slug"))
 	if err != nil {
 		if errors.Is(err, ErrTeamNotFound) {

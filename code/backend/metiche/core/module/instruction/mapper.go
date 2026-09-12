@@ -42,5 +42,6 @@ func mapModelToEntity(m metichedb.Instruction) main_entity.Instruction {
 		ExpiresAt:          null.NewTime(m.ExpiresAt.Time, m.ExpiresAt.Valid),
 		CreatedAt:          m.CreatedAt,
 		UpdatedAt:          m.UpdatedAt,
+		TargetMemberUUID:   mapper.StringToUUIDPtr(m.TargetMemberUUID),
 	}
 }

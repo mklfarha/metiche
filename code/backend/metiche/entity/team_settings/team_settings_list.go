@@ -16,6 +16,7 @@ func (e TeamSettings) FieldIdentifierToTypeMap() map[string]entitytypes.FieldTyp
 		"session_abandoned_seconds": entitytypes.IntFieldType,
 		"max_reviews_per_minute":    entitytypes.IntFieldType,
 		"demoted_rules":             entitytypes.ArrayFieldType,
+		"human_notify_floor":        entitytypes.SingleEnumFieldType,
 	}
 }
 
@@ -29,6 +30,7 @@ func (e TeamSettings) OrderedFieldIdentifiers() []string {
 	res = append(res, "session_abandoned_seconds")
 	res = append(res, "max_reviews_per_minute")
 	res = append(res, "demoted_rules")
+	res = append(res, "human_notify_floor")
 
 	return res
 }

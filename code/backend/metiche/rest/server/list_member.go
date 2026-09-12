@@ -121,6 +121,10 @@ func memberDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("account_uuid", filtering.TypeString),
+
+		filtering.DeclareIdent("revoked_at", filtering.TypeTimestamp),
 	)
 	if err != nil {
 		log.Printf("error creating declarations for member: %v", err)

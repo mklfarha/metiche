@@ -57,6 +57,16 @@ import (
 
 	"github.com/mklfarha/metiche/backend/core/module/team_event"
 
+	"github.com/mklfarha/metiche/backend/core/module/notification_channel"
+
+	"github.com/mklfarha/metiche/backend/core/module/plan"
+
+	"github.com/mklfarha/metiche/backend/core/module/limit_event"
+
+	"github.com/mklfarha/metiche/backend/core/module/account"
+
+	"github.com/mklfarha/metiche/backend/core/module/invite"
+
 	"github.com/mklfarha/metiche/backend/core/repository"
 )
 
@@ -104,6 +114,16 @@ type Implementation struct {
 	instruction instruction.Module
 
 	team_event team_event.Module
+
+	notification_channel notification_channel.Module
+
+	plan plan.Module
+
+	limit_event limit_event.Module
+
+	account account.Module
+
+	invite invite.Module
 }
 
 type Params struct {
@@ -279,6 +299,31 @@ func New(params Params) (*Implementation, error) {
 		Logger:     logger,
 	})
 
+	impl.notification_channel = notification_channel.New(coretypes.ModuleParams{
+		Repository: repository,
+		Logger:     logger,
+	})
+
+	impl.plan = plan.New(coretypes.ModuleParams{
+		Repository: repository,
+		Logger:     logger,
+	})
+
+	impl.limit_event = limit_event.New(coretypes.ModuleParams{
+		Repository: repository,
+		Logger:     logger,
+	})
+
+	impl.account = account.New(coretypes.ModuleParams{
+		Repository: repository,
+		Logger:     logger,
+	})
+
+	impl.invite = invite.New(coretypes.ModuleParams{
+		Repository: repository,
+		Logger:     logger,
+	})
+
 	return impl, nil
 }
 
@@ -448,4 +493,44 @@ func (i *Implementation) Instruction() instruction.Module {
 // came to be discarded.
 func (i *Implementation) TeamEvent() team_event.Module {
 	return i.team_event
+}
+
+// NotificationChannel returns the process-wide notification_channel module built in New.
+// The receiver is a POINTER, like Destroy/DB above: a value receiver here would
+// copy the struct on every call, which is how the previous lazy initialization
+// came to be discarded.
+func (i *Implementation) NotificationChannel() notification_channel.Module {
+	return i.notification_channel
+}
+
+// Plan returns the process-wide plan module built in New.
+// The receiver is a POINTER, like Destroy/DB above: a value receiver here would
+// copy the struct on every call, which is how the previous lazy initialization
+// came to be discarded.
+func (i *Implementation) Plan() plan.Module {
+	return i.plan
+}
+
+// LimitEvent returns the process-wide limit_event module built in New.
+// The receiver is a POINTER, like Destroy/DB above: a value receiver here would
+// copy the struct on every call, which is how the previous lazy initialization
+// came to be discarded.
+func (i *Implementation) LimitEvent() limit_event.Module {
+	return i.limit_event
+}
+
+// Account returns the process-wide account module built in New.
+// The receiver is a POINTER, like Destroy/DB above: a value receiver here would
+// copy the struct on every call, which is how the previous lazy initialization
+// came to be discarded.
+func (i *Implementation) Account() account.Module {
+	return i.account
+}
+
+// Invite returns the process-wide invite module built in New.
+// The receiver is a POINTER, like Destroy/DB above: a value receiver here would
+// copy the struct on every call, which is how the previous lazy initialization
+// came to be discarded.
+func (i *Implementation) Invite() invite.Module {
+	return i.invite
 }

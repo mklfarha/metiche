@@ -5,6 +5,8 @@ import (
 	"go.uber.org/zap"
 
 	metichemcp "github.com/mklfarha/metiche/backend/app/mcp"
+	"github.com/mklfarha/metiche/backend/app/stream"
+	"github.com/mklfarha/metiche/backend/app/webapi"
 	"github.com/mklfarha/metiche/backend/core"
 	restserver "github.com/mklfarha/metiche/backend/rest/server"
 )
@@ -70,18 +72,31 @@ import (
 // unset or unrecognised value serves everything.
 func ProvideCustomRoutes(coreImpl *core.Implementation, logger *zap.Logger) restserver.CustomRoutesFn {
 	return func(r chi.Router) {
-		// Returns the handler so a later wave can install the detection layer
-		// with SetDetector — it must run inside the team lock, which means it
-		// has to be registered on this instance rather than called around it.
-		_ = metichemcp.Register(r, coreImpl, logger)
+		handler := metichemcp.Register(r, coreImpl, logger)
 
-		// SEAM — the board's own endpoints (app/webapi) and the SSE stream
-		// (app/stream) mount here too, on this same root router, with full
-		// paths including the /v1 prefix. Two chi rules apply to them exactly
-		// as they do above: never r.Route("/v1", ...) — the generated CRUD
-		// already owns that mount point and re-mounting panics while the
-		// router builds — and never r.Use here, because middleware cannot be
-		// added to a mux that already has routes. Wrap the handler itself, or
-		// scope it with r.Group.
+		// THE DETECTOR IS INSTALLED, NOT CALLED. NewPathDetector returns a
+		// hook that commit() runs from inside the transaction that already
+		// holds the team row lock. Registering it on the handler is the only
+		// way to get it there: check overlap around commit() instead and two
+		// agents both see a clean world and both insert, which is precisely
+		// the race the lock exists to remove.
+		//
+		// Without this line every tool still works and no conflict is ever
+		// found — a silent, green, useless build. It has no test of its own
+		// because the thing it would assert is "the wiring is wired"; what
+		// proves it is the two-session integration test in app/mcp, which
+		// fails outright if detection is absent.
+		handler.SetDetector(metichemcp.NewPathDetector(coreImpl, logger))
+
+		// The board's half of the surface. Same role gate as the MCP
+		// endpoint above: these are what the frontend reads, so they belong
+		// to the api role, and an mcp-only pod does not serve them.
+		//
+		// Both take the root router and spell full /v1 paths themselves, for
+		// the two chi reasons in the contract above.
+		if metichemcp.RoleFromEnv(logger).ServesAPI() {
+			webapi.Register(r, coreImpl, logger) // GET /v1/teams/{slug}, /contracts, /decisions
+			stream.Register(r, coreImpl, logger) // GET /v1/teams/{slug}/stream (SSE)
+		}
 	}
 }

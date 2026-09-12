@@ -32,6 +32,8 @@ const DefaultClaimTTLSeconds = 900
 
 type StartSessionParams struct {
 	ProjectKey     string `json:"project_key" jsonschema:"A short stable key for the repository you are working in - the repo name is the obvious choice. Claims are scoped to it, so a team working across several repos does not collide with itself. Created on first use."`
+	TeamSlug       string `json:"team_slug,omitempty" jsonschema:"Which team this work is for, by slug. Omit it if you are only on one team; required if you are on several, because guessing would put your work on the wrong board."`
+	ClientKey      string `json:"client_key,omitempty" jsonschema:"The same stable client_key you passed to join_team, identifying WHICH of your agents is starting this session. Omit it if you only run one."`
 	Branch         string `json:"branch,omitempty" jsonschema:"The git branch you are working on, exactly as git reports it. Self-reported: metiche never runs git."`
 	BaseCommit     string `json:"base_commit,omitempty" jsonschema:"The commit you branched from, full or short sha."`
 	Goal           string `json:"goal,omitempty" jsonschema:"One sentence on what this whole session is for, written for a teammate skimming the board. Max 280 characters."`
@@ -46,10 +48,14 @@ type StartSessionParams struct {
 // Structural: a session is a new lane on the board, so board_revision moves
 // and clients re-layout rather than repaint.
 func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args StartSessionParams) (*mcp.CallToolResult, any, error) {
-	ag, err := h.requireAgent(ctx)
+	// v3: the token is the PERSON, so the team and the agent are per-call
+	// scope rather than properties of the credential. RequireAgent pins both
+	// and checks the membership behind them.
+	who, err := h.RequireAgent(ctx, args.TeamSlug, args.ClientKey)
 	if err != nil {
 		return nil, nil, err
 	}
+	ag, team, member := who.Agent, who.Team, who.Member
 
 	projectKey := truncate(args.ProjectKey, 512)
 	if projectKey == "" {
@@ -77,17 +83,17 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 	)
 
 	response, err := h.commit(ctx, Mutation{
-		TeamUUID:       ag.TeamUUID,
+		TeamUUID:       team.ID,
 		IdempotencyKey: idem,
 		Kind:           enums.EVENT_KIND_SESSION_STARTED,
 		Structural:     true,
 		AgentUUID:      uuidPtr(ag.ID),
-		MemberUUID:     uuidPtr(ag.MemberUUID),
+		MemberUUID:     uuidPtr(member.ID),
 		SubjectKind:    enums.SUBJECT_KIND_SESSION,
 		Summary:        fmt.Sprintf("%s started work on %s", ag.Label, projectKey),
 		Payload:        payload_entity.EventPayload{Message: nullString(truncate(args.Goal, 280))},
 		Apply: func(ctx context.Context, tc *TxContext, env *Envelope) error {
-			proj, found, err := h.projectByKey(ctx, tc.Tx, ag.TeamUUID, projectKey)
+			proj, found, err := h.projectByKey(ctx, tc.Tx, team.ID, projectKey)
 			if err != nil {
 				return err
 			}
@@ -103,7 +109,7 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 				}
 				proj = project_entity.Project{
 					ID:                   id,
-					TeamUUID:             ag.TeamUUID,
+					TeamUUID:             team.ID,
 					Key:                  projectKey,
 					Name:                 truncate(firstNonEmpty(args.ProjectName, projectKey), 120),
 					RepoURL:              nullString(truncate(args.RepoURL, 512)),
@@ -135,10 +141,10 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			if _, err := h.core.Session().Insert(ctx, session_types.UpsertRequest{
 				Session: session_entity.Session{
 					ID:              id,
-					TeamUUID:        ag.TeamUUID,
+					TeamUUID:        team.ID,
 					ProjectUUID:     proj.ID,
 					AgentUUID:       ag.ID,
-					MemberUUID:      ag.MemberUUID,
+					MemberUUID:      member.ID,
 					Key:             sessionKey,
 					Branch:          nullString(truncate(args.Branch, 200)),
 					BaseCommit:      nullString(truncate(args.BaseCommit, 64)),
@@ -192,14 +198,11 @@ type EndSessionParams struct {
 // between a teammate being unblocked now and being unblocked in fifteen
 // minutes.
 func (h *Handler) EndSession(ctx context.Context, _ *mcp.CallToolRequest, args EndSessionParams) (*mcp.CallToolResult, any, error) {
-	ag, err := h.requireAgent(ctx)
+	who, err := h.RequireSession(ctx, args.SessionKey)
 	if err != nil {
 		return nil, nil, err
 	}
-	sess, err := h.sessionByKey(ctx, ag, args.SessionKey)
-	if err != nil {
-		return nil, nil, err
-	}
+	ag, sess := who.Agent, who.Session
 
 	outcome := enums.SessionOutcome(enums.SESSION_OUTCOME_SUCCEEDED)
 	switch strings.ToLower(strings.TrimSpace(args.Outcome)) {
@@ -214,7 +217,7 @@ func (h *Handler) EndSession(ctx context.Context, _ *mcp.CallToolRequest, args E
 	}
 
 	response, err := h.commit(ctx, Mutation{
-		TeamUUID: ag.TeamUUID,
+		TeamUUID: who.Team.ID,
 		// Keyed on the session, so a retry of end_session is inherently a
 		// replay rather than a second event.
 		IdempotencyKey: "session_ended:" + sess.ID.String(),
@@ -223,7 +226,7 @@ func (h *Handler) EndSession(ctx context.Context, _ *mcp.CallToolRequest, args E
 		ProjectUUID:    uuidPtr(sess.ProjectUUID),
 		SessionUUID:    uuidPtr(sess.ID),
 		AgentUUID:      uuidPtr(ag.ID),
-		MemberUUID:     uuidPtr(ag.MemberUUID),
+		MemberUUID:     uuidPtr(who.Member.ID),
 		SubjectKind:    enums.SUBJECT_KIND_SESSION,
 		SubjectUUID:    uuidPtr(sess.ID),
 		SubjectKey:     sess.Key,
@@ -314,14 +317,11 @@ type HeartbeatParams struct {
 // possible delivery vehicle for the push-that-cannot-push: a teammate's nudge
 // reaches an agent on its next bare heartbeat, with no polling and no event.
 func (h *Handler) Heartbeat(ctx context.Context, _ *mcp.CallToolRequest, args HeartbeatParams) (*mcp.CallToolResult, any, error) {
-	ag, err := h.requireAgent(ctx)
+	who, err := h.RequireSession(ctx, args.SessionKey)
 	if err != nil {
 		return nil, nil, err
 	}
-	sess, err := h.sessionByKey(ctx, ag, args.SessionKey)
-	if err != nil {
-		return nil, nil, err
-	}
+	ag, sess := who.Agent, who.Session
 
 	now := time.Now().UTC()
 	db := h.core.DB()
@@ -386,7 +386,7 @@ func (h *Handler) Heartbeat(ctx context.Context, _ *mcp.CallToolRequest, args He
 	// frequent call in the system behind every write on the team.
 	var seq, rev int64
 	if err := db.QueryRowContext(ctx,
-		"SELECT `sequence`, `board_revision` FROM `team` WHERE `id` = ?", ag.TeamUUID.String()).
+		"SELECT `sequence`, `board_revision` FROM `team` WHERE `id` = ?", who.Team.ID.String()).
 		Scan(&seq, &rev); err != nil {
 		return nil, nil, retryable(err, "reading the team cursors")
 	}

@@ -81,6 +81,11 @@ const infoHTML = `<!doctype html>
     <li><code>judgement</code> → <code>/v1/judgements</code></li>
     <li><code>instruction</code> → <code>/v1/instructions</code></li>
     <li><code>team_event</code> → <code>/v1/team-events</code></li>
+    <li><code>notification_channel</code> → <code>/v1/notification-channels</code></li>
+    <li><code>plan</code> → <code>/v1/plans</code></li>
+    <li><code>limit_event</code> → <code>/v1/limit-events</code></li>
+    <li><code>account</code> → <code>/v1/accounts</code></li>
+    <li><code>invite</code> → <code>/v1/invites</code></li>
   </ul>
 </div>
 

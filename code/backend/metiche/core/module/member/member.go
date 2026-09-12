@@ -17,6 +17,7 @@ import (
 type Module interface {
 	FetchMemberByID(ctx context.Context, req types.FetchMemberByIDRequest, opts ...Option) (types.FetchMemberByIDResponse, error)
 	FetchMemberByTeamUUIDAndKey(ctx context.Context, req types.FetchMemberByTeamUUIDAndKeyRequest, opts ...Option) (types.FetchMemberByTeamUUIDAndKeyResponse, error)
+	FetchMemberByAccountUUIDAndTeamUUID(ctx context.Context, req types.FetchMemberByAccountUUIDAndTeamUUIDRequest, opts ...Option) (types.FetchMemberByAccountUUIDAndTeamUUIDResponse, error)
 
 	List(ctx context.Context, req types.ListRequest, opts ...Option) (types.ListResponse, error)
 

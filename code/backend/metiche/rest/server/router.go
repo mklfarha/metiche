@@ -261,6 +261,66 @@ func mountRoutes(r chi.Router, h *handlers) {
 
 		})
 
+		r.Route("/notification-channels", func(r chi.Router) {
+			r.Get("/", h.ListNotificationChannel)
+			r.Post("/", h.CreateNotificationChannel)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", h.GetNotificationChannel)
+				r.Patch("/", h.UpdateNotificationChannel)
+				r.Delete("/", h.DeleteNotificationChannel)
+			})
+
+		})
+
+		r.Route("/plans", func(r chi.Router) {
+			r.Get("/", h.ListPlan)
+			r.Post("/", h.CreatePlan)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", h.GetPlan)
+				r.Patch("/", h.UpdatePlan)
+				r.Delete("/", h.DeletePlan)
+			})
+
+		})
+
+		r.Route("/limit-events", func(r chi.Router) {
+			r.Get("/", h.ListLimitEvent)
+			r.Post("/", h.CreateLimitEvent)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", h.GetLimitEvent)
+				r.Patch("/", h.UpdateLimitEvent)
+				r.Delete("/", h.DeleteLimitEvent)
+			})
+
+		})
+
+		r.Route("/accounts", func(r chi.Router) {
+			r.Get("/", h.ListAccount)
+			r.Post("/", h.CreateAccount)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", h.GetAccount)
+				r.Patch("/", h.UpdateAccount)
+				r.Delete("/", h.DeleteAccount)
+			})
+
+		})
+
+		r.Route("/invites", func(r chi.Router) {
+			r.Get("/", h.ListInvite)
+			r.Post("/", h.CreateInvite)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", h.GetInvite)
+				r.Patch("/", h.UpdateInvite)
+				r.Delete("/", h.DeleteInvite)
+			})
+
+		})
+
 	})
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {

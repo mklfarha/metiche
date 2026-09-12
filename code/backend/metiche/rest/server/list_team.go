@@ -113,6 +113,19 @@ func teamDeclarations() *filtering.Declarations {
 
 		filtering.DeclareIdent("settings.demoted_rules", filtering.TypeString),
 
+		// An enum is filtered by its VALUE over REST — either quoted
+		// (status = "active", matched case-insensitively against every spelling
+		// in teamEnumValues) or as the generated value name ident
+		// (status = STATUS_ACTIVE, the same spelling gRPC accepts). Both are
+		// strings to the type checker; the number they stand for is resolved
+		// from the value table, not from this declaration.
+		filtering.DeclareIdent("settings.human_notify_floor", filtering.TypeString),
+		filtering.DeclareIdent("CONFLICT_SEVERITY_INVALID", filtering.TypeString),
+		filtering.DeclareIdent("CONFLICT_SEVERITY_LOW", filtering.TypeString),
+		filtering.DeclareIdent("CONFLICT_SEVERITY_MEDIUM", filtering.TypeString),
+		filtering.DeclareIdent("CONFLICT_SEVERITY_HIGH", filtering.TypeString),
+		filtering.DeclareIdent("CONFLICT_SEVERITY_CRITICAL", filtering.TypeString),
+
 		// team
 
 		filtering.DeclareIdent("id", filtering.TypeString),
@@ -120,10 +133,6 @@ func teamDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("name", filtering.TypeString),
 
 		filtering.DeclareIdent("slug", filtering.TypeString),
-
-		filtering.DeclareIdent("join_code", filtering.TypeString),
-
-		filtering.DeclareIdent("join_code_rotated_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("sequence", filtering.TypeInt),
 
@@ -143,6 +152,41 @@ func teamDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("plan_uuid", filtering.TypeString),
+
+		// An enum is filtered by its VALUE over REST — either quoted
+		// (status = "active", matched case-insensitively against every spelling
+		// in teamEnumValues) or as the generated value name ident
+		// (status = STATUS_ACTIVE, the same spelling gRPC accepts). Both are
+		// strings to the type checker; the number they stand for is resolved
+		// from the value table, not from this declaration.
+		filtering.DeclareIdent("plan_source", filtering.TypeString),
+		filtering.DeclareIdent("PLAN_SOURCE_INVALID", filtering.TypeString),
+		filtering.DeclareIdent("PLAN_SOURCE_INSTANCE_DEFAULT", filtering.TypeString),
+		filtering.DeclareIdent("PLAN_SOURCE_GRANTED", filtering.TypeString),
+		filtering.DeclareIdent("PLAN_SOURCE_SUBSCRIPTION", filtering.TypeString),
+
+		filtering.DeclareIdent("plan_granted_reason", filtering.TypeString),
+
+		filtering.DeclareIdent("plan_expires_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("retention_floor_sequence", filtering.TypeInt),
+
+		filtering.DeclareIdent("last_retention_sweep_at", filtering.TypeTimestamp),
+
+		// An enum is filtered by its VALUE over REST — either quoted
+		// (status = "active", matched case-insensitively against every spelling
+		// in teamEnumValues) or as the generated value name ident
+		// (status = STATUS_ACTIVE, the same spelling gRPC accepts). Both are
+		// strings to the type checker; the number they stand for is resolved
+		// from the value table, not from this declaration.
+		filtering.DeclareIdent("visibility", filtering.TypeString),
+		filtering.DeclareIdent("TEAM_VISIBILITY_INVALID", filtering.TypeString),
+		filtering.DeclareIdent("TEAM_VISIBILITY_PRIVATE", filtering.TypeString),
+		filtering.DeclareIdent("TEAM_VISIBILITY_PUBLIC", filtering.TypeString),
+
+		filtering.DeclareIdent("requires_claimed_accounts", filtering.TypeBool),
 	)
 	if err != nil {
 		log.Printf("error creating declarations for team: %v", err)
@@ -171,6 +215,19 @@ func teamEnumValues() map[string]map[string]int64 {
 			"CONFLICT_SEVERITY_CRITICAL": 4,
 		},
 
+		"settings.human_notify_floor": {
+			"invalid":                    0,
+			"CONFLICT_SEVERITY_INVALID":  0,
+			"low":                        1,
+			"CONFLICT_SEVERITY_LOW":      1,
+			"medium":                     2,
+			"CONFLICT_SEVERITY_MEDIUM":   2,
+			"high":                       3,
+			"CONFLICT_SEVERITY_HIGH":     3,
+			"critical":                   4,
+			"CONFLICT_SEVERITY_CRITICAL": 4,
+		},
+
 		"status": {
 			"invalid":                0,
 			"RECORD_STATUS_INVALID":  0,
@@ -178,6 +235,26 @@ func teamEnumValues() map[string]map[string]int64 {
 			"RECORD_STATUS_ACTIVE":   1,
 			"inactive":               2,
 			"RECORD_STATUS_INACTIVE": 2,
+		},
+
+		"plan_source": {
+			"invalid":                      0,
+			"PLAN_SOURCE_INVALID":          0,
+			"instance_default":             1,
+			"PLAN_SOURCE_INSTANCE_DEFAULT": 1,
+			"granted":                      2,
+			"PLAN_SOURCE_GRANTED":          2,
+			"subscription":                 3,
+			"PLAN_SOURCE_SUBSCRIPTION":     3,
+		},
+
+		"visibility": {
+			"invalid":                 0,
+			"TEAM_VISIBILITY_INVALID": 0,
+			"private":                 1,
+			"TEAM_VISIBILITY_PRIVATE": 1,
+			"public":                  2,
+			"TEAM_VISIBILITY_PUBLIC":  2,
 		},
 	}
 }

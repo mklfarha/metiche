@@ -35,6 +35,7 @@ type Instruction struct {
 	ExpiresAt          null.Time               `json:"expires_at"`
 	CreatedAt          time.Time               `json:"created_at"`
 	UpdatedAt          time.Time               `json:"updated_at"`
+	TargetMemberUUID   *uuid.UUID              `json:"target_member_uuid"`
 }
 
 func (e Instruction) String() string {

@@ -18,6 +18,7 @@ type Module interface {
 	FetchInstructionByID(ctx context.Context, req types.FetchInstructionByIDRequest, opts ...Option) (types.FetchInstructionByIDResponse, error)
 	FetchInstructionByTargetSessionUUIDAndStatus(ctx context.Context, req types.FetchInstructionByTargetSessionUUIDAndStatusRequest, opts ...Option) (types.FetchInstructionByTargetSessionUUIDAndStatusResponse, error)
 	FetchInstructionByTeamUUIDAndKey(ctx context.Context, req types.FetchInstructionByTeamUUIDAndKeyRequest, opts ...Option) (types.FetchInstructionByTeamUUIDAndKeyResponse, error)
+	FetchInstructionByTargetMemberUUIDAndStatus(ctx context.Context, req types.FetchInstructionByTargetMemberUUIDAndStatusRequest, opts ...Option) (types.FetchInstructionByTargetMemberUUIDAndStatusResponse, error)
 
 	List(ctx context.Context, req types.ListRequest, opts ...Option) (types.ListResponse, error)
 

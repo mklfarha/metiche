@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -22,7 +23,9 @@ import (
 // also serving the REST API and holding every open SSE stream to every browser
 // watching a board. One malformed report from one agent would otherwise blank
 // the whole team's view.
-func addTool[In, Out any](s *mcp.Server, logger *zap.Logger, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
+// It also re-resolves the caller's bearer token on EVERY call — see authTool,
+// which is not optional and explains why.
+func addTool[In, Out any](s *mcp.Server, hdl *Handler, logger *zap.Logger, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
 	if t.Annotations == nil {
 		// Not a convenience default: MCP's destructiveHint DEFAULTS TO TRUE
 		// when annotations are omitted, so an unannotated tool advertises
@@ -31,7 +34,58 @@ func addTool[In, Out any](s *mcp.Server, logger *zap.Logger, t *mcp.Tool, h mcp.
 		panic(fmt.Sprintf("tool %q registered without annotations: destructiveHint defaults to TRUE when omitted", t.Name))
 	}
 	registered = append(registered, t)
-	mcp.AddTool(s, t, timeTool(logger, t.Name, recoverTool(logger, t.Name, h)))
+	mcp.AddTool(s, t, authTool(hdl, timeTool(logger, t.Name, recoverTool(logger, t.Name, h))))
+}
+
+// authTool re-reads the caller's bearer token from THIS request and puts the
+// resolved account on the context the tool actually runs with.
+//
+// WHY THIS EXISTS, because it looks redundant next to authMiddleware and is
+// not: the SDK's streamable HTTP transport builds the MCP session from the
+// context of the *initialize* request and hands that same context to every
+// later tool call (mcp/streamable.go, "Pass req.Context() here, to allow
+// middleware to add context values"). authMiddleware runs per HTTP request
+// and decorates a context that tool handlers never see. So without this,
+// only the Authorization header sent on `initialize` has any effect, and
+// every header after it is silently ignored.
+//
+// Silently is the operative word, and it is why this is a tool-layer concern
+// rather than a transport one. The failure is not a 401 — the call reaches
+// the tool, the tool finds no account, and the agent is told to authenticate
+// while holding a perfectly good token it is already sending. That is a
+// confusing enough dead end to have cost an afternoon; it is tested by
+// TestAuthIsPerCallNotPerSession so it cannot come back.
+//
+// req.Extra.Header is the header of the request being served right now, which
+// is exactly the thing the session context cannot tell us.
+func authTool[In, Out any](hdl *Handler, next mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		if hdl == nil || req == nil || req.Extra == nil || req.Extra.Header == nil {
+			return next(ctx, req, in)
+		}
+		token := BearerFromHeader(req.Extra.Header.Get("Authorization"))
+		if token == "" {
+			token = strings.TrimSpace(req.Extra.Header.Get("X-Metiche-Token"))
+		}
+		if token == "" {
+			// No token on this call. Deliberately NOT an error: create_team,
+			// join_team and health are reachable without one, and the tools
+			// that do need an account say so themselves with a message that
+			// tells the agent what to do about it.
+			return next(ctx, req, in)
+		}
+		acct, err := hdl.resolveToken(ctx, token)
+		if err != nil {
+			// Same reasoning: let the tool refuse. Returning a transport
+			// error here would break the whole MCP session over one bad
+			// call, and an agent that has to reconnect to recover is an
+			// agent that stops using the tool.
+			hdl.logger.Warn("a tool call carried a token that did not resolve",
+				zap.String("tool", req.Params.Name))
+			return next(ctx, req, in)
+		}
+		return next(WithAccount(ctx, acct), req, in)
+	}
 }
 
 // registered records every tool passed to addTool so a test can assert over

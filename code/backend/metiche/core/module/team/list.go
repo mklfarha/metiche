@@ -157,10 +157,6 @@ var listFields = []string{
 
 	"slug",
 
-	"join_code",
-
-	"join_code_rotated_at",
-
 	"sequence",
 
 	"board_revision",
@@ -172,6 +168,22 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"plan_uuid",
+
+	"plan_source",
+
+	"plan_granted_reason",
+
+	"plan_expires_at",
+
+	"retention_floor_sequence",
+
+	"last_retention_sweep_at",
+
+	"visibility",
+
+	"requires_claimed_accounts",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Team) any{
@@ -181,10 +193,6 @@ var listFieldRegistry = map[string]func(*repogen.Team) any{
 	"name": func(i *repogen.Team) any { return &i.Name },
 
 	"slug": func(i *repogen.Team) any { return &i.Slug },
-
-	"join_code": func(i *repogen.Team) any { return &i.JoinCode },
-
-	"join_code_rotated_at": func(i *repogen.Team) any { return &i.JoinCodeRotatedAt },
 
 	"sequence": func(i *repogen.Team) any { return &i.Sequence },
 
@@ -197,4 +205,20 @@ var listFieldRegistry = map[string]func(*repogen.Team) any{
 	"created_at": func(i *repogen.Team) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Team) any { return &i.UpdatedAt },
+
+	"plan_uuid": func(i *repogen.Team) any { return &i.PlanUUID },
+
+	"plan_source": func(i *repogen.Team) any { return &i.PlanSource },
+
+	"plan_granted_reason": func(i *repogen.Team) any { return &i.PlanGrantedReason },
+
+	"plan_expires_at": func(i *repogen.Team) any { return &i.PlanExpiresAt },
+
+	"retention_floor_sequence": func(i *repogen.Team) any { return &i.RetentionFloorSequence },
+
+	"last_retention_sweep_at": func(i *repogen.Team) any { return &i.LastRetentionSweepAt },
+
+	"visibility": func(i *repogen.Team) any { return &i.Visibility },
+
+	"requires_claimed_accounts": func(i *repogen.Team) any { return &i.RequiresClaimedAccounts },
 }

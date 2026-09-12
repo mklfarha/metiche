@@ -11,9 +11,10 @@ import (
 
 // TestMintTokenShape: the token must be prefixed (so a leak is greppable),
 // long enough to be unguessable, and its stored form must fit
-// agent.token_hash exactly — the column is VARCHAR(64) because a sha256 hex
+// account.token_hash exactly — the column is VARCHAR(64) because a sha256 hex
 // digest is 64 characters, and a hash that does not fit is a hash that gets
-// silently truncated.
+// silently truncated. (v3 moved the column from agent to account; the width
+// did not change, and neither did the reason for it.)
 func TestMintTokenShape(t *testing.T) {
 	token, hash, err := MintToken()
 	if err != nil {
@@ -27,7 +28,7 @@ func TestMintTokenShape(t *testing.T) {
 		t.Errorf("token body is %d characters, want 43 (32 bytes of crypto/rand)", got)
 	}
 	if len(hash) != sha256.Size*2 {
-		t.Errorf("hash is %d characters, want %d to fit agent.token_hash", len(hash), sha256.Size*2)
+		t.Errorf("hash is %d characters, want %d to fit account.token_hash", len(hash), sha256.Size*2)
 	}
 	if _, err := hex.DecodeString(hash); err != nil {
 		t.Errorf("hash is not hex: %v", err)
@@ -191,7 +192,9 @@ func TestTruncateCountsRunes(t *testing.T) {
 }
 
 // TestMintJoinCode: a join code is read aloud and typed by hand, so its
-// alphabet matters as much as its entropy.
+// alphabet matters as much as its entropy. v3 moved it from team.join_code
+// to invite.code; the alphabet is deliberately unchanged, because the humans
+// reading it out are.
 func TestMintJoinCode(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 512; i++ {
@@ -202,8 +205,8 @@ func TestMintJoinCode(t *testing.T) {
 		if len(code) != joinCodeLength {
 			t.Fatalf("join code %q is %d characters, want %d", code, len(code), joinCodeLength)
 		}
-		if len(code) > 16 {
-			t.Fatalf("join code %q does not fit team.join_code VARCHAR(16)", code)
+		if len(code) > 32 {
+			t.Fatalf("join code %q does not fit invite.code VARCHAR(32)", code)
 		}
 		for _, r := range code {
 			if !strings.ContainsRune(joinCodeAlphabet, r) {

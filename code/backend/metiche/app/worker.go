@@ -1,10 +1,13 @@
 package app
 
 import (
+	"context"
+
 	"go.uber.org/config"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
+	"github.com/mklfarha/metiche/backend/app/sweeper"
 	"github.com/mklfarha/metiche/backend/core"
 )
 
@@ -73,62 +76,65 @@ func RegisterWorkers(lc fx.Lifecycle, coreImpl *core.Implementation, provider co
 		logger = zap.NewNop()
 	}
 
-	// Example — add "context", "sync" and "time" to the imports and uncomment:
+	// ── the sweeper ─────────────────────────────────────────────────────────
 	//
-	// interval := 5 * time.Minute
-	// if d := provider.Get("workers.interval").String(); d != "" {
-	// 	if parsed, err := time.ParseDuration(d); err == nil {
-	// 		interval = parsed
-	// 	}
-	// }
+	// metiche's one background worker. It expires lapsed claims and stale
+	// sessions, raises contract_unclaimed conflicts ("somebody is coding
+	// against an endpoint nobody is building"), and enforces retention.
 	//
-	// // NOT the OnStart ctx: that one is cancelled when startup completes.
-	// ctx, cancel := context.WithCancel(context.Background())
-	// var wg sync.WaitGroup
+	// IT IS NOT THE MECHANISM FOR ANY OF THAT except retention. Expiry is
+	// authoritative at read time -- every detection query filters on
+	// expires_at, so a lapsed claim stops colliding the instant it lapses,
+	// whether or not a pass has run. The sweeper exists so the BOARD agrees
+	// with the detector: without it a released claim sits on screen looking
+	// held. Correctness does not depend on this loop; only visibility does,
+	// which is why a missed pass is not an incident.
 	//
-	// lc.Append(fx.Hook{
-	// 	OnStart: func(context.Context) error {
-	// 		wg.Add(1)
-	// 		go func() {
-	// 			defer wg.Done()
-	// 			ticker := time.NewTicker(interval)
-	// 			defer ticker.Stop()
-	// 			for {
-	// 				select {
-	// 				case <-ctx.Done():
-	// 					return
-	// 				case <-ticker.C:
-	// 					// One recover per tick: a panic here would
-	// 					// otherwise take the API down with it.
-	// 					func() {
-	// 						defer func() {
-	// 							if r := recover(); r != nil {
-	// 								logger.Error("worker panicked", zap.Any("panic", r))
-	// 							}
-	// 						}()
-	// 						// ... take the lease, then do the work through coreImpl ...
-	// 					}()
-	// 				}
-	// 			}
-	// 		}()
-	// 		return nil // never block startup
-	// 	},
-	// 	OnStop: func(stopCtx context.Context) error {
-	// 		cancel()
-	// 		done := make(chan struct{})
-	// 		go func() { wg.Wait(); close(done) }()
-	// 		select {
-	// 		case <-done:
-	// 			return nil
-	// 		case <-stopCtx.Done(): // shutdown deadline reached
-	// 			return stopCtx.Err()
-	// 		}
-	// 	},
-	// })
+	// Retention is the exception, and it is off unless an operator turns it
+	// on -- see Options.RetentionEnabled. Nothing is deleted by default.
+	opts := sweeper.Options{}
+	if err := provider.Get("sweeper").Populate(&opts); err != nil {
+		// Not fatal: every field has a safe zero value and withDefaults
+		// fills in PLAN.md's numbers, so a malformed block degrades to the
+		// documented defaults rather than taking the API down. Retention
+		// stays off, because its zero value is off.
+		logger.Warn("sweeper config could not be read; using defaults with retention off",
+			zap.Error(err))
+		opts = sweeper.Options{}
+	}
+	sw := sweeper.New(coreImpl, logger, opts)
 
-	logger.Info("no background workers registered")
+	// NOT the OnStart ctx -- that one is cancelled the moment startup
+	// completes, which would kill the loop silently.
+	ctx, cancel := context.WithCancel(context.Background())
 
-	_ = lc
-	_ = coreImpl
-	_ = provider
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			// Start returns immediately and recovers per pass, so a panic in
+			// one sweep cannot take the API process down with it.
+			sw.Start(ctx)
+			eff := sw.Options()
+			logger.Info("sweeper started",
+				zap.Duration("interval", eff.Interval),
+				zap.Bool("retention_enabled", eff.RetentionEnabled),
+				zap.Bool("lease", eff.Lease))
+			return nil
+		},
+		OnStop: func(stopCtx context.Context) error {
+			cancel()
+			done := make(chan struct{})
+			go func() { sw.Close(); close(done) }()
+			select {
+			case <-done:
+				return nil
+			case <-stopCtx.Done():
+				// The pass in flight outlived the shutdown deadline. Every
+				// write underneath is idempotent, so the next pod redoes it
+				// safely; say so rather than failing the shutdown silently.
+				logger.Warn("sweeper did not finish its pass before the shutdown deadline")
+				return stopCtx.Err()
+			}
+		},
+	})
+
 }

@@ -88,17 +88,11 @@ func agentDeclarations() *filtering.Declarations {
 
 		filtering.DeclareIdent("id", filtering.TypeString),
 
-		filtering.DeclareIdent("team_uuid", filtering.TypeString),
-
-		filtering.DeclareIdent("member_uuid", filtering.TypeString),
-
 		filtering.DeclareIdent("key", filtering.TypeString),
 
 		filtering.DeclareIdent("label", filtering.TypeString),
 
 		filtering.DeclareIdent("client_kind", filtering.TypeString),
-
-		filtering.DeclareIdent("token_hash", filtering.TypeString),
 
 		filtering.DeclareIdent("client_key", filtering.TypeString),
 
@@ -118,6 +112,8 @@ func agentDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("account_uuid", filtering.TypeString),
 	)
 	if err != nil {
 		log.Printf("error creating declarations for agent: %v", err)

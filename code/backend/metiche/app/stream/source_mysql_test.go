@@ -22,7 +22,13 @@ import (
 // without a database in hub_test.go and sse_test.go, and this is the part that
 // genuinely cannot be.
 //
-//	METICHE_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/metiche_test?parseTime=true' go test ./app/stream/
+//	METICHE_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/metiche_test?parseTime=true&interpolateParams=true' go test ./app/stream/
+//
+// interpolateParams=true is not decoration: it is what production runs
+// (config/base.yaml recommends it), and it changes how []byte arguments reach
+// MySQL. Without it, a []byte bound to a JSON column works; with it, the
+// driver sends a binary literal and MySQL rejects it with error 3144. Leaving
+// it off here once hid exactly that bug until a real deployment found it.
 //
 // parseTime=true is required — occurred_at is scanned into a time.Time, as the
 // generated repository also does.

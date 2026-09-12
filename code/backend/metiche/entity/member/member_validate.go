@@ -43,6 +43,9 @@ func (e Member) Validate() error {
 		c.Field("member.status", validation.EnumMember(e.Status.ToInt64(), []int64{0, 1, 2}, "record_status"))
 
 	}
+	if e.AccountUUID.IsNil() {
+		c.Require("member.account_uuid")
+	}
 
 	return c.Result()
 }

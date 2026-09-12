@@ -22,17 +22,15 @@ func mapModelsToEntities(models []metichedb.Agent) []main_entity.Agent {
 
 func mapModelToEntity(m metichedb.Agent) main_entity.Agent {
 	return main_entity.Agent{
-		ID:         mapper.StringToUUID(m.ID),
-		TeamUUID:   mapper.StringToUUID(m.TeamUUID),
-		MemberUUID: mapper.StringToUUID(m.MemberUUID),
-		Key:        m.Key,
-		Label:      m.Label,
-		ClientKind: null.NewString(m.ClientKind.String, m.ClientKind.Valid),
-		TokenHash:  m.TokenHash,
-		ClientKey:  m.ClientKey,
-		Status:     enums.AgentStatus(m.Status),
-		LastSeenAt: null.NewTime(m.LastSeenAt.Time, m.LastSeenAt.Valid),
-		CreatedAt:  m.CreatedAt,
-		UpdatedAt:  m.UpdatedAt,
+		ID:          mapper.StringToUUID(m.ID),
+		Key:         m.Key,
+		Label:       m.Label,
+		ClientKind:  null.NewString(m.ClientKind.String, m.ClientKind.Valid),
+		ClientKey:   m.ClientKey,
+		Status:      enums.AgentStatus(m.Status),
+		LastSeenAt:  null.NewTime(m.LastSeenAt.Time, m.LastSeenAt.Valid),
+		CreatedAt:   m.CreatedAt,
+		UpdatedAt:   m.UpdatedAt,
+		AccountUUID: mapper.StringToUUID(m.AccountUUID),
 	}
 }

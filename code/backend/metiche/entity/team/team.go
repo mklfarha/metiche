@@ -16,17 +16,23 @@ import (
 )
 
 type Team struct {
-	ID                uuid.UUID                  `json:"id"`
-	Name              string                     `json:"name"`
-	Slug              string                     `json:"slug"`
-	JoinCode          string                     `json:"join_code"`
-	JoinCodeRotatedAt null.Time                  `json:"join_code_rotated_at"`
-	Sequence          int64                      `json:"sequence"`
-	BoardRevision     int64                      `json:"board_revision"`
-	Settings          team_settings.TeamSettings `json:"settings"`
-	Status            enums.RecordStatus         `json:"status"`
-	CreatedAt         time.Time                  `json:"created_at"`
-	UpdatedAt         time.Time                  `json:"updated_at"`
+	ID                      uuid.UUID                  `json:"id"`
+	Name                    string                     `json:"name"`
+	Slug                    string                     `json:"slug"`
+	Sequence                int64                      `json:"sequence"`
+	BoardRevision           int64                      `json:"board_revision"`
+	Settings                team_settings.TeamSettings `json:"settings"`
+	Status                  enums.RecordStatus         `json:"status"`
+	CreatedAt               time.Time                  `json:"created_at"`
+	UpdatedAt               time.Time                  `json:"updated_at"`
+	PlanUUID                *uuid.UUID                 `json:"plan_uuid"`
+	PlanSource              enums.PlanSource           `json:"plan_source"`
+	PlanGrantedReason       null.String                `json:"plan_granted_reason"`
+	PlanExpiresAt           null.Time                  `json:"plan_expires_at"`
+	RetentionFloorSequence  int64                      `json:"retention_floor_sequence"`
+	LastRetentionSweepAt    null.Time                  `json:"last_retention_sweep_at"`
+	Visibility              enums.TeamVisibility       `json:"visibility"`
+	RequiresClaimedAccounts bool                       `json:"requires_claimed_accounts"`
 }
 
 func (e Team) String() string {

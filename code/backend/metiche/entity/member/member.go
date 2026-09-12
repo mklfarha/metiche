@@ -24,6 +24,8 @@ type Member struct {
 	Status      enums.RecordStatus `json:"status"`
 	CreatedAt   time.Time          `json:"created_at"`
 	UpdatedAt   time.Time          `json:"updated_at"`
+	AccountUUID uuid.UUID          `json:"account_uuid"`
+	RevokedAt   null.Time          `json:"revoked_at"`
 }
 
 func (e Member) String() string {

@@ -109,5 +109,9 @@ func mapUpsertRequestToUpdateParams(req types.UpsertRequest) metichedb.UpdateMem
 		CreatedAt: req.Member.CreatedAt,
 
 		UpdatedAt: req.Member.UpdatedAt,
+
+		AccountUUID: req.Member.AccountUUID.String(),
+
+		RevokedAt: req.Member.RevokedAt,
 	}
 }

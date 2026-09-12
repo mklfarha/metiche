@@ -9,8 +9,15 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	invitemod "github.com/mklfarha/metiche/backend/core/module/invite"
+	invite_types "github.com/mklfarha/metiche/backend/core/module/invite/types"
+	planmod "github.com/mklfarha/metiche/backend/core/module/plan"
+	plan_types "github.com/mklfarha/metiche/backend/core/module/plan/types"
 	teammod "github.com/mklfarha/metiche/backend/core/module/team"
 	team_types "github.com/mklfarha/metiche/backend/core/module/team/types"
+	invite_entity "github.com/mklfarha/metiche/backend/entity/invite"
+	member_entity "github.com/mklfarha/metiche/backend/entity/member"
+	plan_entity "github.com/mklfarha/metiche/backend/entity/plan"
 	team_entity "github.com/mklfarha/metiche/backend/entity/team"
 	"github.com/mklfarha/metiche/backend/enums"
 )
@@ -24,6 +31,19 @@ var createTeamNamespace = uuid.Must(uuid.FromString("6d657469-6368-4520-9465-616
 // would be two people deriving the same uuid — and the second would be told
 // their team already exists.
 const minIdempotencyKeyLength = 8
+
+// ErrNoDefaultPlan is a refusal, not a fallback.
+//
+// v3 put limits on a `plan` row and pointed team.plan_uuid at it. A team with
+// no plan is a team with no ceiling on agents, members, projects or
+// retention — on a hosted instance that is an unbounded tenant, and inventing
+// a silent default here would mean the first anyone hears of it is the bill
+// or the outage. So creation fails, loudly, and the instance operator seeds a
+// plan.
+var ErrNoDefaultPlan = errors.New(
+	"this metiche instance has no default plan: no row in `plan` has is_instance_default set and status active. " +
+		"Refusing to create a team with no plan, because a team with no plan has no limits. " +
+		"Seed an instance-default plan first")
 
 // ─────────────────────────────────────────────
 // Tool: create_team
@@ -43,16 +63,19 @@ type CreateTeamResult struct {
 	TeamName     string `json:"team_name"`
 	JoinCode     string `json:"join_code"`
 	JoinCodeNote string `json:"join_code_note"`
+	Plan         string `json:"plan"`
+	Visibility   string `json:"visibility"`
 	Created      bool   `json:"created"`
 }
 
 // CreateTeam mints a team and joins its creator in one call.
 //
 // UNAUTHENTICATED, like join_team, and for the same reason: metiche has no
-// per-person account and no OAuth, because a coordination tool that takes ten
-// minutes to join does not get joined. The join code IS the credential from
-// here on. What bounds creation is therefore a per-IP rate limit and plan
-// limits, not a login — see ratelimit.go.
+// signup, because a coordination tool that takes ten minutes to join does not
+// get joined. A first contact mints an anonymous `account` and hands back its
+// one-time token; a request that already carries a token creates the team as
+// the person it already is. What bounds creation is therefore a per-IP rate
+// limit and the team's plan, not a login — see ratelimit.go.
 //
 // RETRY SAFETY, without a team row to lock. Every other mutating call takes
 // the team's row lock and replays a stored response on a duplicate
@@ -63,10 +86,10 @@ type CreateTeamResult struct {
 // second one, and because all four inputs feed the uuid, a collision means
 // the same request rather than somebody else's team.
 //
-// The token is re-minted on a retry, exactly as in join_team: only its hash
-// was kept, so the original cannot be handed back. The join code IS returned
-// again, because it is a shared secret stored in the clear for precisely that
-// reason.
+// WHAT v3 ADDED HERE. team.join_code is gone, so the creator's first `invite`
+// row is minted as part of creation — otherwise a new team would be a team
+// nobody else could ever reach. And the instance-default `plan` is resolved
+// and attached, or creation fails: see ErrNoDefaultPlan.
 func (h *Handler) CreateTeam(ctx context.Context, _ *mcp.CallToolRequest, args CreateTeamParams) (*mcp.CallToolResult, any, error) {
 	if ok, retryIn := h.createLimit.Allow(ClientIPFromContext(ctx)); !ok {
 		return nil, nil, fmt.Errorf(
@@ -108,6 +131,36 @@ func (h *Handler) CreateTeam(ctx context.Context, _ *mcp.CallToolRequest, args C
 		return nil, nil, err
 	}
 
+	// joinAs resolved the membership; read it back for the invite's
+	// created_by and for the owner promotion.
+	member, found, err := h.memberByKey(ctx, nil, team.ID, joined.MemberKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !found {
+		return nil, nil, errors.New("the creator's membership vanished immediately after being created; retry create_team")
+	}
+	if created && member.Role != enums.MEMBER_ROLE_OWNER {
+		if _, err := h.core.DB().ExecContext(ctx,
+			"UPDATE `member` SET `role` = ?, `updated_at` = UTC_TIMESTAMP() WHERE `id` = ?",
+			enums.MEMBER_ROLE_OWNER, member.ID.String()); err != nil {
+			return nil, nil, retryable(err, "making you the team's owner")
+		}
+		member.Role = enums.MEMBER_ROLE_OWNER
+	}
+
+	invite, err := h.ensureFirstInvite(ctx, team, member)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	planName := ""
+	if team.PlanUUID != nil {
+		if p, err := h.planByID(ctx, *team.PlanUUID); err == nil {
+			planName = p.Name
+		}
+	}
+
 	note := "share the join_code with your teammates; they call join_team with it. Then call start_session."
 	if !created {
 		note = "this team already existed for that idempotency_key, so it was not created twice. " + note
@@ -117,10 +170,13 @@ func (h *Handler) CreateTeam(ctx context.Context, _ *mcp.CallToolRequest, args C
 	return jsonValue(CreateTeamResult{
 		JoinTeamResult: joined,
 		TeamName:       team.Name,
-		JoinCode:       team.JoinCode,
+		JoinCode:       invite.Code,
 		Created:        created,
-		JoinCodeNote: "This is the team's shared secret. Anyone with it can join and see the board, so pass it the way you would " +
-			"a door code, and rotate it from the board if it leaks.",
+		Plan:           planName,
+		Visibility:     team.Visibility.String(),
+		JoinCodeNote: "This is an invite code, and it is the team's shared secret. Anyone with it can join and see the board, so pass it the way " +
+			"you would a door code. Unlike v1's join code it is a row of its own: it can be revoked, expired or use-capped from the board, " +
+			"and a team can have several at once.",
 	})
 }
 
@@ -136,7 +192,9 @@ func (h *Handler) ensureTeam(ctx context.Context, teamID uuid.UUID, teamName str
 		return existing, false, nil
 	}
 
-	joinCode, err := MintJoinCode()
+	// PLANS. Resolved BEFORE anything is written, so the loud failure happens
+	// before a half-made team exists rather than after.
+	plan, err := h.instanceDefaultPlan(ctx)
 	if err != nil {
 		return team_entity.Team{}, false, err
 	}
@@ -154,23 +212,20 @@ func (h *Handler) ensureTeam(ctx context.Context, teamID uuid.UUID, teamName str
 		slug = base + "-" + teamID.String()[:6]
 	}
 
-	// SEAM — plans.
-	//
-	// A later schema version adds a `plan` table and team.plan_uuid, and a new
-	// team is supposed to get whichever plan carries is_instance_default,
-	// with plan_source = instance_default. Neither the table nor the columns
-	// exist in this generated tree yet, so there is nothing to set here.
-	// When they arrive: resolve the default plan inside the same insert path
-	// below, and fail the creation rather than defaulting silently if no
-	// instance default is configured — a team with no plan is a team with no
-	// limits.
-
+	planID := plan.ID
 	team := team_entity.Team{
-		ID:       teamID,
-		Name:     teamName,
-		Slug:     slug,
-		JoinCode: joinCode,
-		Status:   enums.RECORD_STATUS_ACTIVE,
+		ID:         teamID,
+		Name:       teamName,
+		Slug:       slug,
+		Status:     enums.RECORD_STATUS_ACTIVE,
+		PlanUUID:   &planID,
+		PlanSource: enums.PLAN_SOURCE_INSTANCE_DEFAULT,
+		// Private, always. A board is other people's work in progress, and
+		// nothing in this tool surface should be able to make one public by
+		// accident — that is a deliberate act on the board, not a side effect
+		// of creating a team from an agent.
+		Visibility:              enums.TEAM_VISIBILITY_PRIVATE,
+		RequiresClaimedAccounts: false,
 		// Both cursors start at zero: the first event this team ever produces
 		// is member_joined, written by joinAs through the normal write path.
 		Sequence:      0,
@@ -197,6 +252,112 @@ func (h *Handler) ensureTeam(ctx context.Context, teamID uuid.UUID, teamName str
 		return team_entity.Team{}, false, retryable(err, "creating the team")
 	}
 	return team, true, nil
+}
+
+// instanceDefaultPlan resolves the plan a brand new team gets.
+//
+// Lowest sort_order wins when an operator has marked more than one, rather
+// than failing: two defaults is a configuration smell, but refusing to create
+// any team because of it is worse than picking the one the operator listed
+// first. NO default at all is the case that must fail — see ErrNoDefaultPlan.
+func (h *Handler) instanceDefaultPlan(ctx context.Context) (plan_entity.Plan, error) {
+	res, err := h.core.Plan().FetchPlanByIsInstanceDefaultAndStatus(ctx,
+		plan_types.FetchPlanByIsInstanceDefaultAndStatusRequest{
+			IsInstanceDefault: true,
+			Status:            enums.RECORD_STATUS_ACTIVE,
+			Limit:             10,
+		}, planmod.WithSkipCache())
+	if err != nil {
+		return plan_entity.Plan{}, retryable(err, "resolving the instance default plan")
+	}
+	if len(res.Results) == 0 {
+		return plan_entity.Plan{}, ErrNoDefaultPlan
+	}
+	best := res.Results[0]
+	for _, p := range res.Results[1:] {
+		if p.SortOrder < best.SortOrder {
+			best = p
+		}
+	}
+	return best, nil
+}
+
+func (h *Handler) planByID(ctx context.Context, id uuid.UUID) (plan_entity.Plan, error) {
+	res, err := h.core.Plan().FetchPlanByID(ctx,
+		plan_types.FetchPlanByIDRequest{ID: id}, planmod.WithSkipCache())
+	if err != nil {
+		return plan_entity.Plan{}, retryable(err, "reading the team's plan")
+	}
+	if len(res.Results) == 0 {
+		return plan_entity.Plan{}, fmt.Errorf("plan %s no longer exists", id)
+	}
+	return res.Results[0], nil
+}
+
+// ensureFirstInvite returns the creator's usable invite, minting one if they
+// have none.
+//
+// Idempotent on purpose: a retried create_team must hand back the SAME code,
+// or the first answer's code and the retry's code would both be live and the
+// creator would have quietly leaked a second door key. Uncapped and
+// unexpiring, because the first invite is how a team gets its second member
+// and a hackathon team should not have to think about it; narrower invites
+// are made from the board.
+func (h *Handler) ensureFirstInvite(ctx context.Context, team team_entity.Team, member member_entity.Member) (invite_entity.Invite, error) {
+	res, err := h.core.Invite().FetchInviteByTeamUUIDAndStatus(ctx,
+		invite_types.FetchInviteByTeamUUIDAndStatusRequest{
+			TeamUUID: team.ID,
+			Status:   enums.INVITE_STATUS_ACTIVE,
+			Limit:    50,
+		}, invitemod.WithSkipCache())
+	if err != nil {
+		return invite_entity.Invite{}, retryable(err, "looking up the team's invites")
+	}
+	for _, inv := range res.Results {
+		if inv.RevokedAt.Valid || inv.ExpiresAt.Valid || inv.MaxUses.Valid {
+			continue // a narrowed invite is somebody's deliberate choice, not the creator's default one
+		}
+		if inv.CreatedByMemberUUID != nil && *inv.CreatedByMemberUUID == member.ID {
+			return inv, nil
+		}
+	}
+
+	code, err := MintJoinCode()
+	if err != nil {
+		return invite_entity.Invite{}, err
+	}
+	id, err := uuid.NewV4()
+	if err != nil {
+		return invite_entity.Invite{}, err
+	}
+	createdBy := member.ID
+	inv := invite_entity.Invite{
+		ID:                  id,
+		TeamUUID:            team.ID,
+		Code:                code,
+		Label:               nullString("first invite"),
+		CreatedByMemberUUID: &createdBy,
+		Uses:                0,
+		Status:              enums.INVITE_STATUS_ACTIVE,
+	}
+	if _, err := h.core.Invite().Insert(ctx,
+		invite_types.UpsertRequest{Invite: inv}, invitemod.WithSkipCache()); err != nil {
+		// uq_invite_code is global, so the only way this collides is the
+		// 1-in-1.1e15 draw or a concurrent retry that got there first. Both
+		// are answered by re-reading.
+		if again, lookupErr := h.core.Invite().FetchInviteByTeamUUIDAndStatus(ctx,
+			invite_types.FetchInviteByTeamUUIDAndStatusRequest{
+				TeamUUID: team.ID, Status: enums.INVITE_STATUS_ACTIVE, Limit: 50,
+			}, invitemod.WithSkipCache()); lookupErr == nil {
+			for _, existing := range again.Results {
+				if existing.CreatedByMemberUUID != nil && *existing.CreatedByMemberUUID == member.ID {
+					return existing, nil
+				}
+			}
+		}
+		return invite_entity.Invite{}, retryable(err, "creating the team's first invite")
+	}
+	return inv, nil
 }
 
 func (h *Handler) slugTaken(ctx context.Context, slug string) (bool, error) {

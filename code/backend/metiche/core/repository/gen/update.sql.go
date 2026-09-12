@@ -13,42 +13,81 @@ import (
 	mapper "github.com/mklfarha/metiche/backend/entity/mapper"
 )
 
+const updateAccount = `-- name: UpdateAccount :exec
+UPDATE ` + "`" + `account` + "`" + `
+SET
+` + "`" + `key` + "`" + ` = ?, ` + "`" + `display_name` + "`" + ` = ?, ` + "`" + `token_hash` + "`" + ` = ?, ` + "`" + `identity_provider` + "`" + ` = ?, ` + "`" + `identity_subject` + "`" + ` = ?, ` + "`" + `identity_handle` + "`" + ` = ?, ` + "`" + `email` + "`" + ` = ?, ` + "`" + `claimed_at` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `last_seen_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+type UpdateAccountParams struct {
+	Key              string      `json:"key"`
+	DisplayName      string      `json:"display_name"`
+	TokenHash        string      `json:"token_hash"`
+	IdentityProvider int64       `json:"identity_provider"`
+	IdentitySubject  null.String `json:"identity_subject"`
+	IdentityHandle   null.String `json:"identity_handle"`
+	Email            null.String `json:"email"`
+	ClaimedAt        null.Time   `json:"claimed_at"`
+	Status           int64       `json:"status"`
+	LastSeenAt       null.Time   `json:"last_seen_at"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+	ID               string      `json:"id"`
+}
+
+func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) error {
+	_, err := q.db.ExecContext(ctx, updateAccount,
+		arg.Key,
+		arg.DisplayName,
+		arg.TokenHash,
+		arg.IdentityProvider,
+		arg.IdentitySubject,
+		arg.IdentityHandle,
+		arg.Email,
+		arg.ClaimedAt,
+		arg.Status,
+		arg.LastSeenAt,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
 const updateAgent = `-- name: UpdateAgent :exec
 UPDATE ` + "`" + `agent` + "`" + `
 SET
-` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `member_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `label` + "`" + ` = ?, ` + "`" + `client_kind` + "`" + ` = ?, ` + "`" + `token_hash` + "`" + ` = ?, ` + "`" + `client_key` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `last_seen_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+` + "`" + `key` + "`" + ` = ?, ` + "`" + `label` + "`" + ` = ?, ` + "`" + `client_kind` + "`" + ` = ?, ` + "`" + `client_key` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `last_seen_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `account_uuid` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
 
 type UpdateAgentParams struct {
-	TeamUUID   string      `json:"team_uuid"`
-	MemberUUID string      `json:"member_uuid"`
-	Key        string      `json:"key"`
-	Label      string      `json:"label"`
-	ClientKind null.String `json:"client_kind"`
-	TokenHash  string      `json:"token_hash"`
-	ClientKey  string      `json:"client_key"`
-	Status     int64       `json:"status"`
-	LastSeenAt null.Time   `json:"last_seen_at"`
-	CreatedAt  time.Time   `json:"created_at"`
-	UpdatedAt  time.Time   `json:"updated_at"`
-	ID         string      `json:"id"`
+	Key         string      `json:"key"`
+	Label       string      `json:"label"`
+	ClientKind  null.String `json:"client_kind"`
+	ClientKey   string      `json:"client_key"`
+	Status      int64       `json:"status"`
+	LastSeenAt  null.Time   `json:"last_seen_at"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	AccountUUID string      `json:"account_uuid"`
+	ID          string      `json:"id"`
 }
 
 func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) error {
 	_, err := q.db.ExecContext(ctx, updateAgent,
-		arg.TeamUUID,
-		arg.MemberUUID,
 		arg.Key,
 		arg.Label,
 		arg.ClientKind,
-		arg.TokenHash,
 		arg.ClientKey,
 		arg.Status,
 		arg.LastSeenAt,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.AccountUUID,
 		arg.ID,
 	)
 	return err
@@ -525,7 +564,7 @@ func (q *Queries) UpdateDecisionToken(ctx context.Context, arg UpdateDecisionTok
 const updateInstruction = `-- name: UpdateInstruction :exec
 UPDATE ` + "`" + `instruction` + "`" + `
 SET
-` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `target_session_uuid` + "`" + ` = ?, ` + "`" + `target_agent_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `source` + "`" + ` = ?, ` + "`" + `kind` + "`" + ` = ?, ` + "`" + `body` + "`" + ` = ?, ` + "`" + `ref_kind` + "`" + ` = ?, ` + "`" + `ref_uuid` + "`" + ` = ?, ` + "`" + `requires_report` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `raised_by_member_uuid` + "`" + ` = ?, ` + "`" + `delivered_at` + "`" + ` = ?, ` + "`" + `acted_at` + "`" + ` = ?, ` + "`" + `action` + "`" + ` = ?, ` + "`" + `action_note` + "`" + ` = ?, ` + "`" + `expires_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `target_session_uuid` + "`" + ` = ?, ` + "`" + `target_agent_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `source` + "`" + ` = ?, ` + "`" + `kind` + "`" + ` = ?, ` + "`" + `body` + "`" + ` = ?, ` + "`" + `ref_kind` + "`" + ` = ?, ` + "`" + `ref_uuid` + "`" + ` = ?, ` + "`" + `requires_report` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `raised_by_member_uuid` + "`" + ` = ?, ` + "`" + `delivered_at` + "`" + ` = ?, ` + "`" + `acted_at` + "`" + ` = ?, ` + "`" + `action` + "`" + ` = ?, ` + "`" + `action_note` + "`" + ` = ?, ` + "`" + `expires_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `target_member_uuid` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
@@ -550,6 +589,7 @@ type UpdateInstructionParams struct {
 	ExpiresAt          null.Time   `json:"expires_at"`
 	CreatedAt          time.Time   `json:"created_at"`
 	UpdatedAt          time.Time   `json:"updated_at"`
+	TargetMemberUUID   null.String `json:"target_member_uuid"`
 	ID                 string      `json:"id"`
 }
 
@@ -574,6 +614,7 @@ func (q *Queries) UpdateInstruction(ctx context.Context, arg UpdateInstructionPa
 		arg.ExpiresAt,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.TargetMemberUUID,
 		arg.ID,
 	)
 	return err
@@ -665,6 +706,51 @@ func (q *Queries) UpdateIntentToken(ctx context.Context, arg UpdateIntentTokenPa
 	return err
 }
 
+const updateInvite = `-- name: UpdateInvite :exec
+UPDATE ` + "`" + `invite` + "`" + `
+SET
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `code` + "`" + ` = ?, ` + "`" + `label` + "`" + ` = ?, ` + "`" + `created_by_member_uuid` + "`" + ` = ?, ` + "`" + `max_uses` + "`" + ` = ?, ` + "`" + `uses` + "`" + ` = ?, ` + "`" + `expires_at` + "`" + ` = ?, ` + "`" + `revoked_at` + "`" + ` = ?, ` + "`" + `revoked_by_member_uuid` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `last_used_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+type UpdateInviteParams struct {
+	TeamUUID            string      `json:"team_uuid"`
+	Code                string      `json:"code"`
+	Label               null.String `json:"label"`
+	CreatedByMemberUUID null.String `json:"created_by_member_uuid"`
+	MaxUses             null.Int    `json:"max_uses"`
+	Uses                int64       `json:"uses"`
+	ExpiresAt           null.Time   `json:"expires_at"`
+	RevokedAt           null.Time   `json:"revoked_at"`
+	RevokedByMemberUUID null.String `json:"revoked_by_member_uuid"`
+	Status              int64       `json:"status"`
+	LastUsedAt          null.Time   `json:"last_used_at"`
+	CreatedAt           time.Time   `json:"created_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+	ID                  string      `json:"id"`
+}
+
+func (q *Queries) UpdateInvite(ctx context.Context, arg UpdateInviteParams) error {
+	_, err := q.db.ExecContext(ctx, updateInvite,
+		arg.TeamUUID,
+		arg.Code,
+		arg.Label,
+		arg.CreatedByMemberUUID,
+		arg.MaxUses,
+		arg.Uses,
+		arg.ExpiresAt,
+		arg.RevokedAt,
+		arg.RevokedByMemberUUID,
+		arg.Status,
+		arg.LastUsedAt,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
 const updateJudgement = `-- name: UpdateJudgement :exec
 UPDATE ` + "`" + `judgement` + "`" + `
 SET
@@ -724,10 +810,51 @@ func (q *Queries) UpdateJudgement(ctx context.Context, arg UpdateJudgementParams
 	return err
 }
 
+const updateLimitEvent = `-- name: UpdateLimitEvent :exec
+UPDATE ` + "`" + `limit_event` + "`" + `
+SET
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `plan_uuid` + "`" + ` = ?, ` + "`" + `session_uuid` + "`" + ` = ?, ` + "`" + `dimension` + "`" + ` = ?, ` + "`" + `observed` + "`" + ` = ?, ` + "`" + `allowed` + "`" + ` = ?, ` + "`" + `outcome` + "`" + ` = ?, ` + "`" + `note` + "`" + ` = ?, ` + "`" + `occurred_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+type UpdateLimitEventParams struct {
+	TeamUUID    string      `json:"team_uuid"`
+	PlanUUID    null.String `json:"plan_uuid"`
+	SessionUUID null.String `json:"session_uuid"`
+	Dimension   string      `json:"dimension"`
+	Observed    int64       `json:"observed"`
+	Allowed     null.Int    `json:"allowed"`
+	Outcome     int64       `json:"outcome"`
+	Note        null.String `json:"note"`
+	OccurredAt  time.Time   `json:"occurred_at"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	ID          string      `json:"id"`
+}
+
+func (q *Queries) UpdateLimitEvent(ctx context.Context, arg UpdateLimitEventParams) error {
+	_, err := q.db.ExecContext(ctx, updateLimitEvent,
+		arg.TeamUUID,
+		arg.PlanUUID,
+		arg.SessionUUID,
+		arg.Dimension,
+		arg.Observed,
+		arg.Allowed,
+		arg.Outcome,
+		arg.Note,
+		arg.OccurredAt,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
 const updateMember = `-- name: UpdateMember :exec
 UPDATE ` + "`" + `member` + "`" + `
 SET
-` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `display_name` + "`" + ` = ?, ` + "`" + `role` + "`" + ` = ?, ` + "`" + `last_seen_at` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `display_name` + "`" + ` = ?, ` + "`" + `role` + "`" + ` = ?, ` + "`" + `last_seen_at` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `account_uuid` + "`" + ` = ?, ` + "`" + `revoked_at` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
@@ -741,6 +868,8 @@ type UpdateMemberParams struct {
 	Status      int64     `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	AccountUUID string    `json:"account_uuid"`
+	RevokedAt   null.Time `json:"revoked_at"`
 	ID          string    `json:"id"`
 }
 
@@ -751,6 +880,105 @@ func (q *Queries) UpdateMember(ctx context.Context, arg UpdateMemberParams) erro
 		arg.DisplayName,
 		arg.Role,
 		arg.LastSeenAt,
+		arg.Status,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.AccountUUID,
+		arg.RevokedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const updateNotificationChannel = `-- name: UpdateNotificationChannel :exec
+UPDATE ` + "`" + `notification_channel` + "`" + `
+SET
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `project_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `kind` + "`" + ` = ?, ` + "`" + `label` + "`" + ` = ?, ` + "`" + `target_url` + "`" + ` = ?, ` + "`" + `min_severity` + "`" + ` = ?, ` + "`" + `notify_human_requests` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `delivery_status` + "`" + ` = ?, ` + "`" + `consecutive_failures` + "`" + ` = ?, ` + "`" + `last_attempt_at` + "`" + ` = ?, ` + "`" + `last_success_at` + "`" + ` = ?, ` + "`" + `last_error` + "`" + ` = ?, ` + "`" + `created_by_member_uuid` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+type UpdateNotificationChannelParams struct {
+	TeamUUID            string      `json:"team_uuid"`
+	ProjectUUID         null.String `json:"project_uuid"`
+	Key                 string      `json:"key"`
+	Kind                int64       `json:"kind"`
+	Label               string      `json:"label"`
+	TargetURL           string      `json:"target_url"`
+	MinSeverity         int64       `json:"min_severity"`
+	NotifyHumanRequests bool        `json:"notify_human_requests"`
+	Status              int64       `json:"status"`
+	DeliveryStatus      int64       `json:"delivery_status"`
+	ConsecutiveFailures int64       `json:"consecutive_failures"`
+	LastAttemptAt       null.Time   `json:"last_attempt_at"`
+	LastSuccessAt       null.Time   `json:"last_success_at"`
+	LastError           null.String `json:"last_error"`
+	CreatedByMemberUUID null.String `json:"created_by_member_uuid"`
+	CreatedAt           time.Time   `json:"created_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+	ID                  string      `json:"id"`
+}
+
+func (q *Queries) UpdateNotificationChannel(ctx context.Context, arg UpdateNotificationChannelParams) error {
+	_, err := q.db.ExecContext(ctx, updateNotificationChannel,
+		arg.TeamUUID,
+		arg.ProjectUUID,
+		arg.Key,
+		arg.Kind,
+		arg.Label,
+		arg.TargetURL,
+		arg.MinSeverity,
+		arg.NotifyHumanRequests,
+		arg.Status,
+		arg.DeliveryStatus,
+		arg.ConsecutiveFailures,
+		arg.LastAttemptAt,
+		arg.LastSuccessAt,
+		arg.LastError,
+		arg.CreatedByMemberUUID,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const updatePlan = `-- name: UpdatePlan :exec
+UPDATE ` + "`" + `plan` + "`" + `
+SET
+` + "`" + `key` + "`" + ` = ?, ` + "`" + `name` + "`" + ` = ?, ` + "`" + `description` + "`" + ` = ?, ` + "`" + `max_concurrent_agents` + "`" + ` = ?, ` + "`" + `retention_days` + "`" + ` = ?, ` + "`" + `max_members` + "`" + ` = ?, ` + "`" + `max_projects` + "`" + ` = ?, ` + "`" + `is_instance_default` + "`" + ` = ?, ` + "`" + `sort_order` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+type UpdatePlanParams struct {
+	Key                 string      `json:"key"`
+	Name                string      `json:"name"`
+	Description         null.String `json:"description"`
+	MaxConcurrentAgents null.Int    `json:"max_concurrent_agents"`
+	RetentionDays       null.Int    `json:"retention_days"`
+	MaxMembers          null.Int    `json:"max_members"`
+	MaxProjects         null.Int    `json:"max_projects"`
+	IsInstanceDefault   bool        `json:"is_instance_default"`
+	SortOrder           int64       `json:"sort_order"`
+	Status              int64       `json:"status"`
+	CreatedAt           time.Time   `json:"created_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+	ID                  string      `json:"id"`
+}
+
+// Code generated by nuzur go-code-gen. DO NOT EDIT.
+func (q *Queries) UpdatePlan(ctx context.Context, arg UpdatePlanParams) error {
+	_, err := q.db.ExecContext(ctx, updatePlan,
+		arg.Key,
+		arg.Name,
+		arg.Description,
+		arg.MaxConcurrentAgents,
+		arg.RetentionDays,
+		arg.MaxMembers,
+		arg.MaxProjects,
+		arg.IsInstanceDefault,
+		arg.SortOrder,
 		arg.Status,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -862,38 +1090,49 @@ func (q *Queries) UpdateSession(ctx context.Context, arg UpdateSessionParams) er
 const updateTeam = `-- name: UpdateTeam :exec
 UPDATE ` + "`" + `team` + "`" + `
 SET
-` + "`" + `name` + "`" + ` = ?, ` + "`" + `slug` + "`" + ` = ?, ` + "`" + `join_code` + "`" + ` = ?, ` + "`" + `join_code_rotated_at` + "`" + ` = ?, ` + "`" + `sequence` + "`" + ` = ?, ` + "`" + `board_revision` + "`" + ` = ?, ` + "`" + `settings` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+` + "`" + `name` + "`" + ` = ?, ` + "`" + `slug` + "`" + ` = ?, ` + "`" + `sequence` + "`" + ` = ?, ` + "`" + `board_revision` + "`" + ` = ?, ` + "`" + `settings` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `plan_uuid` + "`" + ` = ?, ` + "`" + `plan_source` + "`" + ` = ?, ` + "`" + `plan_granted_reason` + "`" + ` = ?, ` + "`" + `plan_expires_at` + "`" + ` = ?, ` + "`" + `retention_floor_sequence` + "`" + ` = ?, ` + "`" + `last_retention_sweep_at` + "`" + ` = ?, ` + "`" + `visibility` + "`" + ` = ?, ` + "`" + `requires_claimed_accounts` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
 
 type UpdateTeamParams struct {
-	Name              string      `json:"name"`
-	Slug              string      `json:"slug"`
-	JoinCode          string      `json:"join_code"`
-	JoinCodeRotatedAt null.Time   `json:"join_code_rotated_at"`
-	Sequence          int64       `json:"sequence"`
-	BoardRevision     int64       `json:"board_revision"`
-	Settings          mapper.JSON `json:"settings"`
-	Status            int64       `json:"status"`
-	CreatedAt         time.Time   `json:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at"`
-	ID                string      `json:"id"`
+	Name                    string      `json:"name"`
+	Slug                    string      `json:"slug"`
+	Sequence                int64       `json:"sequence"`
+	BoardRevision           int64       `json:"board_revision"`
+	Settings                mapper.JSON `json:"settings"`
+	Status                  int64       `json:"status"`
+	CreatedAt               time.Time   `json:"created_at"`
+	UpdatedAt               time.Time   `json:"updated_at"`
+	PlanUUID                null.String `json:"plan_uuid"`
+	PlanSource              int64       `json:"plan_source"`
+	PlanGrantedReason       null.String `json:"plan_granted_reason"`
+	PlanExpiresAt           null.Time   `json:"plan_expires_at"`
+	RetentionFloorSequence  int64       `json:"retention_floor_sequence"`
+	LastRetentionSweepAt    null.Time   `json:"last_retention_sweep_at"`
+	Visibility              int64       `json:"visibility"`
+	RequiresClaimedAccounts bool        `json:"requires_claimed_accounts"`
+	ID                      string      `json:"id"`
 }
 
-// Code generated by nuzur go-code-gen. DO NOT EDIT.
 func (q *Queries) UpdateTeam(ctx context.Context, arg UpdateTeamParams) error {
 	_, err := q.db.ExecContext(ctx, updateTeam,
 		arg.Name,
 		arg.Slug,
-		arg.JoinCode,
-		arg.JoinCodeRotatedAt,
 		arg.Sequence,
 		arg.BoardRevision,
 		arg.Settings,
 		arg.Status,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.PlanUUID,
+		arg.PlanSource,
+		arg.PlanGrantedReason,
+		arg.PlanExpiresAt,
+		arg.RetentionFloorSequence,
+		arg.LastRetentionSweepAt,
+		arg.Visibility,
+		arg.RequiresClaimedAccounts,
 		arg.ID,
 	)
 	return err

@@ -153,17 +153,11 @@ var listFields = []string{
 
 	"id",
 
-	"team_uuid",
-
-	"member_uuid",
-
 	"key",
 
 	"label",
 
 	"client_kind",
-
-	"token_hash",
 
 	"client_key",
 
@@ -174,23 +168,19 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"account_uuid",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Agent) any{
 
 	"id": func(i *repogen.Agent) any { return &i.ID },
 
-	"team_uuid": func(i *repogen.Agent) any { return &i.TeamUUID },
-
-	"member_uuid": func(i *repogen.Agent) any { return &i.MemberUUID },
-
 	"key": func(i *repogen.Agent) any { return &i.Key },
 
 	"label": func(i *repogen.Agent) any { return &i.Label },
 
 	"client_kind": func(i *repogen.Agent) any { return &i.ClientKind },
-
-	"token_hash": func(i *repogen.Agent) any { return &i.TokenHash },
 
 	"client_key": func(i *repogen.Agent) any { return &i.ClientKey },
 
@@ -201,4 +191,6 @@ var listFieldRegistry = map[string]func(*repogen.Agent) any{
 	"created_at": func(i *repogen.Agent) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Agent) any { return &i.UpdatedAt },
+
+	"account_uuid": func(i *repogen.Agent) any { return &i.AccountUUID },
 }

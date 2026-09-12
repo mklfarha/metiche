@@ -190,6 +190,8 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"target_member_uuid",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Instruction) any{
@@ -233,4 +235,6 @@ var listFieldRegistry = map[string]func(*repogen.Instruction) any{
 	"created_at": func(i *repogen.Instruction) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Instruction) any { return &i.UpdatedAt },
+
+	"target_member_uuid": func(i *repogen.Instruction) any { return &i.TargetMemberUUID },
 }

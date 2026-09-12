@@ -43,6 +43,10 @@ func (e TeamSettings) Validate() error {
 		}
 
 	}
+	if e.HumanNotifyFloor.ToInt64() != 0 {
+		c.Field("team_settings.human_notify_floor", validation.EnumMember(e.HumanNotifyFloor.ToInt64(), []int64{0, 1, 2, 3, 4}, "conflict_severity"))
+
+	}
 
 	return c.Result()
 }

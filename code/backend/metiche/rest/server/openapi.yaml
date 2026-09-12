@@ -6,6 +6,214 @@ info:
 servers:
     - url: http://localhost:8080/v1
 paths:
+    /accounts:
+        get:
+            tags:
+                - Account
+            summary: List accounts
+            operationId: listAccount
+            parameters:
+                - name: filter
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: order_by
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: page_size
+                  in: query
+                  required: false
+                  schema:
+                    type: integer
+                - name: page_token
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: include_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: exclude_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: skip_cache
+                  in: query
+                  required: false
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: List of accounts
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AccountList'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        post:
+            tags:
+                - Account
+            summary: Create Account
+            operationId: createAccount
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Account'
+                required: true
+            responses:
+                "201":
+                    description: Created Account
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Account'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /accounts/{id}:
+        get:
+            tags:
+                - Account
+            summary: Get Account by ID
+            operationId: getAccount
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful operation
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Account'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        patch:
+            tags:
+                - Account
+            summary: Partially update Account
+            operationId: patchAccount
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Account'
+                required: true
+            responses:
+                "200":
+                    description: Successful update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Account'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Version conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        delete:
+            tags:
+                - Account
+            summary: Delete Account by ID
+            operationId: deleteAccount
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "204":
+                    description: No Content
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
     /agents:
         get:
             tags:
@@ -2918,6 +3126,214 @@ paths:
                         application/problem+json:
                             schema:
                                 $ref: '#/components/schemas/Problem'
+    /invites:
+        get:
+            tags:
+                - Invite
+            summary: List invites
+            operationId: listInvite
+            parameters:
+                - name: filter
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: order_by
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: page_size
+                  in: query
+                  required: false
+                  schema:
+                    type: integer
+                - name: page_token
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: include_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: exclude_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: skip_cache
+                  in: query
+                  required: false
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: List of invites
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/InviteList'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        post:
+            tags:
+                - Invite
+            summary: Create Invite
+            operationId: createInvite
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Invite'
+                required: true
+            responses:
+                "201":
+                    description: Created Invite
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Invite'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /invites/{id}:
+        get:
+            tags:
+                - Invite
+            summary: Get Invite by ID
+            operationId: getInvite
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful operation
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Invite'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        patch:
+            tags:
+                - Invite
+            summary: Partially update Invite
+            operationId: patchInvite
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Invite'
+                required: true
+            responses:
+                "200":
+                    description: Successful update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Invite'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Version conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        delete:
+            tags:
+                - Invite
+            summary: Delete Invite by ID
+            operationId: deleteInvite
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "204":
+                    description: No Content
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
     /judgements:
         get:
             tags:
@@ -3126,6 +3542,214 @@ paths:
                         application/problem+json:
                             schema:
                                 $ref: '#/components/schemas/Problem'
+    /limit-events:
+        get:
+            tags:
+                - LimitEvent
+            summary: List limit-events
+            operationId: listLimitEvent
+            parameters:
+                - name: filter
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: order_by
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: page_size
+                  in: query
+                  required: false
+                  schema:
+                    type: integer
+                - name: page_token
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: include_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: exclude_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: skip_cache
+                  in: query
+                  required: false
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: List of limit-events
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/LimitEventList'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        post:
+            tags:
+                - LimitEvent
+            summary: Create LimitEvent
+            operationId: createLimitEvent
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/LimitEvent'
+                required: true
+            responses:
+                "201":
+                    description: Created LimitEvent
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/LimitEvent'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /limit-events/{id}:
+        get:
+            tags:
+                - LimitEvent
+            summary: Get LimitEvent by ID
+            operationId: getLimitEvent
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful operation
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/LimitEvent'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        patch:
+            tags:
+                - LimitEvent
+            summary: Partially update LimitEvent
+            operationId: patchLimitEvent
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/LimitEvent'
+                required: true
+            responses:
+                "200":
+                    description: Successful update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/LimitEvent'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Version conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        delete:
+            tags:
+                - LimitEvent
+            summary: Delete LimitEvent by ID
+            operationId: deleteLimitEvent
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "204":
+                    description: No Content
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
     /members:
         get:
             tags:
@@ -3307,6 +3931,422 @@ paths:
                 - Member
             summary: Delete Member by ID
             operationId: deleteMember
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "204":
+                    description: No Content
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /notification-channels:
+        get:
+            tags:
+                - NotificationChannel
+            summary: List notification-channels
+            operationId: listNotificationChannel
+            parameters:
+                - name: filter
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: order_by
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: page_size
+                  in: query
+                  required: false
+                  schema:
+                    type: integer
+                - name: page_token
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: include_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: exclude_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: skip_cache
+                  in: query
+                  required: false
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: List of notification-channels
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/NotificationChannelList'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        post:
+            tags:
+                - NotificationChannel
+            summary: Create NotificationChannel
+            operationId: createNotificationChannel
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/NotificationChannel'
+                required: true
+            responses:
+                "201":
+                    description: Created NotificationChannel
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/NotificationChannel'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /notification-channels/{id}:
+        get:
+            tags:
+                - NotificationChannel
+            summary: Get NotificationChannel by ID
+            operationId: getNotificationChannel
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful operation
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/NotificationChannel'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        patch:
+            tags:
+                - NotificationChannel
+            summary: Partially update NotificationChannel
+            operationId: patchNotificationChannel
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/NotificationChannel'
+                required: true
+            responses:
+                "200":
+                    description: Successful update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/NotificationChannel'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Version conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        delete:
+            tags:
+                - NotificationChannel
+            summary: Delete NotificationChannel by ID
+            operationId: deleteNotificationChannel
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "204":
+                    description: No Content
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /plans:
+        get:
+            tags:
+                - Plan
+            summary: List plans
+            operationId: listPlan
+            parameters:
+                - name: filter
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: order_by
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: page_size
+                  in: query
+                  required: false
+                  schema:
+                    type: integer
+                - name: page_token
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: include_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: exclude_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: skip_cache
+                  in: query
+                  required: false
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: List of plans
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/PlanList'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        post:
+            tags:
+                - Plan
+            summary: Create Plan
+            operationId: createPlan
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Plan'
+                required: true
+            responses:
+                "201":
+                    description: Created Plan
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Plan'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /plans/{id}:
+        get:
+            tags:
+                - Plan
+            summary: Get Plan by ID
+            operationId: getPlan
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful operation
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Plan'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        patch:
+            tags:
+                - Plan
+            summary: Partially update Plan
+            operationId: patchPlan
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Plan'
+                required: true
+            responses:
+                "200":
+                    description: Successful update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Plan'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Version conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        delete:
+            tags:
+                - Plan
+            summary: Delete Plan by ID
+            operationId: deletePlan
             parameters:
                 - name: id
                   in: path
@@ -4168,8 +5208,69 @@ paths:
                                 $ref: '#/components/schemas/Problem'
 components:
     schemas:
+        Account:
+            properties:
+                claimed_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                created_at:
+                    format: date-time
+                    type: string
+                display_name:
+                    type: string
+                email:
+                    format: email
+                    nullable: true
+                    type: string
+                id:
+                    format: uuid
+                    type: string
+                identity_handle:
+                    nullable: true
+                    type: string
+                identity_provider:
+                    $ref: '#/components/schemas/IdentityProvider'
+                identity_subject:
+                    nullable: true
+                    type: string
+                key:
+                    type: string
+                last_seen_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                status:
+                    $ref: '#/components/schemas/RecordStatus'
+                token_hash:
+                    type: string
+                updated_at:
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - key
+                - display_name
+                - token_hash
+                - identity_provider
+                - status
+                - created_at
+                - updated_at
+            type: object
+        AccountList:
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/Account'
+                    type: array
+                next_page_token:
+                    type: string
+            type: object
         Agent:
             properties:
+                account_uuid:
+                    format: uuid
+                    type: string
                 client_key:
                     type: string
                 client_kind:
@@ -4189,30 +5290,20 @@ components:
                     format: date-time
                     nullable: true
                     type: string
-                member_uuid:
-                    format: uuid
-                    type: string
                 status:
                     $ref: '#/components/schemas/AgentStatus'
-                team_uuid:
-                    format: uuid
-                    type: string
-                token_hash:
-                    type: string
                 updated_at:
                     format: date-time
                     type: string
             required:
                 - id
-                - team_uuid
-                - member_uuid
                 - key
                 - label
-                - token_hash
                 - client_key
                 - status
                 - created_at
                 - updated_at
+                - account_uuid
             type: object
         AgentList:
             properties:
@@ -5017,6 +6108,14 @@ components:
                 next_page_token:
                     type: string
             type: object
+        DeliveryStatus:
+            enum:
+                - invalid
+                - never_sent
+                - ok
+                - failing
+                - disabled_after_failures
+            type: string
         DetectedBy:
             enum:
                 - invalid
@@ -5063,6 +6162,12 @@ components:
                 - invalid
                 - in
                 - out
+            type: string
+        IdentityProvider:
+            enum:
+                - invalid
+                - none
+                - github
             type: string
         Instruction:
             properties:
@@ -5114,6 +6219,10 @@ components:
                 status:
                     $ref: '#/components/schemas/InstructionStatus'
                 target_agent_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                target_member_uuid:
                     format: uuid
                     nullable: true
                     type: string
@@ -5326,6 +6435,80 @@ components:
                 next_page_token:
                     type: string
             type: object
+        Invite:
+            properties:
+                code:
+                    type: string
+                created_at:
+                    format: date-time
+                    type: string
+                created_by_member_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                expires_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                id:
+                    format: uuid
+                    type: string
+                label:
+                    nullable: true
+                    type: string
+                last_used_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                max_uses:
+                    format: int64
+                    nullable: true
+                    type: integer
+                revoked_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                revoked_by_member_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                status:
+                    $ref: '#/components/schemas/InviteStatus'
+                team_uuid:
+                    format: uuid
+                    type: string
+                updated_at:
+                    format: date-time
+                    type: string
+                uses:
+                    format: int64
+                    type: integer
+            required:
+                - id
+                - team_uuid
+                - code
+                - uses
+                - status
+                - created_at
+                - updated_at
+            type: object
+        InviteList:
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/Invite'
+                    type: array
+                next_page_token:
+                    type: string
+            type: object
+        InviteStatus:
+            enum:
+                - invalid
+                - active
+                - exhausted
+                - expired
+                - revoked
+            type: string
         Judgement:
             properties:
                 confidence:
@@ -5428,8 +6611,76 @@ components:
                 - no_conflict
                 - unsure
             type: string
+        LimitEvent:
+            properties:
+                allowed:
+                    format: int64
+                    nullable: true
+                    type: integer
+                created_at:
+                    format: date-time
+                    type: string
+                dimension:
+                    type: string
+                id:
+                    format: uuid
+                    type: string
+                note:
+                    nullable: true
+                    type: string
+                observed:
+                    format: int64
+                    type: integer
+                occurred_at:
+                    format: date-time
+                    type: string
+                outcome:
+                    $ref: '#/components/schemas/LimitOutcome'
+                plan_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                session_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                team_uuid:
+                    format: uuid
+                    type: string
+                updated_at:
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - team_uuid
+                - dimension
+                - observed
+                - outcome
+                - occurred_at
+                - created_at
+                - updated_at
+            type: object
+        LimitEventList:
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/LimitEvent'
+                    type: array
+                next_page_token:
+                    type: string
+            type: object
+        LimitOutcome:
+            enum:
+                - invalid
+                - warned
+                - refused
+                - allowed_over
+            type: string
         Member:
             properties:
+                account_uuid:
+                    format: uuid
+                    type: string
                 created_at:
                     format: date-time
                     type: string
@@ -5441,6 +6692,10 @@ components:
                 key:
                     type: string
                 last_seen_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                revoked_at:
                     format: date-time
                     nullable: true
                     type: string
@@ -5463,6 +6718,7 @@ components:
                 - status
                 - created_at
                 - updated_at
+                - account_uuid
             type: object
         MemberList:
             properties:
@@ -5479,6 +6735,89 @@ components:
                 - owner
                 - member
             type: string
+        NotificationChannel:
+            properties:
+                consecutive_failures:
+                    format: int64
+                    type: integer
+                created_at:
+                    format: date-time
+                    type: string
+                created_by_member_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                delivery_status:
+                    $ref: '#/components/schemas/DeliveryStatus'
+                id:
+                    format: uuid
+                    type: string
+                key:
+                    type: string
+                kind:
+                    $ref: '#/components/schemas/NotificationChannelKind'
+                label:
+                    type: string
+                last_attempt_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                last_error:
+                    nullable: true
+                    type: string
+                last_success_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                min_severity:
+                    $ref: '#/components/schemas/ConflictSeverity'
+                notify_human_requests:
+                    type: boolean
+                project_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                status:
+                    $ref: '#/components/schemas/RecordStatus'
+                target_url:
+                    type: string
+                team_uuid:
+                    format: uuid
+                    type: string
+                updated_at:
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - team_uuid
+                - key
+                - kind
+                - label
+                - target_url
+                - min_severity
+                - notify_human_requests
+                - status
+                - delivery_status
+                - consecutive_failures
+                - created_at
+                - updated_at
+            type: object
+        NotificationChannelKind:
+            enum:
+                - invalid
+                - slack
+                - discord
+                - webhook
+            type: string
+        NotificationChannelList:
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/NotificationChannel'
+                    type: array
+                next_page_token:
+                    type: string
+            type: object
         ParticipantResponse:
             enum:
                 - invalid
@@ -5492,6 +6831,73 @@ components:
                 - initiator
                 - incumbent
                 - bystander
+            type: string
+        Plan:
+            properties:
+                created_at:
+                    format: date-time
+                    type: string
+                description:
+                    nullable: true
+                    type: string
+                id:
+                    format: uuid
+                    type: string
+                is_instance_default:
+                    type: boolean
+                key:
+                    type: string
+                max_concurrent_agents:
+                    format: int64
+                    nullable: true
+                    type: integer
+                max_members:
+                    format: int64
+                    nullable: true
+                    type: integer
+                max_projects:
+                    format: int64
+                    nullable: true
+                    type: integer
+                name:
+                    type: string
+                retention_days:
+                    format: int64
+                    nullable: true
+                    type: integer
+                sort_order:
+                    format: int64
+                    type: integer
+                status:
+                    $ref: '#/components/schemas/RecordStatus'
+                updated_at:
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - key
+                - name
+                - is_instance_default
+                - sort_order
+                - status
+                - created_at
+                - updated_at
+            type: object
+        PlanList:
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/Plan'
+                    type: array
+                next_page_token:
+                    type: string
+            type: object
+        PlanSource:
+            enum:
+                - invalid
+                - instance_default
+                - granted
+                - subscription
             type: string
         Problem:
             properties:
@@ -5700,14 +7106,30 @@ components:
                 id:
                     format: uuid
                     type: string
-                join_code:
-                    type: string
-                join_code_rotated_at:
+                last_retention_sweep_at:
                     format: date-time
                     nullable: true
                     type: string
                 name:
                     type: string
+                plan_expires_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                plan_granted_reason:
+                    nullable: true
+                    type: string
+                plan_source:
+                    $ref: '#/components/schemas/PlanSource'
+                plan_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                requires_claimed_accounts:
+                    type: boolean
+                retention_floor_sequence:
+                    format: int64
+                    type: integer
                 sequence:
                     format: int64
                     type: integer
@@ -5721,16 +7143,21 @@ components:
                 updated_at:
                     format: date-time
                     type: string
+                visibility:
+                    $ref: '#/components/schemas/TeamVisibility'
             required:
                 - id
                 - name
                 - slug
-                - join_code
                 - sequence
                 - board_revision
                 - status
                 - created_at
                 - updated_at
+                - plan_source
+                - retention_floor_sequence
+                - visibility
+                - requires_claimed_accounts
             type: object
         TeamEvent:
             properties:
@@ -5823,3 +7250,9 @@ components:
                 next_page_token:
                     type: string
             type: object
+        TeamVisibility:
+            enum:
+                - invalid
+                - private
+                - public
+            type: string

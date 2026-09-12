@@ -23,16 +23,22 @@ func mapModelsToEntities(models []metichedb.Team) []main_entity.Team {
 
 func mapModelToEntity(m metichedb.Team) main_entity.Team {
 	return main_entity.Team{
-		ID:                mapper.StringToUUID(m.ID),
-		Name:              m.Name,
-		Slug:              m.Slug,
-		JoinCode:          m.JoinCode,
-		JoinCodeRotatedAt: null.NewTime(m.JoinCodeRotatedAt.Time, m.JoinCodeRotatedAt.Valid),
-		Sequence:          int64(m.Sequence),
-		BoardRevision:     int64(m.BoardRevision),
-		Settings:          team_settings.TeamSettingsFromJSON(m.Settings),
-		Status:            enums.RecordStatus(m.Status),
-		CreatedAt:         m.CreatedAt,
-		UpdatedAt:         m.UpdatedAt,
+		ID:                      mapper.StringToUUID(m.ID),
+		Name:                    m.Name,
+		Slug:                    m.Slug,
+		Sequence:                int64(m.Sequence),
+		BoardRevision:           int64(m.BoardRevision),
+		Settings:                team_settings.TeamSettingsFromJSON(m.Settings),
+		Status:                  enums.RecordStatus(m.Status),
+		CreatedAt:               m.CreatedAt,
+		UpdatedAt:               m.UpdatedAt,
+		PlanUUID:                mapper.StringToUUIDPtr(m.PlanUUID),
+		PlanSource:              enums.PlanSource(m.PlanSource),
+		PlanGrantedReason:       null.NewString(m.PlanGrantedReason.String, m.PlanGrantedReason.Valid),
+		PlanExpiresAt:           null.NewTime(m.PlanExpiresAt.Time, m.PlanExpiresAt.Valid),
+		RetentionFloorSequence:  int64(m.RetentionFloorSequence),
+		LastRetentionSweepAt:    null.NewTime(m.LastRetentionSweepAt.Time, m.LastRetentionSweepAt.Valid),
+		Visibility:              enums.TeamVisibility(m.Visibility),
+		RequiresClaimedAccounts: m.RequiresClaimedAccounts,
 	}
 }

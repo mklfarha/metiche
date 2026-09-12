@@ -168,6 +168,10 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"account_uuid",
+
+	"revoked_at",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Member) any{
@@ -189,4 +193,8 @@ var listFieldRegistry = map[string]func(*repogen.Member) any{
 	"created_at": func(i *repogen.Member) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Member) any { return &i.UpdatedAt },
+
+	"account_uuid": func(i *repogen.Member) any { return &i.AccountUUID },
+
+	"revoked_at": func(i *repogen.Member) any { return &i.RevokedAt },
 }

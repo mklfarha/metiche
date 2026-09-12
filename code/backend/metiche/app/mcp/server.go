@@ -124,6 +124,12 @@ The loop:
   3. heartbeat about every 60 seconds while you work. Claims lapse without it.
   4. end_session when you are done, so your holds are released immediately.
 
+Your token is the PERSON you work for, not this process and not one team. Send it on every call,
+including a later join_team for a second team - joining again with it adds a membership rather than
+a second identity. Because of that, a team is a per-call scope: pass team_slug when you are on more
+than one, and client_key when that person runs more than one agent. A join code is an invite, so it
+can be revoked, expired or used up; ask for a fresh one rather than retrying a dead one.
+
 Every response carries "pending": counts of instructions, conflicts and reviews waiting for you.
 MCP cannot push, so that count is how you find out anything. When it is non-zero, fetch the
 contents; when it is zero, carry on.
@@ -170,42 +176,43 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 		additive   = &mcp.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)}
 	)
 
-	addTool(server, logger, &mcp.Tool{
+	addTool(server, h, logger, &mcp.Tool{
 		Name: "create_team",
 		Description: "Create a new metiche team and join it in the same call. Use this when nobody has set the team up yet; if you were given a join code, use join_team instead. " +
-			"Returns the team's join_code — the shared secret your teammates need — and your own bearer token. " +
-			"No account or login is involved anywhere in metiche: the join code is the credential, so anyone can create a team and abuse is bounded by per-address rate limiting and plan limits rather than by a sign-in. " +
-			"Pass an idempotency_key of at least 8 characters (a uuid is ideal): retrying with the same key returns the same team instead of creating a second one.",
+			"Returns the team's first join_code — the shared secret your teammates need — and, if you did not already have one, your own bearer token. " +
+			"There is no signup anywhere in metiche: a first call with no token mints you an anonymous identity and hands you its token once, so abuse is bounded by per-address rate limiting and the team's plan rather than by a sign-in. " +
+			"Pass an idempotency_key of at least 8 characters (a uuid is ideal): retrying with the same key, carrying your token, returns the same team and the same join code instead of creating a second one.",
 		// Additive rather than idempotent: two calls with two different
 		// idempotency keys are two real teams. The key makes a RETRY safe,
 		// which is not the same promise.
 		Annotations: additive,
 	}, h.CreateTeam)
 
-	addTool(server, logger, &mcp.Tool{
+	addTool(server, h, logger, &mcp.Tool{
 		Name: "join_team",
-		Description: "Join a team with its join code and get your own bearer token. Call this ONCE, before anything else, then send the token as an Authorization: Bearer header on every later call. " +
+		Description: "Join a team with its join code and get your own bearer token. Call this before anything else, then send the token as an Authorization: Bearer header on every later call. " +
 			"Pass a stable client_key (your session id, or the working directory plus your label) so that restarting re-joins you as the same agent instead of adding a duplicate to the board. " +
-			"The token is shown once and cannot be recovered; re-joining mints a new one and retires the old.",
+			"The token identifies the PERSON you work for, not this agent: it is shown once, it cannot be recovered, and it already works for every other team that person joins — so send it on this call too when you have one, and no second token is minted.",
 		// Idempotent on identity: re-joining with the same (member, client_key)
 		// lands on the same agent row rather than creating a second one.
 		Annotations: idempotent,
 	}, h.JoinTeam)
 
-	addTool(server, logger, &mcp.Tool{
+	addTool(server, h, logger, &mcp.Tool{
 		Name: "start_session",
 		Description: "Begin one bounded piece of work: which repo, which branch, what commit you are starting from, and what you are trying to achieve. Returns a session_key you pass to every later call. " +
-			"Start a new session per piece of work, not per message.",
+			"Start a new session per piece of work, not per message. " +
+			"If you are on more than one team, or run more than one agent, pass team_slug and client_key so the work lands on the right board under the right agent.",
 		Annotations: idempotent,
 	}, h.StartSession)
 
-	addTool(server, logger, &mcp.Tool{
+	addTool(server, h, logger, &mcp.Tool{
 		Name:        "end_session",
 		Description: "Close a session and immediately release the files it was holding. Always call this, especially when things went badly — an abandoned session keeps its claims until they time out, and blocks nobody but confuses everybody.",
 		Annotations: idempotent,
 	}, h.EndSession)
 
-	addTool(server, logger, &mcp.Tool{
+	addTool(server, h, logger, &mcp.Tool{
 		Name: "heartbeat",
 		Description: "Say you are still alive, extend your file claims, update the one-line 'what I am doing right now' the board shows, and pick up the count of anything waiting for you. " +
 			"Call it about every 60 seconds while you work: it is cheap, it is the only call with a time obligation, and your claims lapse without it. " +
@@ -213,14 +220,23 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 		Annotations: idempotent,
 	}, h.Heartbeat)
 
-	addTool(server, logger, &mcp.Tool{
+	addTool(server, h, logger, &mcp.Tool{
 		Name: "get_team_state",
 		Description: "See who else is working and on what: their branch, their goal, and their current status line. Call it once at the start of a session to orient yourself, and again when the sequence on your responses jumped further than you expected. " +
-			"Scoped and paginated; it will never hand you the whole board.",
+			"Scoped and paginated; it will never hand you the whole board. Pass team_slug if you are on more than one team.",
 		Annotations: readOnly,
 	}, h.GetTeamState)
 
-	addTool(server, logger, &mcp.Tool{
+	addTool(server, h, logger, &mcp.Tool{
+		Name: "list_teams",
+		Description: "Which teams am I on? Answers 'which team does this repository belong to' when you do not already know, and it is the ONLY way to find out — never guess a team from the directory name, the repo name or the git remote. " +
+			"Read a .metiche file first: if the repo or any parent directory has one, the team it names WINS over this list and you should not call this tool at all. " +
+			"Otherwise call this before start_session, read the note it returns, and do what it says — with one team you bind to it and tell the person once; with more than one you stop and ask the person which, because putting private work on the wrong team's board cannot be undone. " +
+			"Takes no arguments and needs only your bearer token: it is the one call you can make before you have a team or a session. Returns each team's slug (what you pass as team_slug), its name, your role, how many members it has, and whether you already have a session running there.",
+		Annotations: readOnly,
+	}, h.ListTeams)
+
+	addTool(server, h, logger, &mcp.Tool{
 		Name:        "health",
 		Description: "Check whether metiche itself is reachable and its database is up. Call this when a tool fails with a transport error, to tell 'metiche is down, retry later' apart from 'my session is broken'. Never abandon a session on a single failed call without checking here first.",
 		Annotations: readOnly,
@@ -232,7 +248,10 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	// resolve_conflict, get_instructions, report_back) register here, exactly
 	// like the six above. Each one:
 	//
-	//   - takes its agent from h.requireAgent(ctx);
+	//   - takes its caller from h.RequireSession(ctx, session_key) — or
+	//     h.RequireTeam / h.RequireAgent when it names no session — which
+	//     returns a Resolved: the account, member, agent, session and team,
+	//     with the membership already checked;
 	//   - routes every write through h.commit(Mutation{...}), which is the
 	//     only thing in this package that writes an event;
 	//   - does its detection in the Mutation's Detect hook or in the handler-
@@ -243,6 +262,12 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	//
 	// get_instructions is the one that is NOT readOnly, however much it looks
 	// like it: reading an instruction is what marks it delivered.
+
+	// Tools 5-7: declare_intent, update_intent, check_paths. The detection
+	// they run is NOT in this file -- it is the handler-wide DetectHook
+	// installed by app/rest.go, which is what puts the overlap check inside
+	// the same row lock as the insert it authorises.
+	RegisterWorkTools(server, h, logger)
 
 	return server
 }

@@ -133,5 +133,7 @@ func mapUpsertRequestToUpdateParams(req types.UpsertRequest) metichedb.UpdateIns
 		CreatedAt: req.Instruction.CreatedAt,
 
 		UpdatedAt: req.Instruction.UpdatedAt,
+
+		TargetMemberUUID: mapper.UUIDPtrToNullString(req.Instruction.TargetMemberUUID),
 	}
 }

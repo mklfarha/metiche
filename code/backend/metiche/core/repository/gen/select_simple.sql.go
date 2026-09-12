@@ -9,8 +9,50 @@ import (
 	"context"
 )
 
+const fetchAccount = `-- name: FetchAccount :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `identity_provider` + "`" + `,` + "`" + `identity_subject` + "`" + `,` + "`" + `identity_handle` + "`" + `,` + "`" + `email` + "`" + `,` + "`" + `claimed_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `account` + "`" + `
+`
+
+func (q *Queries) FetchAccount(ctx context.Context) ([]Account, error) {
+	rows, err := q.db.QueryContext(ctx, fetchAccount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Account
+	for rows.Next() {
+		var i Account
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.DisplayName,
+			&i.TokenHash,
+			&i.IdentityProvider,
+			&i.IdentitySubject,
+			&i.IdentityHandle,
+			&i.Email,
+			&i.ClaimedAt,
+			&i.Status,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchAgent = `-- name: FetchAgent :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `token_hash` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `
 FROM ` + "`" + `agent` + "`" + `
 `
 
@@ -25,17 +67,15 @@ func (q *Queries) FetchAgent(ctx context.Context) ([]Agent, error) {
 		var i Agent
 		if err := rows.Scan(
 			&i.ID,
-			&i.TeamUUID,
-			&i.MemberUUID,
 			&i.Key,
 			&i.Label,
 			&i.ClientKind,
-			&i.TokenHash,
 			&i.ClientKey,
 			&i.Status,
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AccountUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -490,7 +530,7 @@ func (q *Queries) FetchDecisionToken(ctx context.Context) ([]DecisionToken, erro
 }
 
 const fetchInstruction = `-- name: FetchInstruction :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `target_session_uuid` + "`" + `,` + "`" + `target_agent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `source` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `body` + "`" + `,` + "`" + `ref_kind` + "`" + `,` + "`" + `ref_uuid` + "`" + `,` + "`" + `requires_report` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `raised_by_member_uuid` + "`" + `,` + "`" + `delivered_at` + "`" + `,` + "`" + `acted_at` + "`" + `,` + "`" + `action` + "`" + `,` + "`" + `action_note` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `target_member_uuid` + "`" + `
 FROM ` + "`" + `instruction` + "`" + `
 `
 
@@ -524,6 +564,7 @@ func (q *Queries) FetchInstruction(ctx context.Context) ([]Instruction, error) {
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TargetMemberUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -622,6 +663,49 @@ func (q *Queries) FetchIntentToken(ctx context.Context) ([]IntentToken, error) {
 	return items, nil
 }
 
+const fetchInvite = `-- name: FetchInvite :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `code` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `max_uses` + "`" + `,` + "`" + `uses` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `revoked_by_member_uuid` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_used_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `invite` + "`" + `
+`
+
+func (q *Queries) FetchInvite(ctx context.Context) ([]Invite, error) {
+	rows, err := q.db.QueryContext(ctx, fetchInvite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Invite
+	for rows.Next() {
+		var i Invite
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.Code,
+			&i.Label,
+			&i.CreatedByMemberUUID,
+			&i.MaxUses,
+			&i.Uses,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedByMemberUUID,
+			&i.Status,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchJudgement = `-- name: FetchJudgement :many
 SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
 FROM ` + "`" + `judgement` + "`" + `
@@ -672,8 +756,49 @@ func (q *Queries) FetchJudgement(ctx context.Context) ([]Judgement, error) {
 	return items, nil
 }
 
+const fetchLimitEvent = `-- name: FetchLimitEvent :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `plan_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `dimension` + "`" + `,` + "`" + `observed` + "`" + `,` + "`" + `allowed` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `note` + "`" + `,` + "`" + `occurred_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `limit_event` + "`" + `
+`
+
+func (q *Queries) FetchLimitEvent(ctx context.Context) ([]LimitEvent, error) {
+	rows, err := q.db.QueryContext(ctx, fetchLimitEvent)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LimitEvent
+	for rows.Next() {
+		var i LimitEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.PlanUUID,
+			&i.SessionUUID,
+			&i.Dimension,
+			&i.Observed,
+			&i.Allowed,
+			&i.Outcome,
+			&i.Note,
+			&i.OccurredAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchMember = `-- name: FetchMember :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `display_name` + "`" + `,` + "`" + `role` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `revoked_at` + "`" + `
 FROM ` + "`" + `member` + "`" + `
 `
 
@@ -693,6 +818,98 @@ func (q *Queries) FetchMember(ctx context.Context) ([]Member, error) {
 			&i.DisplayName,
 			&i.Role,
 			&i.LastSeenAt,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AccountUUID,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchNotificationChannel = `-- name: FetchNotificationChannel :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `target_url` + "`" + `,` + "`" + `min_severity` + "`" + `,` + "`" + `notify_human_requests` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `delivery_status` + "`" + `,` + "`" + `consecutive_failures` + "`" + `,` + "`" + `last_attempt_at` + "`" + `,` + "`" + `last_success_at` + "`" + `,` + "`" + `last_error` + "`" + `,` + "`" + `created_by_member_uuid` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `notification_channel` + "`" + `
+`
+
+func (q *Queries) FetchNotificationChannel(ctx context.Context) ([]NotificationChannel, error) {
+	rows, err := q.db.QueryContext(ctx, fetchNotificationChannel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NotificationChannel
+	for rows.Next() {
+		var i NotificationChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.ProjectUUID,
+			&i.Key,
+			&i.Kind,
+			&i.Label,
+			&i.TargetURL,
+			&i.MinSeverity,
+			&i.NotifyHumanRequests,
+			&i.Status,
+			&i.DeliveryStatus,
+			&i.ConsecutiveFailures,
+			&i.LastAttemptAt,
+			&i.LastSuccessAt,
+			&i.LastError,
+			&i.CreatedByMemberUUID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchPlan = `-- name: FetchPlan :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `description` + "`" + `,` + "`" + `max_concurrent_agents` + "`" + `,` + "`" + `retention_days` + "`" + `,` + "`" + `max_members` + "`" + `,` + "`" + `max_projects` + "`" + `,` + "`" + `is_instance_default` + "`" + `,` + "`" + `sort_order` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `plan` + "`" + `
+`
+
+// Code generated by nuzur go-code-gen. DO NOT EDIT.
+func (q *Queries) FetchPlan(ctx context.Context) ([]Plan, error) {
+	rows, err := q.db.QueryContext(ctx, fetchPlan)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Plan
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Name,
+			&i.Description,
+			&i.MaxConcurrentAgents,
+			&i.RetentionDays,
+			&i.MaxMembers,
+			&i.MaxProjects,
+			&i.IsInstanceDefault,
+			&i.SortOrder,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -802,11 +1019,10 @@ func (q *Queries) FetchSession(ctx context.Context) ([]Session, error) {
 }
 
 const fetchTeam = `-- name: FetchTeam :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `join_code` + "`" + `,` + "`" + `join_code_rotated_at` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `name` + "`" + `,` + "`" + `slug` + "`" + `,` + "`" + `sequence` + "`" + `,` + "`" + `board_revision` + "`" + `,` + "`" + `settings` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `plan_uuid` + "`" + `,` + "`" + `plan_source` + "`" + `,` + "`" + `plan_granted_reason` + "`" + `,` + "`" + `plan_expires_at` + "`" + `,` + "`" + `retention_floor_sequence` + "`" + `,` + "`" + `last_retention_sweep_at` + "`" + `,` + "`" + `visibility` + "`" + `,` + "`" + `requires_claimed_accounts` + "`" + `
 FROM ` + "`" + `team` + "`" + `
 `
 
-// Code generated by nuzur go-code-gen. DO NOT EDIT.
 func (q *Queries) FetchTeam(ctx context.Context) ([]Team, error) {
 	rows, err := q.db.QueryContext(ctx, fetchTeam)
 	if err != nil {
@@ -820,14 +1036,20 @@ func (q *Queries) FetchTeam(ctx context.Context) ([]Team, error) {
 			&i.ID,
 			&i.Name,
 			&i.Slug,
-			&i.JoinCode,
-			&i.JoinCodeRotatedAt,
 			&i.Sequence,
 			&i.BoardRevision,
 			&i.Settings,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PlanUUID,
+			&i.PlanSource,
+			&i.PlanGrantedReason,
+			&i.PlanExpiresAt,
+			&i.RetentionFloorSequence,
+			&i.LastRetentionSweepAt,
+			&i.Visibility,
+			&i.RequiresClaimedAccounts,
 		); err != nil {
 			return nil, err
 		}

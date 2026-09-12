@@ -25,10 +25,11 @@ const (
 )
 
 type GetTeamStateParams struct {
-	Scope  string `json:"scope,omitempty" jsonschema:"What to look at: 'sessions' (who is working, on what branch, with what status line), 'events' (the team's recent activity in order), or 'me' (your own sessions). Defaults to sessions."`
-	Cursor string `json:"cursor,omitempty" jsonschema:"Pass the next_cursor from the previous page to continue. Omit for the first page."`
-	Limit  int    `json:"limit,omitempty" jsonschema:"Rows per page, 1-50. Defaults to 20."`
-	Since  int64  `json:"since_sequence,omitempty" jsonschema:"For scope=events only: return events after this sequence. Use the sequence from your last response to catch up on exactly what you missed."`
+	TeamSlug string `json:"team_slug,omitempty" jsonschema:"Which team's board to look at, by slug. Omit it if you are only on one team."`
+	Scope    string `json:"scope,omitempty" jsonschema:"What to look at: 'sessions' (who is working, on what branch, with what status line), 'events' (the team's recent activity in order), or 'me' (your own sessions). Defaults to sessions."`
+	Cursor   string `json:"cursor,omitempty" jsonschema:"Pass the next_cursor from the previous page to continue. Omit for the first page."`
+	Limit    int    `json:"limit,omitempty" jsonschema:"Rows per page, 1-50. Defaults to 20."`
+	Since    int64  `json:"since_sequence,omitempty" jsonschema:"For scope=events only: return events after this sequence. Use the sequence from your last response to catch up on exactly what you missed."`
 }
 
 // TeamStateResult is deliberately NOT the board.
@@ -83,7 +84,12 @@ type StateEvent struct {
 // spends its context on other people's work and then skims the one line that
 // mattered.
 func (h *Handler) GetTeamState(ctx context.Context, _ *mcp.CallToolRequest, args GetTeamStateParams) (*mcp.CallToolResult, any, error) {
-	ag, err := h.requireAgent(ctx)
+	// v3: one person can be on several teams with one token, so the board
+	// this call reads has to be named rather than inferred from the
+	// credential. RequireTeam also re-checks the membership on every call,
+	// which is what makes a revoked member stop seeing the board immediately
+	// rather than at their next join.
+	who, err := h.RequireTeam(ctx, args.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -104,20 +110,20 @@ func (h *Handler) GetTeamState(ctx context.Context, _ *mcp.CallToolRequest, args
 	db := h.core.DB()
 	var seq, rev int64
 	if err := db.QueryRowContext(ctx,
-		"SELECT `sequence`, `board_revision` FROM `team` WHERE `id` = ?", ag.TeamUUID.String()).
+		"SELECT `sequence`, `board_revision` FROM `team` WHERE `id` = ?", who.Team.ID.String()).
 		Scan(&seq, &rev); err != nil {
 		return nil, nil, retryable(err, "reading the team cursors")
 	}
 
 	out := TeamStateResult{
-		Envelope: Envelope{OK: true, Key: ag.Key, Sequence: seq, Revision: rev},
+		Envelope: Envelope{OK: true, Key: who.Member.Key, Sequence: seq, Revision: rev},
 		Scope:    scope,
 	}
 
 	switch scope {
 	case "sessions", "me":
 		mineOnly := scope == "me"
-		sessions, next, err := h.listSessions(ctx, db, ag.TeamUUID, ag.ID, mineOnly, args.Cursor, limit)
+		sessions, next, err := h.listSessions(ctx, db, who.Team.ID, who.Member.ID, mineOnly, args.Cursor, limit)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -125,7 +131,7 @@ func (h *Handler) GetTeamState(ctx context.Context, _ *mcp.CallToolRequest, args
 		out.NextCursor = next
 		out.Truncated = next != ""
 	case "events":
-		events, next, err := h.listEvents(ctx, db, ag.TeamUUID, args.Cursor, args.Since, limit)
+		events, next, err := h.listEvents(ctx, db, who.Team.ID, args.Cursor, args.Since, limit)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -150,7 +156,11 @@ func (h *Handler) GetTeamState(ctx context.Context, _ *mcp.CallToolRequest, args
 // Keyset rather than OFFSET: a session starting mid-pagination would shift an
 // offset window and silently skip a row, and "who is working right now" is
 // exactly the list that changes while you read it.
-func (h *Handler) listSessions(ctx context.Context, db *sql.DB, teamUUID, agentUUID interface {
+// "mine" is the PERSON's, not the process's. v3 made an account a person
+// across teams and a member their row on one team, so scope=me means every
+// session of MY member row — including the ones my other agents are running,
+// which is what a human asking "what am I doing" means.
+func (h *Handler) listSessions(ctx context.Context, db *sql.DB, teamUUID, memberUUID interface {
 	String() string
 }, mineOnly bool, cursor string, limit int) ([]StateSession, string, error) {
 	afterAt, afterID, err := decodeKeysetCursor(cursor)
@@ -159,7 +169,7 @@ func (h *Handler) listSessions(ctx context.Context, db *sql.DB, teamUUID, agentU
 	}
 
 	q := "SELECT s.`key`, m.`display_name`, a.`label`, p.`key`, s.`branch`, s.`goal`, s.`status_line`, " +
-		"s.`status`, s.`last_heartbeat_at`, s.`agent_uuid`, s.`created_at`, s.`id` " +
+		"s.`status`, s.`last_heartbeat_at`, s.`member_uuid`, s.`created_at`, s.`id` " +
 		"FROM `session` s " +
 		"JOIN `member` m ON m.`id` = s.`member_uuid` " +
 		"JOIN `agent` a ON a.`id` = s.`agent_uuid` " +
@@ -167,8 +177,8 @@ func (h *Handler) listSessions(ctx context.Context, db *sql.DB, teamUUID, agentU
 		"WHERE s.`team_uuid` = ? AND s.`status` IN (?, ?) "
 	args := []any{teamUUID.String(), enums.SESSION_STATUS_LIVE, enums.SESSION_STATUS_STALE}
 	if mineOnly {
-		q += "AND s.`agent_uuid` = ? "
-		args = append(args, agentUUID.String())
+		q += "AND s.`member_uuid` = ? "
+		args = append(args, memberUUID.String())
 	}
 	if afterAt != nil {
 		q += "AND (s.`created_at` > ? OR (s.`created_at` = ? AND s.`id` > ?)) "
@@ -192,14 +202,14 @@ func (h *Handler) listSessions(ctx context.Context, db *sql.DB, teamUUID, agentU
 	)
 	for rows.Next() {
 		var (
-			key, member, label, project, agentID, id string
-			branch, goal, statusLine                 sql.NullString
-			status                                   int64
-			lastSeen                                 sql.NullTime
-			createdAt                                time.Time
+			key, member, label, project, memberID, id string
+			branch, goal, statusLine                  sql.NullString
+			status                                    int64
+			lastSeen                                  sql.NullTime
+			createdAt                                 time.Time
 		)
 		if err := rows.Scan(&key, &member, &label, &project, &branch, &goal, &statusLine,
-			&status, &lastSeen, &agentID, &createdAt, &id); err != nil {
+			&status, &lastSeen, &memberID, &createdAt, &id); err != nil {
 			return nil, "", err
 		}
 		if len(out) == limit {
@@ -215,7 +225,7 @@ func (h *Handler) listSessions(ctx context.Context, db *sql.DB, teamUUID, agentU
 			Goal:       goal.String,
 			StatusLine: statusLine.String,
 			Status:     enums.SessionStatus(status).String(),
-			Mine:       agentID == agentUUID.String(),
+			Mine:       memberID == memberUUID.String(),
 		}
 		if lastSeen.Valid {
 			s.LastSeen = lastSeen.Time.UTC().Format(time.RFC3339)

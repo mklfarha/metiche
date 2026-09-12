@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +23,9 @@ import (
 	"github.com/mklfarha/metiche/backend/core"
 	teammod "github.com/mklfarha/metiche/backend/core/module/team"
 	team_types "github.com/mklfarha/metiche/backend/core/module/team/types"
+	account_entity "github.com/mklfarha/metiche/backend/entity/account"
 	agent_entity "github.com/mklfarha/metiche/backend/entity/agent"
+	member_entity "github.com/mklfarha/metiche/backend/entity/member"
 	team_entity "github.com/mklfarha/metiche/backend/entity/team"
 	"github.com/mklfarha/metiche/backend/enums"
 )
@@ -36,7 +39,14 @@ import (
 // Run them with:
 //
 //	METICHE_TEST_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/metiche_test?parseTime=true&interpolateParams=true' \
-//	  go test ./app/mcp/ -run Integration -v
+//
+// interpolateParams=true is not decoration: it is what production runs
+// (config/base.yaml recommends it), and it changes how []byte arguments reach
+// MySQL. Without it, a []byte bound to a JSON column works; with it, the
+// driver sends a binary literal and MySQL rejects it with error 3144. Leaving
+// it off here once hid exactly that bug until a real deployment found it.
+//
+//	go test ./app/mcp/ -run Integration -v
 //
 // The database must already have core/repository/sql/schema/create.sql
 // applied. No DSN is committed anywhere in this repository — a connection
@@ -47,7 +57,10 @@ type harness struct {
 	h      *Handler
 	core   *core.Implementation
 	teamID uuid.UUID
-	code   string
+	planID uuid.UUID
+	// code is the team's INVITE code. v3 removed team.join_code, so the
+	// harness seeds an invite row instead of a column.
+	code string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -87,17 +100,42 @@ func newHarness(t *testing.T) *harness {
 	hh := NewHandler(impl, zap.NewNop())
 	hs := &harness{h: hh, core: impl, code: "JOIN" + strings.ToUpper(uuid.Must(uuid.NewV4()).String()[:6])}
 
+	// A plan with is_instance_default. Seeded rather than assumed because
+	// create_team REFUSES to make a team with no plan — a team with no plan
+	// is a team with no limits — and an empty `plan` table is exactly the
+	// state a fresh database is in.
+	hs.planID = uuid.Must(uuid.NewV4())
+	if _, err := impl.DB().Exec(
+		"INSERT INTO `plan` (`id`,`key`,`name`,`max_concurrent_agents`,`retention_days`,`max_members`,"+
+			"`max_projects`,`is_instance_default`,`sort_order`,`status`) VALUES (?,?,?,?,?,?,?,?,?,?)",
+		hs.planID.String(), "free", "Free", 5, 30, 10, 5, true, 0, enums.RECORD_STATUS_ACTIVE); err != nil {
+		t.Fatalf("seeding the instance default plan: %v", err)
+	}
+
 	hs.teamID = uuid.Must(uuid.NewV4())
+	planID := hs.planID
 	if _, err := impl.Team().Insert(context.Background(), team_types.UpsertRequest{
 		Team: team_entity.Team{
-			ID:       hs.teamID,
-			Name:     "Test team",
-			Slug:     "test-" + hs.teamID.String()[:8],
-			JoinCode: hs.code,
-			Status:   enums.RECORD_STATUS_ACTIVE,
+			ID:                      hs.teamID,
+			Name:                    "Test team",
+			Slug:                    "test-" + hs.teamID.String()[:8],
+			Status:                  enums.RECORD_STATUS_ACTIVE,
+			PlanUUID:                &planID,
+			PlanSource:              enums.PLAN_SOURCE_INSTANCE_DEFAULT,
+			Visibility:              enums.TEAM_VISIBILITY_PRIVATE,
+			RequiresClaimedAccounts: false,
 		},
 	}, teammod.WithSkipCache()); err != nil {
 		t.Fatalf("seeding the team: %v", err)
+	}
+
+	// The invite that replaced team.join_code: uncapped and unexpiring, so a
+	// test can redeem it as many times as it likes.
+	if _, err := impl.DB().Exec(
+		"INSERT INTO `invite` (`id`,`team_uuid`,`code`,`label`,`uses`,`status`) VALUES (?,?,?,?,?,?)",
+		uuid.Must(uuid.NewV4()).String(), hs.teamID.String(), hs.code, "harness", 0,
+		enums.INVITE_STATUS_ACTIVE); err != nil {
+		t.Fatalf("seeding the invite: %v", err)
 	}
 	return hs
 }
@@ -153,7 +191,8 @@ func truncateAll(t *testing.T, db *sql.DB) {
 		"team_event", "instruction", "judgement", "conflict_participant", "conflict",
 		"contract_field", "contract_assertion", "contract", "decision_token", "decision_path",
 		"decision", "intent_token", "claim_path", "claim", "intent", "session", "project",
-		"agent", "member", "team",
+		"invite", "notification_channel", "limit_event",
+		"agent", "member", "team", "account", "plan",
 	}
 	if _, err := db.Exec("SET FOREIGN_KEY_CHECKS = 0"); err != nil {
 		t.Fatalf("disabling FK checks: %v", err)
@@ -168,10 +207,39 @@ func truncateAll(t *testing.T, db *sql.DB) {
 	}
 }
 
-// join runs the real join_team tool and returns an authenticated context.
-func (hs *harness) join(t *testing.T, memberName, clientKey string) (context.Context, agent_entity.Agent) {
+// caller is one authenticated person, with the three v3 identities that used
+// to be collapsed into one agent row: the account (the person, and what the
+// token resolves to), the member (that person on this team) and the agent
+// (one client process of theirs).
+type caller struct {
+	ctx     context.Context
+	token   string
+	account account_entity.Account
+	member  member_entity.Member
+	agent   agent_entity.Agent
+}
+
+// join runs the real join_team tool as a BRAND NEW anonymous person and
+// returns their authenticated context.
+//
+// New, because that is what a request with no token means in v3: first
+// contact mints an account. Re-joining as somebody who already exists means
+// presenting their token, which is what rejoin does.
+func (hs *harness) join(t *testing.T, memberName, clientKey string) *caller {
 	t.Helper()
-	res, _, err := hs.h.JoinTeam(context.Background(), nil, JoinTeamParams{
+	return hs.joinAsCtx(t, context.Background(), "", memberName, clientKey)
+}
+
+// rejoin re-runs join_team carrying an existing person's token, which is how
+// a restarted agent comes back as itself.
+func (hs *harness) rejoin(t *testing.T, prev *caller, memberName, clientKey string) *caller {
+	t.Helper()
+	return hs.joinAsCtx(t, WithAccount(context.Background(), prev.account), prev.token, memberName, clientKey)
+}
+
+func (hs *harness) joinAsCtx(t *testing.T, base context.Context, carried, memberName, clientKey string) *caller {
+	t.Helper()
+	res, _, err := hs.h.JoinTeam(base, nil, JoinTeamParams{
 		JoinCode:   hs.code,
 		MemberName: memberName,
 		AgentLabel: "test",
@@ -182,14 +250,58 @@ func (hs *harness) join(t *testing.T, memberName, clientKey string) (context.Con
 	}
 	var out JoinTeamResult
 	decodeResult(t, res, &out)
-	if out.Token == "" {
-		t.Fatal("join_team returned no token")
+
+	token := out.Token
+	switch {
+	case carried == "" && token == "":
+		t.Fatal("a first contact must mint a token")
+	case carried != "" && token != "":
+		t.Fatal("join_team minted a second token for a caller that already had one")
+	case token == "":
+		token = carried
 	}
-	ag, err := hs.h.resolveToken(context.Background(), out.Token)
+	return hs.callerFor(t, token, out.AgentKey)
+}
+
+// ctxForToken is the cheap half of callerFor: an authenticated context and
+// nothing else, for the calls that only need to be somebody.
+func (hs *harness) ctxForToken(t *testing.T, token string) context.Context {
+	t.Helper()
+	acct, err := hs.h.resolveToken(context.Background(), token)
 	if err != nil {
-		t.Fatalf("the token join_team minted does not resolve: %v", err)
+		t.Fatalf("the token does not resolve: %v", err)
 	}
-	return WithAgent(context.Background(), ag), ag
+	return WithAccount(context.Background(), acct)
+}
+
+// callerFor resolves a token all the way to the three identities behind it.
+func (hs *harness) callerFor(t *testing.T, token, agentKey string) *caller {
+	t.Helper()
+	acct, err := hs.h.resolveToken(context.Background(), token)
+	if err != nil {
+		t.Fatalf("the token does not resolve: %v", err)
+	}
+	ctx := WithAccount(context.Background(), acct)
+
+	member, found, err := hs.h.memberByAccount(ctx, nil, acct.ID, hs.teamID)
+	if err != nil || !found {
+		t.Fatalf("no membership for the account that just joined: found=%v err=%v", found, err)
+	}
+	agents, err := hs.h.activeAgents(ctx, acct.ID)
+	if err != nil {
+		t.Fatalf("listing the account's agents: %v", err)
+	}
+	var ag agent_entity.Agent
+	for _, a := range agents {
+		if agentKey == "" || a.Key == agentKey {
+			ag = a
+			break
+		}
+	}
+	if ag.ID.IsNil() {
+		t.Fatalf("no agent %q for the account that just joined", agentKey)
+	}
+	return &caller{ctx: ctx, token: token, account: acct, member: member, agent: ag}
 }
 
 func decodeResult(t *testing.T, res *mcp.CallToolResult, into any) {
@@ -241,7 +353,7 @@ func countRows(t *testing.T, db *sql.DB, query string, args ...any) int {
 // possible direction for this particular lie.
 func TestIntegrationIdempotentReplay(t *testing.T) {
 	hs := newHarness(t)
-	ctx, _ := hs.join(t, "Ana", "client-a")
+	ctx := hs.join(t, "Ana", "client-a").ctx
 
 	args := StartSessionParams{
 		ProjectKey:     "metiche",
@@ -299,7 +411,7 @@ func TestIntegrationIdempotentReplay(t *testing.T) {
 // deliberately opts out — and this proves the opt-out actually holds.
 func TestIntegrationJoinTeamNeverPersistsAToken(t *testing.T) {
 	hs := newHarness(t)
-	_, ag := hs.join(t, "Ana", "client-a")
+	ana := hs.join(t, "Ana", "client-a")
 
 	rows, err := hs.core.DB().Query("SELECT COALESCE(`response_snapshot`, ''), COALESCE(`summary`, ''), COALESCE(CAST(`payload` AS CHAR), '') FROM `team_event`")
 	if err != nil {
@@ -318,28 +430,52 @@ func TestIntegrationJoinTeamNeverPersistsAToken(t *testing.T) {
 		}
 	}
 
-	// Only the hash is on the agent row, and it is a hash.
+	// v3 moved the hash off the agent and onto the ACCOUNT, and it is still
+	// only ever a hash. The agent table no longer has the column at all,
+	// which is asserted here so a regeneration that brought it back would be
+	// caught rather than quietly re-splitting the credential.
 	var stored string
-	if err := hs.core.DB().QueryRow("SELECT `token_hash` FROM `agent` WHERE `id` = ?", ag.ID.String()).Scan(&stored); err != nil {
+	if err := hs.core.DB().QueryRow("SELECT `token_hash` FROM `account` WHERE `id` = ?", ana.account.ID.String()).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
 	if len(stored) != 64 || strings.HasPrefix(stored, tokenPrefix) {
-		t.Errorf("agent.token_hash = %q, want a 64-character sha256 digest", stored)
+		t.Errorf("account.token_hash = %q, want a 64-character sha256 digest", stored)
+	}
+	var cols int
+	if err := hs.core.DB().QueryRow(
+		"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() " +
+			"AND table_name = 'agent' AND column_name = 'token_hash'").Scan(&cols); err != nil {
+		t.Fatal(err)
+	}
+	if cols != 0 {
+		t.Error("agent.token_hash is back; the token belongs to the account in v3")
 	}
 }
 
-// TestIntegrationRejoinIsSameAgent: uq_agent_member_client is what keeps a
+// TestIntegrationRejoinIsSameAgent: uq_agent_account_client is what keeps a
 // restarted agent from appearing twice on the board.
+//
+// v3 changed both halves of this. The uniqueness moved from
+// (member, client_key) to (account, client_key), and the token no longer
+// rotates on a re-join — it lives on the ACCOUNT now, one per person, and
+// rotating it because one of that person's three agents restarted would log
+// the other two out.
 func TestIntegrationRejoinIsSameAgent(t *testing.T) {
 	hs := newHarness(t)
-	_, first := hs.join(t, "Ana", "client-a")
-	_, second := hs.join(t, "Ana", "client-a")
+	first := hs.join(t, "Ana", "client-a")
+	second := hs.rejoin(t, first, "Ana", "client-a")
 
-	if first.ID != second.ID {
-		t.Errorf("re-joining created a second agent: %s then %s", first.ID, second.ID)
+	if first.agent.ID != second.agent.ID {
+		t.Errorf("re-joining created a second agent: %s then %s", first.agent.ID, second.agent.ID)
 	}
-	if first.TokenHash == second.TokenHash {
-		t.Error("re-joining should rotate the token, since the old one cannot be handed back")
+	if first.account.ID != second.account.ID {
+		t.Errorf("re-joining created a second account: %s then %s", first.account.ID, second.account.ID)
+	}
+	if first.member.ID != second.member.ID {
+		t.Errorf("re-joining created a second membership: %s then %s", first.member.ID, second.member.ID)
+	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `account`"); n != 1 {
+		t.Errorf("%d accounts, want 1", n)
 	}
 	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `member`"); n != 1 {
 		t.Errorf("%d members, want 1", n)
@@ -348,15 +484,138 @@ func TestIntegrationRejoinIsSameAgent(t *testing.T) {
 		t.Errorf("%d agents, want 1", n)
 	}
 
-	// The rotation is real: the first token no longer resolves.
-	// (Both tokens were minted by join; we only kept the hashes, so this
-	// checks the stored hash moved, which is what invalidates the old token.)
-	var stored string
-	if err := hs.core.DB().QueryRow("SELECT `token_hash` FROM `agent` WHERE `id` = ?", first.ID.String()).Scan(&stored); err != nil {
+	// The original token still works: one person, one credential.
+	if _, err := hs.h.resolveToken(context.Background(), first.token); err != nil {
+		t.Errorf("re-joining invalidated the caller's own token: %v", err)
+	}
+	if first.account.TokenHash != second.account.TokenHash {
+		t.Error("re-joining rotated the account token; that would log the person's other agents out")
+	}
+}
+
+// TestIntegrationOnePersonManyTeams is the property v3 exists for: an account
+// is a person ACROSS teams, so one token reaches both boards and the team is
+// a per-call scope rather than something baked into the credential.
+func TestIntegrationOnePersonManyTeams(t *testing.T) {
+	hs := newHarness(t)
+	ana := hs.join(t, "Ana", "client-a")
+
+	// A second team, with its own invite, joined with the SAME token.
+	secondTeam := uuid.Must(uuid.NewV4())
+	planID := hs.planID
+	if _, err := hs.core.Team().Insert(context.Background(), team_types.UpsertRequest{
+		Team: team_entity.Team{
+			ID: secondTeam, Name: "Other team", Slug: "other-" + secondTeam.String()[:8],
+			Status: enums.RECORD_STATUS_ACTIVE, PlanUUID: &planID,
+			PlanSource: enums.PLAN_SOURCE_INSTANCE_DEFAULT, Visibility: enums.TEAM_VISIBILITY_PRIVATE,
+		},
+	}, teammod.WithSkipCache()); err != nil {
 		t.Fatal(err)
 	}
-	if stored != second.TokenHash {
-		t.Error("the agent row does not carry the newest token hash")
+	otherCode := "OTHR" + strings.ToUpper(secondTeam.String()[:6])
+	if _, err := hs.core.DB().Exec(
+		"INSERT INTO `invite` (`id`,`team_uuid`,`code`,`uses`,`status`) VALUES (?,?,?,?,?)",
+		uuid.Must(uuid.NewV4()).String(), secondTeam.String(), otherCode, 0, enums.INVITE_STATUS_ACTIVE); err != nil {
+		t.Fatal(err)
+	}
+
+	res, _, err := hs.h.JoinTeam(ana.ctx, nil, JoinTeamParams{
+		JoinCode: otherCode, MemberName: "Ana", AgentLabel: "test", ClientKey: "client-a",
+	})
+	if err != nil {
+		t.Fatalf("joining a second team with the same token: %v", err)
+	}
+	var out JoinTeamResult
+	decodeResult(t, res, &out)
+	if out.Token != "" {
+		t.Error("joining a second team minted a second token; one person has one credential")
+	}
+
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `account`"); n != 1 {
+		t.Errorf("%d accounts, want 1 — the same person joined twice", n)
+	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `member`"); n != 2 {
+		t.Errorf("%d memberships, want 2 — one per team", n)
+	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `agent`"); n != 1 {
+		t.Errorf("%d agents, want 1 — an agent belongs to a person, not a team", n)
+	}
+
+	// With two live memberships the team is genuinely ambiguous, so a
+	// team-scoped call must refuse rather than guess which board to write to.
+	if _, _, err := hs.h.StartSession(ana.ctx, nil, StartSessionParams{ProjectKey: "metiche"}); err == nil {
+		t.Error("start_session picked a team for a caller who is on two")
+	} else if !strings.Contains(err.Error(), "team_slug") {
+		t.Errorf("the refusal should name the missing argument: %v", err)
+	}
+
+	teamA, err := hs.h.teamByID(context.Background(), hs.teamID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := hs.h.StartSession(ana.ctx, nil, StartSessionParams{
+		ProjectKey: "metiche", TeamSlug: teamA.Slug}); err != nil {
+		t.Fatalf("start_session with an explicit team_slug: %v", err)
+	}
+}
+
+// TestIntegrationInviteRedemption covers the table that replaced
+// team.join_code: every reason an invite stops working, and the use counter.
+func TestIntegrationInviteRedemption(t *testing.T) {
+	hs := newHarness(t)
+
+	seed := func(code string, maxUses any, expiresAt any, revokedAt any, status int) {
+		t.Helper()
+		if _, err := hs.core.DB().Exec(
+			"INSERT INTO `invite` (`id`,`team_uuid`,`code`,`max_uses`,`uses`,`expires_at`,`revoked_at`,`status`) "+
+				"VALUES (?,?,?,?,?,?,?,?)",
+			uuid.Must(uuid.NewV4()).String(), hs.teamID.String(), code, maxUses, 0, expiresAt, revokedAt, status); err != nil {
+			t.Fatalf("seeding invite %s: %v", code, err)
+		}
+	}
+	past := time.Now().UTC().Add(-time.Hour)
+	seed("CAPPED0001", 1, nil, nil, int(enums.INVITE_STATUS_ACTIVE))
+	seed("EXPIRED001", nil, past, nil, int(enums.INVITE_STATUS_ACTIVE))
+	seed("REVOKED001", nil, nil, past, int(enums.INVITE_STATUS_ACTIVE))
+	seed("RETIRED001", nil, nil, nil, int(enums.INVITE_STATUS_REVOKED))
+
+	for _, code := range []string{"NOSUCHCODE", "EXPIRED001", "REVOKED001", "RETIRED001"} {
+		if _, _, err := hs.h.redeemInvite(context.Background(), code); err == nil {
+			t.Errorf("redeemed %s, which is not usable", code)
+		} else if strings.Contains(err.Error(), code) {
+			t.Errorf("the refusal echoed the code back: %v", err)
+		}
+	}
+
+	// The use cap is enforced, and the counter and status move with it.
+	inv, team, err := hs.h.redeemInvite(context.Background(), "capped0001")
+	if err != nil {
+		t.Fatalf("redeeming a usable invite: %v", err)
+	}
+	if team.ID != hs.teamID {
+		t.Errorf("redeemed onto team %s, want %s", team.ID, hs.teamID)
+	}
+	if inv.Uses != 1 {
+		t.Errorf("uses = %d after one redemption, want 1", inv.Uses)
+	}
+	var uses, status int64
+	var lastUsed sql.NullTime
+	if err := hs.core.DB().QueryRow(
+		"SELECT `uses`, `status`, `last_used_at` FROM `invite` WHERE `code` = ?", "CAPPED0001").
+		Scan(&uses, &status, &lastUsed); err != nil {
+		t.Fatal(err)
+	}
+	if uses != 1 {
+		t.Errorf("invite.uses = %d, want 1", uses)
+	}
+	if !lastUsed.Valid {
+		t.Error("invite.last_used_at was not set")
+	}
+	if status != int64(enums.INVITE_STATUS_EXHAUSTED) {
+		t.Errorf("invite.status = %d, want exhausted (%d) once max_uses was reached", status, enums.INVITE_STATUS_EXHAUSTED)
+	}
+	if _, _, err := hs.h.redeemInvite(context.Background(), "CAPPED0001"); err == nil {
+		t.Error("a max_uses=1 invite was redeemed twice")
 	}
 }
 
@@ -375,7 +634,7 @@ func TestIntegrationRejoinIsSameAgent(t *testing.T) {
 // last writer to commit writes back a value it read before the others landed.
 func TestIntegrationConcurrentWritesAreGapless(t *testing.T) {
 	hs := newHarness(t)
-	ctx, _ := hs.join(t, "Ana", "client-a")
+	ctx := hs.join(t, "Ana", "client-a").ctx
 
 	const n = 24
 	var (
@@ -492,7 +751,7 @@ func TestIntegrationConcurrentWritesAreGapless(t *testing.T) {
 // N goroutines retrying the SAME call must produce one event and one answer.
 func TestIntegrationConcurrentRetriesOfOneCall(t *testing.T) {
 	hs := newHarness(t)
-	ctx, _ := hs.join(t, "Ana", "client-a")
+	ctx := hs.join(t, "Ana", "client-a").ctx
 
 	const n = 16
 	var (
@@ -553,7 +812,7 @@ func TestIntegrationConcurrentRetriesOfOneCall(t *testing.T) {
 // board_revision where it was, because the lane is already on the board.
 func TestIntegrationTwoCursors(t *testing.T) {
 	hs := newHarness(t)
-	ctx, _ := hs.join(t, "Ana", "client-a")
+	ctx := hs.join(t, "Ana", "client-a").ctx
 
 	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work"})
 	if err != nil {
@@ -602,7 +861,8 @@ func TestIntegrationTwoCursors(t *testing.T) {
 // push past.
 func TestIntegrationHeartbeatExtendsClaimsWithoutTheLock(t *testing.T) {
 	hs := newHarness(t)
-	ctx, ag := hs.join(t, "Ana", "client-a")
+	ana := hs.join(t, "Ana", "client-a")
+	ctx := ana.ctx
 
 	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work"})
 	if err != nil {
@@ -611,10 +871,11 @@ func TestIntegrationHeartbeatExtendsClaimsWithoutTheLock(t *testing.T) {
 	var started Envelope
 	decodeResult(t, res, &started)
 
-	sess, err := hs.h.sessionByKey(ctx, ag, started.Key)
+	who, err := hs.h.RequireSession(ctx, started.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
+	sess := who.Session
 
 	// One claim expiring soon, with a hard cap only a minute out. Inserted
 	// directly: declare_intent, which is what creates claims in the product,
@@ -625,7 +886,7 @@ func TestIntegrationHeartbeatExtendsClaimsWithoutTheLock(t *testing.T) {
 		"INSERT INTO `claim` (`id`,`team_uuid`,`project_uuid`,`session_uuid`,`member_uuid`,`key`,`mode`,`status`,"+
 			"`ttl_seconds`,`expires_at`,`hard_expires_at`,`breadth_score`,`created_at`,`updated_at`) "+
 			"VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-		claimID.String(), hs.teamID.String(), sess.ProjectUUID.String(), sess.ID.String(), ag.MemberUUID.String(),
+		claimID.String(), hs.teamID.String(), sess.ProjectUUID.String(), sess.ID.String(), ana.member.ID.String(),
 		"C-1", enums.CLAIM_MODE_WRITE, enums.CLAIM_STATUS_HELD, 900,
 		now.Add(30*time.Second), now.Add(time.Minute), 0, now, now); err != nil {
 		t.Fatalf("seeding a claim: %v", err)
@@ -677,7 +938,7 @@ func TestIntegrationHeartbeatExtendsClaimsWithoutTheLock(t *testing.T) {
 // call later.
 func TestIntegrationDetectionRunsInsideTheLock(t *testing.T) {
 	hs := newHarness(t)
-	ctx, ag := hs.join(t, "Ana", "client-a")
+	ctx := hs.join(t, "Ana", "client-a").ctx
 
 	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work"})
 	if err != nil {
@@ -685,10 +946,11 @@ func TestIntegrationDetectionRunsInsideTheLock(t *testing.T) {
 	}
 	var started Envelope
 	decodeResult(t, res, &started)
-	sess, err := hs.h.sessionByKey(ctx, ag, started.Key)
+	who, err := hs.h.RequireSession(ctx, started.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
+	sess := who.Session
 
 	var sawSequence int64
 	var sawUncommittedEvent int
@@ -793,7 +1055,7 @@ func TestIntegrationAuthIsRequired(t *testing.T) {
 	}
 
 	// Another agent cannot touch this agent's session.
-	ctxA, _ := hs.join(t, "Ana", "client-a")
+	ctxA := hs.join(t, "Ana", "client-a").ctx
 	res, _, err := hs.h.StartSession(ctxA, nil, StartSessionParams{ProjectKey: "metiche"})
 	if err != nil {
 		t.Fatal(err)
@@ -801,7 +1063,7 @@ func TestIntegrationAuthIsRequired(t *testing.T) {
 	var env Envelope
 	decodeResult(t, res, &env)
 
-	ctxB, _ := hs.join(t, "Bob", "client-b")
+	ctxB := hs.join(t, "Bob", "client-b").ctx
 	if _, _, err := hs.h.EndSession(ctxB, nil, EndSessionParams{SessionKey: env.Key}); err == nil {
 		t.Error("one agent ended another agent's session")
 	}
@@ -811,8 +1073,8 @@ func TestIntegrationAuthIsRequired(t *testing.T) {
 // and free of anything that grows with the team.
 func TestIntegrationGetTeamState(t *testing.T) {
 	hs := newHarness(t)
-	ctxA, _ := hs.join(t, "Ana", "client-a")
-	ctxB, _ := hs.join(t, "Bob", "client-b")
+	ctxA := hs.join(t, "Ana", "client-a").ctx
+	ctxB := hs.join(t, "Bob", "client-b").ctx
 
 	for i := 0; i < 3; i++ {
 		if _, _, err := hs.h.StartSession(ctxA, nil, StartSessionParams{
@@ -966,18 +1228,56 @@ func TestIntegrationCreateTeam(t *testing.T) {
 		t.Errorf("creator not joined properly: member=%q agent=%q", first.MemberKey, first.AgentKey)
 	}
 
-	// The creator's token works immediately: no second call needed.
-	ag, err := hs.h.resolveToken(context.Background(), first.Token)
-	if err != nil {
-		t.Fatalf("the token create_team minted does not resolve: %v", err)
+	// The team got the instance default plan, and it got it explicitly. A
+	// team with no plan is a team with no limits, which is the thing
+	// ensureTeam refuses to create.
+	var planUUID sql.NullString
+	var planSource int64
+	var visibility int64
+	if err := hs.core.DB().QueryRow(
+		"SELECT `plan_uuid`, `plan_source`, `visibility` FROM `team` WHERE `slug` = ?", first.TeamSlug).
+		Scan(&planUUID, &planSource, &visibility); err != nil {
+		t.Fatal(err)
 	}
-	if _, _, err := hs.h.StartSession(WithAgent(context.Background(), ag), nil,
-		StartSessionParams{ProjectKey: "metiche", Goal: "work"}); err != nil {
+	if !planUUID.Valid || planUUID.String != hs.planID.String() {
+		t.Errorf("team.plan_uuid = %v, want the instance default %s", planUUID, hs.planID)
+	}
+	if planSource != int64(enums.PLAN_SOURCE_INSTANCE_DEFAULT) {
+		t.Errorf("team.plan_source = %d, want instance_default (%d)", planSource, enums.PLAN_SOURCE_INSTANCE_DEFAULT)
+	}
+	if visibility != int64(enums.TEAM_VISIBILITY_PRIVATE) {
+		t.Errorf("team.visibility = %d, want private (%d)", visibility, enums.TEAM_VISIBILITY_PRIVATE)
+	}
+	if first.Plan == "" {
+		t.Error("create_team should say which plan the team got")
+	}
+
+	// The join code is an INVITE row now, owned by the creator's membership.
+	var inviteTeam, createdBy sql.NullString
+	var inviteStatus, inviteUses int64
+	if err := hs.core.DB().QueryRow(
+		"SELECT `team_uuid`, `created_by_member_uuid`, `status`, `uses` FROM `invite` WHERE `code` = ?",
+		first.JoinCode).Scan(&inviteTeam, &createdBy, &inviteStatus, &inviteUses); err != nil {
+		t.Fatalf("create_team did not mint an invite: %v", err)
+	}
+	if inviteStatus != int64(enums.INVITE_STATUS_ACTIVE) {
+		t.Errorf("the first invite is status %d, want active", inviteStatus)
+	}
+	if !createdBy.Valid {
+		t.Error("the first invite has no created_by_member_uuid")
+	}
+
+	// The creator's token works immediately: no second call needed.
+	creator := hs.ctxForToken(t, first.Token)
+	if _, _, err := hs.h.StartSession(creator, nil,
+		StartSessionParams{ProjectKey: "metiche", Goal: "work", TeamSlug: first.TeamSlug}); err != nil {
 		t.Fatalf("start_session with the creator's token: %v", err)
 	}
 
-	// A retry does not create a second team.
-	res, _, err = hs.h.CreateTeam(context.Background(), nil, args)
+	// A retry does not create a second team. A real retry carries the token
+	// the first attempt returned — without it the caller is, by definition, a
+	// different anonymous person.
+	res, _, err = hs.h.CreateTeam(creator, nil, args)
 	if err != nil {
 		t.Fatalf("retried create_team: %v", err)
 	}
@@ -987,13 +1287,13 @@ func TestIntegrationCreateTeam(t *testing.T) {
 		t.Error("the retry reported created=true")
 	}
 	if retry.JoinCode != first.JoinCode {
-		t.Error("the retry returned a different join code, so the team was recreated")
+		t.Error("the retry returned a different join code, so a second door key was quietly issued")
 	}
 	if retry.TeamSlug != first.TeamSlug {
 		t.Error("the retry landed on a different team")
 	}
-	if retry.Token == first.Token {
-		t.Error("the retry should mint a fresh token; the original was never stored")
+	if retry.Token != "" {
+		t.Error("the retry minted a second token for a caller who already had one")
 	}
 	// newHarness seeds one team of its own, so the count is 2, not 1.
 	if got := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `team`"); got != 2 {
@@ -1004,7 +1304,7 @@ func TestIntegrationCreateTeam(t *testing.T) {
 	// the same promise as "one team ever".
 	args2 := args
 	args2.IdempotencyKey = uuid.Must(uuid.NewV4()).String()
-	res, _, err = hs.h.CreateTeam(context.Background(), nil, args2)
+	res, _, err = hs.h.CreateTeam(creator, nil, args2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1033,6 +1333,38 @@ func TestIntegrationCreateTeam(t *testing.T) {
 
 	// The join code is a secret too: it must not reach the event log.
 	assertNoSecretsInEventLog(t, hs, first.JoinCode, first.Token, bob.Token)
+}
+
+// TestIntegrationCreateTeamWithNoDefaultPlan is the guard the v3 plan model
+// is worth nothing without.
+//
+// A team whose plan_uuid is NULL has no ceiling on agents, members, projects
+// or retention. On a hosted instance that is an unbounded tenant, and the
+// first anyone would hear of it is the bill or the outage — so creation fails
+// loudly here rather than defaulting to "no limits" silently.
+func TestIntegrationCreateTeamWithNoDefaultPlan(t *testing.T) {
+	hs := newHarness(t)
+	if _, err := hs.core.DB().Exec("UPDATE `plan` SET `is_instance_default` = 0"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := hs.h.CreateTeam(context.Background(), nil, CreateTeamParams{
+		TeamName: "Unbounded", MemberName: "Ana", AgentLabel: "backend",
+		ClientKey: "client-a", IdempotencyKey: uuid.Must(uuid.NewV4()).String(),
+	})
+	if err == nil {
+		t.Fatal("create_team made a team with no plan")
+	}
+	if !errors.Is(err, ErrNoDefaultPlan) {
+		t.Errorf("the refusal should be ErrNoDefaultPlan, got: %v", err)
+	}
+	// And it failed BEFORE writing anything: no half-made team, no account.
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `team`"); n != 1 {
+		t.Errorf("%d teams, want only the harness's — a team was half-created", n)
+	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `account`"); n != 0 {
+		t.Errorf("%d accounts, want 0 — an identity was minted for a creation that failed", n)
+	}
 }
 
 func TestIntegrationCreateTeamValidation(t *testing.T) {
@@ -1119,9 +1451,9 @@ func TestIntegrationCreateTeamRateLimit(t *testing.T) {
 // late and a wrong token looks like no token.
 func TestIntegrationAuthMiddleware(t *testing.T) {
 	hs := newHarness(t)
-	_, ag := hs.join(t, "Ana", "client-a")
+	ana := hs.join(t, "Ana", "client-a")
 
-	var seen agent_entity.Agent
+	var seen account_entity.Account
 	var sawAgent bool
 	var sawIP string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1140,7 +1472,7 @@ func TestIntegrationAuthMiddleware(t *testing.T) {
 		t.Errorf("anonymous request got %d, want 200 — join_team would be unreachable", rec.Code)
 	}
 	if sawAgent {
-		t.Error("an anonymous request resolved to an agent")
+		t.Error("an anonymous request resolved to an account")
 	}
 	if sawIP != "203.0.113.9" {
 		t.Errorf("client ip = %q, want 203.0.113.9", sawIP)
@@ -1166,7 +1498,7 @@ func TestIntegrationAuthMiddleware(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := hs.core.DB().Exec("UPDATE `agent` SET `token_hash` = ? WHERE `id` = ?", hash, ag.ID.String()); err != nil {
+	if _, err := hs.core.DB().Exec("UPDATE `account` SET `token_hash` = ? WHERE `id` = ?", hash, ana.account.ID.String()); err != nil {
 		t.Fatal(err)
 	}
 	sawAgent = false
@@ -1177,8 +1509,8 @@ func TestIntegrationAuthMiddleware(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a valid token got %d", rec.Code)
 	}
-	if !sawAgent || seen.ID != ag.ID {
-		t.Errorf("resolved to %v, want agent %s", seen.ID, ag.ID)
+	if !sawAgent || seen.ID != ana.account.ID {
+		t.Errorf("resolved to %v, want account %s", seen.ID, ana.account.ID)
 	}
 }
 

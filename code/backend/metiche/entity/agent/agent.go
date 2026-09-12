@@ -15,18 +15,16 @@ import (
 )
 
 type Agent struct {
-	ID         uuid.UUID         `json:"id"`
-	TeamUUID   uuid.UUID         `json:"team_uuid"`
-	MemberUUID uuid.UUID         `json:"member_uuid"`
-	Key        string            `json:"key"`
-	Label      string            `json:"label"`
-	ClientKind null.String       `json:"client_kind"`
-	TokenHash  string            `json:"token_hash"`
-	ClientKey  string            `json:"client_key"`
-	Status     enums.AgentStatus `json:"status"`
-	LastSeenAt null.Time         `json:"last_seen_at"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
+	ID          uuid.UUID         `json:"id"`
+	Key         string            `json:"key"`
+	Label       string            `json:"label"`
+	ClientKind  null.String       `json:"client_kind"`
+	ClientKey   string            `json:"client_key"`
+	Status      enums.AgentStatus `json:"status"`
+	LastSeenAt  null.Time         `json:"last_seen_at"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+	AccountUUID uuid.UUID         `json:"account_uuid"`
 }
 
 func (e Agent) String() string {

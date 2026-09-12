@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gofrs/uuid"
 
+	"github.com/mklfarha/metiche/backend/app/authz"
 	"github.com/mklfarha/metiche/backend/app/stream/publish"
 )
 
@@ -92,6 +93,29 @@ func readSSE(t *testing.T, body io.Reader, n int, within time.Duration) ([]sseEv
 	return append([]sseEvent(nil), events...), keepalive
 }
 
+// allowPublic is the authorizer these tests run under: it says "this team is
+// public", which is the decision app/authz reaches for a real team whose
+// visibility column says public.
+//
+// Everything in this file is about the STREAM — ordering, resume, keepalive,
+// teardown — and none of it should be re-testing the gate. The gate has its
+// own tests: the decision itself in app/authz, and the database-backed
+// end-to-end cases (private team, no token / wrong account / member) in
+// app/webapi's mysql test, which mounts both halves on one router. What this
+// file does own is TestStreamRefusesBeforeTheFirstByte below.
+var allowPublic = authz.AuthorizerFunc(func(_ context.Context, teamRef, _ string) (authz.Team, error) {
+	if teamRef == "" {
+		return authz.Team{}, authz.ErrDenied
+	}
+	return authz.Team{Slug: teamRef, Public: true}, nil
+})
+
+// denyAll refuses everything, the way the real guard refuses a private team to
+// a stranger.
+var denyAll = authz.AuthorizerFunc(func(context.Context, string, string) (authz.Team, error) {
+	return authz.Team{}, authz.ErrDenied
+})
+
 // newStreamServer stands up the real chi route and the real handler over a
 // faked event source.
 func newStreamServer(t *testing.T, src Source, team uuid.UUID) (*httptest.Server, *Hub) {
@@ -100,6 +124,11 @@ func newStreamServer(t *testing.T, src Source, team uuid.UUID) (*httptest.Server
 }
 
 func newStreamServerKeepalive(t *testing.T, src Source, team uuid.UUID, keepalive time.Duration) (*httptest.Server, *Hub) {
+	t.Helper()
+	return newStreamServerAuth(t, src, team, keepalive, allowPublic)
+}
+
+func newStreamServerAuth(t *testing.T, src Source, team uuid.UUID, keepalive time.Duration, a authz.Authorizer) (*httptest.Server, *Hub) {
 	t.Helper()
 
 	hub := NewHub(src, nil)
@@ -111,7 +140,7 @@ func newStreamServerKeepalive(t *testing.T, src Source, team uuid.UUID, keepaliv
 	}
 
 	r := chi.NewRouter()
-	srvHandler := NewServer(hub, lookup, nil)
+	srvHandler := NewServer(hub, lookup, a, nil)
 	srvHandler.keepalive = keepalive
 	srvHandler.RegisterOn(r)
 
@@ -324,7 +353,7 @@ func TestStreamRouteCoexistsWithTheGeneratedCRUDMount(t *testing.T) {
 	hub := NewHub(&fakeSource{}, nil)
 	defer hub.Close()
 	lookup := func(context.Context, string) (TeamRef, error) { return TeamRef{UUID: team}, nil }
-	NewServer(hub, lookup, nil).RegisterOn(r)
+	NewServer(hub, lookup, allowPublic, nil).RegisterOn(r)
 
 	srv := httptest.NewServer(r)
 	defer srv.Close()
@@ -398,4 +427,81 @@ func waitFor(t *testing.T, within time.Duration, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition not met within the deadline")
+}
+
+// TestStreamRefusesBeforeTheFirstByte is the reason the gate is a wrapper
+// around the handler rather than a check inside it.
+//
+// An SSE handler writes 200 and flushes its headers almost immediately, and
+// after that the status code is spent: a refusal decided any later can only
+// be expressed by hanging up. To the client that is a healthy stream that
+// died, which is indistinguishable from a network blip and which every
+// EventSource on earth retries forever — a denied board would look like a
+// flaky one, and would keep knocking.
+//
+// So this asserts the client sees an HTTP STATUS: 404, not text/event-stream,
+// a complete finite body, and a response that is OVER — io.ReadAll returns,
+// which it never would on an open stream.
+func TestStreamRefusesBeforeTheFirstByte(t *testing.T) {
+	team := testTeam(t)
+	src := &fakeSource{}
+	src.append(1, 2, 3)
+	srv, hub := newStreamServerAuth(t, src, team, keepaliveInterval, denyAll)
+
+	resp, err := http.Get(srv.URL + "/v1/teams/demo/stream?after=0")
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("denied stream: status = %d, want 404", resp.StatusCode)
+	}
+	// 404, never 403: a 403 would confirm the team exists.
+	if resp.StatusCode == http.StatusForbidden {
+		t.Fatal("the stream answered 403, which confirms the team exists")
+	}
+	if ct := resp.Header.Get("Content-Type"); strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("the stream opened before it was authorized: Content-Type = %q", ct)
+	}
+
+	// The response completes. On an open-then-dead stream this would block
+	// until the test binary timed out.
+	done := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(resp.Body)
+		done <- string(b)
+	}()
+	select {
+	case body := <-done:
+		if strings.Contains(body, "data: ") || strings.Contains(body, "id: ") {
+			t.Fatalf("a refused stream still wrote frames: %q", body)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a refused stream left the connection open instead of returning a status")
+	}
+
+	// And nothing was subscribed: a refused request must not reach the hub,
+	// or a stranger could keep a team's tailing goroutine alive by knocking.
+	if n := watcherCount(hub, team); n != 0 {
+		t.Fatalf("a refused request subscribed to the hub anyway: %d watchers", n)
+	}
+}
+
+// TestStreamWithANilAuthorizerRefusesEverything pins the fail-closed default.
+// A nil authorizer is a wiring mistake, and the safe reading of a wiring
+// mistake on a public route is "nobody gets in", not "everybody does".
+func TestStreamWithANilAuthorizerRefusesEverything(t *testing.T) {
+	team := testTeam(t)
+	srv, _ := newStreamServerAuth(t, &fakeSource{}, team, keepaliveInterval, nil)
+
+	resp, err := http.Get(srv.URL + "/v1/teams/demo/stream")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	code := resp.StatusCode
+	_ = resp.Body.Close()
+	if code != http.StatusNotFound {
+		t.Fatalf("nil authorizer: status = %d, want 404", code)
+	}
 }

@@ -43,6 +43,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/mklfarha/metiche/backend/app/authz"
 	"github.com/mklfarha/metiche/backend/core"
 )
 
@@ -50,6 +51,12 @@ import (
 type API struct {
 	db     *sql.DB
 	logger *zap.Logger
+
+	// guard is the visibility-and-membership check every route in this
+	// package runs BEFORE its handler. It is a field rather than something a
+	// caller passes in because there must be no way to mount these endpoints
+	// unguarded: RegisterOn is the only way in, and it wraps every route.
+	guard authz.Middleware
 }
 
 // NewAPI builds the read API over a database handle.
@@ -64,7 +71,25 @@ func NewAPI(db *sql.DB, logger *zap.Logger) *API {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &API{db: db, logger: logger}
+	a := &API{db: db, logger: logger}
+	a.guard = authz.Middleware{
+		Authorizer: authz.NewGuard(db),
+		// The refusal is notFound, which is the SAME call writeProblem makes
+		// for errTeamNotFound below. Byte-identical on purpose: a private
+		// team must be indistinguishable from one that does not exist, and a
+		// difference in status, Content-Type or body would be the 403 this
+		// deliberately does not send. 404, never 403 — a 403 confirms the
+		// team exists and hands out a free oracle for the slug namespace.
+		NotFound: a.notFound,
+		Logger:   logger,
+	}
+	return a
+}
+
+// notFound is this package's one "no such team" response, used both by the
+// guard and by fail. See NewAPI for why they must be the same bytes.
+func (a *API) notFound(w http.ResponseWriter, _ *http.Request) {
+	writeProblem(w, http.StatusNotFound, "not found", "no such team")
 }
 
 // Route paths, exported so whoever mounts them does not retype them.
@@ -76,7 +101,7 @@ const (
 	PathSession   = "/v1/teams/{slug}/sessions/{key}"
 )
 
-// RegisterOn mounts the read API on r.
+// RegisterOn mounts the read API on r, with every route gated.
 //
 // Spell the full path including /v1: r is the server's ROOT router and the
 // generated CRUD already occupies /v1, so re-mounting it would panic at
@@ -85,12 +110,18 @@ const (
 // GET /v1/teams/{id}. That is intended — it is the board's endpoint — and
 // resolveTeam accepts a uuid as well as a slug so addressing a team by its id
 // keeps working.
+//
+// a.guard.Wrap is on EVERY route, and it wraps the handler rather than being
+// installed with r.Use: r is the root router and chi panics — while the router
+// is being built — if middleware is added to a mux that already has routes.
+// Wrapping also puts the check after chi has populated {slug} and before the
+// handler opens its read transaction, so a refused request touches nothing.
 func (a *API) RegisterOn(r chi.Router) {
-	r.Get(PathSnapshot, a.handleSnapshot)
-	r.Get(PathConflicts, a.handleConflicts)
-	r.Get(PathContracts, a.handleContracts)
-	r.Get(PathDecisions, a.handleDecisions)
-	r.Get(PathSession, a.handleSession)
+	r.Get(PathSnapshot, a.guard.Wrap(a.handleSnapshot))
+	r.Get(PathConflicts, a.guard.Wrap(a.handleConflicts))
+	r.Get(PathContracts, a.guard.Wrap(a.handleContracts))
+	r.Get(PathDecisions, a.guard.Wrap(a.handleDecisions))
+	r.Get(PathSession, a.guard.Wrap(a.handleSession))
 }
 
 // Register wires the read API into the REST server.
@@ -197,7 +228,7 @@ func resolveTeam(ctx context.Context, tx *sql.Tx, slug string) (teamRef, error) 
 // password.
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error, what string) {
 	if errors.Is(err, errTeamNotFound) {
-		writeProblem(w, http.StatusNotFound, "not found", "no such team")
+		a.notFound(w, r)
 		return
 	}
 	if r.Context().Err() != nil {
