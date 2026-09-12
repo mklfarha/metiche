@@ -56,12 +56,10 @@ import (
 //
 // The token is never logged here, and never appears in the returned error.
 //
-// NOTE — there are currently two copies of this SELECT: this one and the one
-// inside auth.go's resolveToken, which is byte-identical. They must not drift.
-// The intended end state is resolveToken delegating to this function — a
-// one-line change — which was deliberately NOT made in this pass because
-// auth.go was being edited concurrently by other work. If you are next to
-// touch auth.go, collapse the two.
+// resolveToken, which the MCP auth middleware and every tool call go through,
+// is a one-line delegation to this function — so there is exactly one
+// implementation of "whose token is this?" in the process, and the board and
+// the tool surface cannot drift apart on it.
 func AccountByToken(ctx context.Context, db *sql.DB, token string) (account_entity.Account, error) {
 	// Trim BEFORE the empty check, not after: HashToken trims too, so a token
 	// of pure whitespace would otherwise be hashed as the empty string and

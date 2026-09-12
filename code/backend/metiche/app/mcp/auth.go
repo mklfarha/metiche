@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -264,54 +263,21 @@ func (h *Handler) requireAccount(ctx context.Context) (account_entity.Account, e
 // small is an index in the schema, not a cache here that would outlive a
 // revocation.
 func (h *Handler) resolveToken(ctx context.Context, token string) (account_entity.Account, error) {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return account_entity.Account{}, ErrUnauthenticated
-	}
-	hash := HashToken(token)
-
-	var (
-		id, key, displayName, storedHash string
-		identityProvider, status         int64
-		identitySubject, identityHandle  sql.NullString
-		email                            sql.NullString
-		claimedAt, lastSeenAt            sql.NullTime
-	)
-	err := h.core.DB().QueryRowContext(ctx,
-		"SELECT `id`, `key`, `display_name`, `token_hash`, `identity_provider`, `identity_subject`, "+
-			"`identity_handle`, `email`, `claimed_at`, `status`, `last_seen_at` "+
-			"FROM `account` WHERE `token_hash` = ? LIMIT 1", hash).
-		Scan(&id, &key, &displayName, &storedHash, &identityProvider, &identitySubject,
-			&identityHandle, &email, &claimedAt, &status, &lastSeenAt)
-	if err != nil {
-		// Never distinguish "no such token" from a database problem in the
-		// message that reaches the caller — one of them is a probe.
-		return account_entity.Account{}, ErrUnauthenticated
-	}
-	if !VerifyToken(token, storedHash) {
-		return account_entity.Account{}, ErrUnauthenticated
-	}
-
-	a := account_entity.Account{
-		Key:              key,
-		DisplayName:      displayName,
-		TokenHash:        storedHash,
-		IdentityProvider: enums.IdentityProvider(identityProvider),
-		IdentitySubject:  nullString(identitySubject.String),
-		IdentityHandle:   nullString(identityHandle.String),
-		Email:            nullString(email.String),
-		Status:           enums.RecordStatus(status),
-	}
-	if claimedAt.Valid {
-		a.ClaimedAt = nullTime(claimedAt.Time)
-	}
-	if lastSeenAt.Valid {
-		a.LastSeenAt = nullTime(lastSeenAt.Time)
-	}
-	if a.ID, err = uuid.FromString(id); err != nil {
-		return account_entity.Account{}, ErrUnauthenticated
-	}
-	return a, nil
+	// One implementation, deliberately. This used to be a second copy of the
+	// SELECT in export_authz.go, byte-identical to it. Two copies of a
+	// credential check is how one of them quietly loses its VerifyToken call
+	// during some later edit and starts trusting a hash match on its own.
+	//
+	// AccountByToken takes a *sql.DB rather than hanging off the Handler,
+	// because that is all the lookup touches and it lets app/authz — the gate
+	// in front of the board — answer "whose token is this?" exactly the way
+	// the MCP surface does, without constructing a Handler.
+	//
+	// Every failure still collapses to the single opaque ErrUnauthenticated,
+	// and account.Status is still NOT checked here: "who is this" and "are
+	// they still active" are two questions, and each caller answers the
+	// second for itself.
+	return AccountByToken(ctx, h.core.DB(), token)
 }
 
 // mintAccount creates an anonymous person and hands back their one-time token.
