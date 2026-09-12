@@ -71,6 +71,27 @@ func (s *Server) Handler() http.Handler {
 	r.Use(recoverer(s.log))
 
 	r.Handle("/static/*", http.StripPrefix("/static/", cacheless(http.FileServer(http.FS(s.static)))))
+
+	// THE LANDING PAGE'S ONE COMMAND POINTS HERE, so this route is not a
+	// convenience: `curl -fsSL https://metiche.xyz/install.sh | sh` is the
+	// headline instruction on the page this same server renders, and without
+	// it the first thing anyone does returns 404.
+	//
+	// Served from the embedded copy at static/install.sh, which
+	// install_sh_test.go pins byte-for-byte against the canonical script at
+	// the repository root. text/plain rather than a shell media type: the
+	// browsers people paste this into should show it, because reading a
+	// script before piping it to sh is a thing to encourage.
+	r.Get("/install.sh", func(w http.ResponseWriter, r *http.Request) {
+		b, err := fs.ReadFile(s.static, "install.sh")
+		if err != nil {
+			http.Error(w, "install.sh is not available", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(b)
+	})
 	r.Get("/healthz", s.healthz)
 	// The landing page is the front door: it explains the idea to somebody who
 	// has never heard of it, and it deliberately shows no team data. The team
