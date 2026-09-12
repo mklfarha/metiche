@@ -34,6 +34,7 @@ constraint rules out a server-side LLM judge and shapes the entire detection des
 | Claims | **advisory + TTL**. Never block. Overlap is allowed and raises a conflict immediately. |
 | Human control | nudges (stop/steer/ask) + conflict resolution from the board |
 | Database | **MySQL**, reuses its proven deploy and codegen path (see Realtime) |
+| Domain | **metiche.xyz** — `metiche.xyz` (board), `api.metiche.xyz`, `mcp.metiche.xyz`, all pointed at the nuzur box |
 | Deployment | **the existing nuzur Linode box**, microk8s, its own `metiche` namespace; Helm, hostPath config overlay, no secrets in repo |
 | Onboarding | `metiche-teamwork` skill + one-command join + Claude Code plugin |
 | v1 target | end-to-end demo first, harden after |
@@ -309,7 +310,13 @@ The two cursors map directly onto two htmx behaviors: **`sequence`** appends to 
 (`sse-swap` + `hx-swap="beforeend"`), **`board_revision`** re-renders the board
 (`hx-swap="outerHTML"`). One stream, two event names.
 
-Pages: `/` join · `/t/{slug}` the live board (a lane per member → their agents → current intent,
+**The landing page is part of the product, not marketing afterthought.** `metiche.xyz` is where
+somebody who has never heard of this understands what it is, why parallel agents collide, and how
+to get their own team on it in about a minute. It has to carry the idea — two agents' paths crossing
+into an eye, which is the mark — and end in a join flow that actually works. It is the page that
+decides whether anyone ever sees the board.
+
+Pages: `/` landing + join · `/t/{slug}` the live board (a lane per member → their agents → current intent,
 status line, held paths, live conflict badges) · `/t/{slug}/conflicts` · `/t/{slug}/contracts` (the
 produces/consumes matrix — this is the view that shows the bottleneck) · `/t/{slug}/decisions` ·
 `/t/{slug}/runs/{session_key}` history. Humans raise nudges and resolve conflicts from the board.
