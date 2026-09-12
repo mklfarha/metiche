@@ -7,11 +7,15 @@ package view
 // them as pre-highlighted HTML fragments rendered through templ.Raw is less
 // noisy than escaping every brace at the call site.
 //
-// Nothing in this file is dynamic and nothing in it is a credential. The join
-// code is never shown — a real one is a bearer secret in a short costume, and
-// a landing page is the last place it should appear. The MCP config below
-// deliberately carries no token at all: the agent presents the join code once,
-// through the join_team tool, and the server mints a per-agent token from it.
+// Nothing in this file is dynamic and nothing in it is a credential. No join
+// code and no token is ever shown — both are bearer secrets in a short
+// costume, and a landing page is the last place either should appear.
+//
+// The MCP config below shows a ${VAR} reference and never a value, which is
+// also exactly what lands on disk. The installer redeems your join code once,
+// over the network, and writes the token it gets back to ~/.metiche/env at
+// mode 0600. A join code is an INVITE, not a credential: send one as a bearer
+// and the server answers 401.
 
 // mcpConfigHTML is the shape of the .mcp.json entry a teammate adds.
 const mcpConfigHTML = `<span class="c">// .mcp.json — in the repo, committed, no secret in it</span>
@@ -19,7 +23,10 @@ const mcpConfigHTML = `<span class="c">// .mcp.json — in the repo, committed, 
   <span class="k">"mcpServers"</span>: {
     <span class="k">"metiche"</span>: {
       <span class="k">"type"</span>: <span class="s">"http"</span>,
-      <span class="k">"url"</span>:  <span class="s">"https://mcp.metiche.xyz/v1/mcp"</span>
+      <span class="k">"url"</span>:  <span class="s">"https://mcp.metiche.xyz/v1/mcp"</span>,
+      <span class="k">"headers"</span>: {
+        <span class="k">"Authorization"</span>: <span class="s">"Bearer $</span><span class="hi">{METICHE_TOKEN}</span><span class="s">"</span>
+      }
     }
   }
 }`

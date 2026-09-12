@@ -32,9 +32,9 @@ itself, once, and configures your clients with the token that comes back.
 One join per machine is right. Each agent later distinguishes itself with its own `client_key` on
 `start_session`, and the same token works for every team the account joins.
 
-> **The backend is not deployed yet.** `mcp.metiche.xyz` does not answer. Because the installer
-> now joins over the network, it cannot complete against the default endpoint until it ships —
-> it will fail cleanly, writing nothing. Point it at a local server with `--url` in the meantime.
+> **`mcp.metiche.xyz` is live.** The installer joins over the network, so it needs the endpoint
+> to answer — which it now does. If you are working against a local server instead, point it
+> there with `--url`. Either way, a join that fails writes nothing at all.
 
 ## The one-liner
 

@@ -9,8 +9,9 @@
     "loads it from your shell profile. ${METICHE_MCP_URL} overrides the endpoint",
     "for local development, e.g. http://127.0.0.1:8788/mcp.",
     "",
-    "Aspirational: the metiche backend is not deployed yet, so mcp.metiche.xyz",
-    "does not answer. This file is the seam, ready for when it does."
+    "mcp.metiche.xyz is live. The bearer is the TOKEN the installer obtained",
+    "for you, never a join code -- a join code is an invite you redeem once,",
+    "and the server answers 401 if you send one as a credential."
   ],
   "mcpServers": {
     "metiche": {

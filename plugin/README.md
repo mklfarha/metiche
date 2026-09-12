@@ -88,6 +88,10 @@ diff -q skill/metiche-teamwork/SKILL.md plugin/skills/metiche-teamwork/SKILL.md
 
 ## Status
 
-The metiche backend is not deployed. `mcp.metiche.xyz` does not answer yet, so the plugin
-installs, the skill loads, and the server sits there unreachable. The client side is deliberately
-ready first.
+`mcp.metiche.xyz` is live and answers MCP over streamable HTTP. Install the plugin, set
+`METICHE_TOKEN`, and the server is reachable.
+
+Tools 8-12 and 14 of the surface (`publish_contract`, `record_decision`, `get_review_context`,
+`report_judgement`, `resolve_conflict`, `report_back`) are not registered yet, so contract
+mismatches and the model-judged semantic checks do not fire. Path collisions -- the mechanical
+half, and the one that catches the most -- work end to end.

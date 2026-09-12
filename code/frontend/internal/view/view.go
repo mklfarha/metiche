@@ -306,6 +306,19 @@ func suggestedAction(s state.Snapshot, c *model.Conflict) string {
 		return c.SuggestedAction
 	}
 
+	// A fact the board does not have makes the sentence WRONG rather than
+	// merely shorter: "Mara holds ." reads as a bug, and it is one. The live
+	// read API does not expose a conflict's paths or the contract it is about
+	// — they live in the conflict's evidence json, which is not on the wire —
+	// so this is the ordinary path against a real backend rather than an edge
+	// case, and the backend's own suggested action is both present and better
+	// than a sentence with a hole in it.
+	for _, v := range vars {
+		if strings.TrimSpace(v) == "" {
+			return c.SuggestedAction
+		}
+	}
+
 	if phrase := wording.Phrase(cad, kind, vars); phrase != "" {
 		return phrase
 	}
