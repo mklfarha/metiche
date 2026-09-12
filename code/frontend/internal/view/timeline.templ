@@ -1,0 +1,49 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/model"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// Rail is the live timeline. sse-swap="timeline" with hx-swap="beforeend" is
+// the append half of the two-cursor design: every event lands here, including
+// the ones that do not move the board.
+templ Rail(s state.Snapshot) {
+	<aside class="rail">
+		<div class="rail-head">
+			<span>Timeline</span>
+			<span class="hint">
+				every event · <b style="color:var(--indigo-ink)">bold seq</b> moved the board
+			</span>
+		</div>
+		<ul id="timeline" sse-swap="timeline" hx-swap="beforeend">
+			for _, ev := range s.RecentEvents(120) {
+				@TimelineItem(s, ev)
+			}
+		</ul>
+	</aside>
+}
+
+// TimelineItem is one log row.
+templ TimelineItem(s state.Snapshot, ev model.Event) {
+	<li class={ eventClass(ev) } data-seq={ fmt.Sprint(ev.Sequence) }>
+		<span class="seq">{ fmt.Sprint(ev.Sequence) }</span>
+		<span class="body">
+			<span class="line">{ ev.Summary }</span>
+			<br/>
+			<span class="kind">{ ev.Kind }</span>
+			if ev.SessionKey != "" {
+				<span class="who"> · { s.SessionLabel(ev.SessionKey) }</span>
+			}
+		</span>
+	</li>
+}
+
+// TimelineFrame is the wire form: the row plus an out-of-band refresh of the
+// sequence chip in the header. Keeping the cursor update inside the frame it
+// belongs to means the number can never disagree with the last row rendered.
+templ TimelineFrame(s state.Snapshot, ev model.Event) {
+	@TimelineItem(s, ev)
+	<span class="v" id="cursor-seq" hx-swap-oob="true">{ fmt.Sprint(ev.Sequence) }</span>
+}

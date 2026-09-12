@@ -1,0 +1,55 @@
+package view
+
+import "github.com/mklfarha/metiche/frontend/internal/state"
+
+// DecisionsPage lists the calls the team has settled.
+templ DecisionsPage(s state.Snapshot) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>Decisions</h2>
+				<div class="sub">
+					Short, quotable, and shipped inline to agents that are about to contradict one.
+				</div>
+				if len(s.Decisions) == 0 {
+					<div class="empty">
+						<div class="glyph">§</div>
+						<div class="title">No decisions recorded</div>
+						<div class="hint">
+							An agent records one with <code>record_decision</code> when the team
+							settles something the rest of the code has to obey.
+						</div>
+					</div>
+				}
+				<div class="grid2">
+					for _, d := range s.Decisions {
+						<div class={ "card", templ.KV("settled", d.Status != "active") }>
+							<div class="card-head">
+								<span class="key">{ d.Key }</span>
+								<div class="right">
+									if d.Status == "active" {
+										<span class="badge good">active</span>
+									} else {
+										<span class="badge plain">{ d.Status }</span>
+									}
+									if d.AlwaysShow {
+										<span class="badge kind">always-show</span>
+									}
+								</div>
+							</div>
+							<div style="font-weight:600;margin-bottom:4px">{ d.Title }</div>
+							<div class="detail">{ d.Statement }</div>
+							<div class="kv">
+								<b>{ d.Scope }</b>
+								<span>recorded { state.Ago(s.Now, d.RecordedAt) } ago</span>
+								if d.SessionKey != "" {
+									<span>by { s.SessionLabel(d.SessionKey) }</span>
+								}
+							</div>
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+	</div>
+}

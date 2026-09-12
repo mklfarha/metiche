@@ -1,0 +1,90 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/model"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// RunsPage lists sessions. A session is the run record; history is just the
+// event log filtered by it.
+templ RunsPage(s state.Snapshot) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>Runs</h2>
+				<div class="sub">One row per session. History is the event log filtered by session.</div>
+				if len(s.Sessions) == 0 {
+					<div class="empty">
+						<div class="glyph">▷</div>
+						<div class="title">No sessions yet</div>
+						<div class="hint">A run appears the first time an agent calls <code>start_session</code>.</div>
+					</div>
+				}
+				<div class="runlist">
+					for _, sess := range s.Runs() {
+						<a
+							class={ "runrow", templ.KV("live", sess.Live()) }
+							href={ templ.SafeURL(fmt.Sprintf("/t/%s/runs/%s", s.Team.Slug, sess.Key)) }
+						>
+							<span>
+								<span class="mono" style="font-weight:600">{ sess.Key }</span>
+								<span class="badge plain" style="margin-left:6px">{ sess.Status }</span>
+							</span>
+							<span>
+								<span style="font-weight:500">{ s.SessionLabel(sess.Key) }</span>
+								<span style="color:var(--ink-3)"> — { sess.Goal }</span>
+							</span>
+							<span class="mono" style="color:var(--ink-3);font-size:11px">
+								{ sess.Branch } · { state.Ago(s.Now, sess.StartedAt) }
+							</span>
+						</a>
+					}
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+// RunPage is one session's history.
+templ RunPage(s state.Snapshot, sess *model.Session) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>{ sess.Key } — { s.SessionLabel(sess.Key) }</h2>
+				<div class="sub">{ sess.Goal }</div>
+				<div class="card">
+					<div class="card-head">
+						<span class={ pipClass(sess) }></span>
+						<span class="key">{ sess.Status }</span>
+						<div class="right">
+							<span class="badge kind">{ sess.Branch }</span>
+							<span class="badge kind">{ sess.BaseCommit }</span>
+						</div>
+					</div>
+					<div class="statusline">{ sess.StatusLine }</div>
+					<div class="kv">
+						<span>started { state.Ago(s.Now, sess.StartedAt) } ago</span>
+						<span>· last heartbeat { state.Ago(s.Now, sess.LastHeartbeatAt) } ago</span>
+					</div>
+				</div>
+				if len(s.ConflictsForSession(sess.Key)) > 0 {
+					<h2 style="margin-top:18px">Conflicts this run touched</h2>
+					<div class="sub"></div>
+					for _, c := range s.ConflictsForSession(sess.Key) {
+						@conflictCard(s, c, c.Open())
+					}
+				}
+				<h2 style="margin-top:18px">Event log</h2>
+				<div class="sub">{ plural(len(s.EventsForSession(sess.Key)), "event", "events") } logged in this run.</div>
+				<div class="card" style="padding:4px 0">
+					<ul class="log">
+						for _, ev := range s.EventsForSession(sess.Key) {
+							@TimelineItem(s, ev)
+						}
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+}

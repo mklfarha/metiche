@@ -1,0 +1,128 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/model"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// Layout is the page chrome. The SSE connection is opened once, here, on the
+// <body>: both named event types arrive on the same stream, and the two swap
+// targets inside the page pick the one they care about.
+//
+// sse-connect carries ?after=0 for a cold load. A browser that drops and
+// reconnects re-sends Last-Event-ID automatically and the server resumes from
+// that instead, which is why the query parameter can stay static.
+templ Layout(s state.Snapshot, tab Tab, streamURL string, body templ.Component) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ s.Team.Name } · metiche</title>
+			<link rel="icon" href="/static/metiche-icon.png" type="image/png"/>
+			<link rel="stylesheet" href="/static/app.css"/>
+			<script src="/static/htmx.min.js"></script>
+			<script src="/static/htmx-ext-sse.js"></script>
+		</head>
+		<body
+			hx-ext="sse"
+			sse-connect={ streamURL }
+		>
+			<div class="app">
+				@topbar(s, tab)
+				@body
+			</div>
+			<script src="/static/board.js"></script>
+		</body>
+	</html>
+}
+
+templ topbar(s state.Snapshot, tab Tab) {
+	<header class="topbar">
+		<div class="brand">
+			<a class="logo" href="/" style="display:flex;align-items:center;gap:9px">
+				<img class="mark" src="/static/metiche-icon.png" alt="" width="26" height="26"/>
+				<span>metiche<span class="dot">.</span></span>
+			</a>
+			<span class="team"><b>{ s.Team.Name }</b></span>
+		</div>
+		<nav class="tabs">
+			@tab_(tab, TabBoard, "Board", fmt.Sprintf("/t/%s", s.Team.Slug), "nav-n-board", s.LiveSessions(), false, false)
+			@tab_(tab, TabGraph, "Graph", fmt.Sprintf("/t/%s/graph", s.Team.Slug), "nav-n-graph", 0, false, false)
+			@tab_(tab, TabConflicts, "Conflicts", fmt.Sprintf("/t/%s/conflicts", s.Team.Slug), "nav-n-conflicts", len(s.OpenConflicts()), len(s.OpenConflicts()) > 0, false)
+			@tab_(tab, TabContracts, "Contracts", fmt.Sprintf("/t/%s/contracts", s.Team.Slug), "nav-n-contracts", len(s.Contracts), false, false)
+			@tab_(tab, TabDecisions, "Decisions", fmt.Sprintf("/t/%s/decisions", s.Team.Slug), "nav-n-decisions", len(s.Decisions), false, false)
+			@tab_(tab, TabRuns, "Runs", fmt.Sprintf("/t/%s/runs", s.Team.Slug), "nav-n-runs", len(s.Sessions), false, false)
+		</nav>
+		<div class="spacer"></div>
+		@cadencePicker(s)
+		<div class="cursors">
+			<span class="cursor seq" title="sequence — advances on every event, appends to the timeline">
+				<span class="k">seq</span>
+				<span class="v" id="cursor-seq">{ fmt.Sprint(s.Team.Sequence) }</span>
+			</span>
+			<span class="cursor rev" title="board_revision — advances only on structural change, repaints the board">
+				<span class="k">rev</span>
+				<span class="v" id="cursor-rev">{ fmt.Sprint(s.Team.BoardRevision) }</span>
+			</span>
+		</div>
+		<div class="conn"><span class="pip"></span><span id="conn-label">live</span></div>
+	</header>
+}
+
+// cadencePicker is visible on every page on purpose. Cadence silently changes
+// what the board tells people to do, and a setting like that left wrong is
+// invisible until its advice is wrong — so it states itself, in the header,
+// next to the thing it governs.
+templ cadencePicker(s state.Snapshot) {
+	<label class="cadence" title={ cadenceHint(s.Project.Cadence) }>
+		<span class="k">pace</span>
+		<select
+			name="cadence"
+			hx-post={ fmt.Sprintf("/t/%s/cadence", s.Team.Slug) }
+			hx-trigger="change"
+			hx-swap="none"
+		>
+			for _, c := range model.Cadences() {
+				<option value={ string(c) } selected?={ c == s.Project.Cadence }>{ c.Label() }</option>
+			}
+		</select>
+	</label>
+}
+
+templ tab_(active Tab, self Tab, label string, href string, id string, count int, hot bool, oob bool) {
+	<a
+		href={ templ.SafeURL(href) }
+		if active == self {
+			class="on"
+		}
+	>
+		{ label }
+		@navBadge(id, count, hot, oob)
+	</a>
+}
+
+// navBadge is always in the DOM, even at zero, because an out-of-band swap
+// needs a target that already exists. Hiding it is a CSS concern.
+templ navBadge(id string, count int, hot bool, oob bool) {
+	<span
+		id={ id }
+		class={ "n", templ.KV("hot", hot) }
+		hidden?={ count == 0 }
+		if oob {
+			hx-swap-oob="true"
+		}
+	>{ fmt.Sprint(count) }</span>
+}
+
+// NavCounts is the out-of-band half: the counts in the nav belong to the
+// header, not to the board container, so a board repaint ships them
+// separately rather than dragging the whole header along.
+templ NavCounts(s state.Snapshot) {
+	@navBadge("nav-n-board", s.LiveSessions(), false, true)
+	@navBadge("nav-n-conflicts", len(s.OpenConflicts()), len(s.OpenConflicts()) > 0, true)
+	@navBadge("nav-n-contracts", len(s.Contracts), false, true)
+	@navBadge("nav-n-decisions", len(s.Decisions), false, true)
+	@navBadge("nav-n-runs", len(s.Sessions), false, true)
+}

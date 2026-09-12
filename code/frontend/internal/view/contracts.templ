@@ -1,0 +1,152 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// ContractsPage is the produces/consumes matrix.
+//
+// The reason this view exists is not to list contracts. It is to answer one
+// question at a glance: *who is blocked on whom, and who does not know it yet.*
+// Three things it makes visible that a list cannot:
+//
+//  1. A column of C marks with no P anywhere in the row — somebody is coding
+//     against an endpoint nobody is building. In a hackathon this is the single
+//     most expensive failure mode, and it is silent until integration.
+//  2. A P and a C in the same row that disagree about the shape — both people
+//     believe they are done.
+//  3. Two P marks in one row — two people building the same thing.
+//
+// So the row verdict column is the primary content and the grid is the
+// evidence, not the other way round.
+templ ContractsPage(s state.Snapshot) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>Contracts — produces / consumes</h2>
+				<div class="sub">
+					Rows are contracts, columns are the sessions asserting on them. Read the verdict
+					column first; the grid is the evidence for it.
+				</div>
+				if len(s.Contracts) == 0 {
+					<div class="empty">
+						<div class="glyph">⇄</div>
+						<div class="title">No contracts published yet</div>
+						<div class="hint">
+							An agent publishes one with <code>publish_contract</code> when it starts
+							building or consuming an interface. Until then there is nothing to
+							disagree about.
+						</div>
+					</div>
+				} else {
+					@matrixSummary(s.ContractMatrix())
+					<div class="matrix-wrap">
+						<table class="matrix">
+							<thead>
+								<tr>
+									<th style="min-width:230px">Contract</th>
+									<th style="min-width:240px">Verdict</th>
+									for _, col := range s.ContractMatrix().Columns {
+										<th class="who">
+											<span class="m">{ col.Member }</span>
+											<span class="a">{ col.Agent }</span>
+										</th>
+									}
+								</tr>
+							</thead>
+							<tbody>
+								for _, row := range s.ContractMatrix().Rows {
+									@matrixRow(row)
+								}
+							</tbody>
+						</table>
+					</div>
+					<div class="legend">
+						<span class="item"><span class="mk p">P</span> produces</span>
+						<span class="item"><span class="mk c">C</span> consumes</span>
+						<span class="item"><span class="mk b">PC</span> both</span>
+						<span class="item"><span class="mk c bad">C</span> shape disagreement</span>
+						<span class="item"><span class="mk c orphan">C</span> no producer — contract_unclaimed</span>
+					</div>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ matrixSummary(m state.Matrix) {
+	<div class="badges" style="margin-bottom:12px">
+		if m.Counts()["unclaimed"] > 0 {
+			<span class="badge critical">
+				<span class="glyph">◆</span>
+				{ plural(m.Counts()["unclaimed"], "contract consumed but not produced", "contracts consumed but not produced") }
+			</span>
+		}
+		if m.Counts()["mismatch"] > 0 {
+			<span class="badge high"><span class="glyph">▲</span> { plural(m.Counts()["mismatch"], "shape mismatch", "shape mismatches") }</span>
+		}
+		if m.Counts()["contested"] > 0 {
+			<span class="badge medium"><span class="glyph">●</span> { plural(m.Counts()["contested"], "contested producer", "contested producers") }</span>
+		}
+		if m.Counts()["converged"] > 0 {
+			<span class="badge good"><span class="glyph">✓</span> { plural(m.Counts()["converged"], "converged", "converged") }</span>
+		}
+		if m.Counts()["unconsumed"] > 0 {
+			<span class="badge plain">{ plural(m.Counts()["unconsumed"], "not consumed yet", "not consumed yet") }</span>
+		}
+	</div>
+}
+
+templ matrixRow(row state.ContractRow) {
+	<tr class={ "r-" + row.Status }>
+		<td>
+			<div class="rowkey">{ row.Contract.Key }</div>
+			<div class="rowkind">{ row.Contract.Kind }</div>
+		</td>
+		<td>
+			<div class="verdict">
+				if row.Severity != "" {
+					<span class={ "badge", row.Severity }>
+						<span class="glyph">{ severityGlyph(row.Severity) }</span>
+						{ row.Status }
+					</span>
+				} else if row.Status == "converged" {
+					<span class="badge good"><span class="glyph">✓</span> converged</span>
+				} else {
+					<span class="badge plain">{ row.Status }</span>
+				}
+				<span class="txt">{ row.Headline }</span>
+			</div>
+			if len(row.Diffs) > 0 {
+				<ul class="diffs">
+					for i, d := range row.Diffs {
+						if i < 5 {
+							<li>
+								<span class={ "badge", d.Severity }>{ d.Kind }</span>
+								<span class="f">{ d.Field }</span>
+								<span class="arrow">{ d.Expected } → { d.Actual }</span>
+								<span class="note">{ d.Note }</span>
+							</li>
+						}
+					}
+				</ul>
+			}
+		</td>
+		for _, cell := range row.Cells {
+			@matrixCell(cell, row.Status == "unclaimed")
+		}
+	</tr>
+}
+
+templ matrixCell(cell state.MatrixCell, unclaimed bool) {
+	<td class="cell">
+		{{ class, glyph, title := cellMark(cell, unclaimed) }}
+		<span class={ class } title={ title }>{ glyph }</span>
+		if cell.FieldCount > 0 {
+			<div style="font-size:9px;color:var(--ink-3);font-family:var(--mono);margin-top:2px">
+				{ fmt.Sprint(cell.FieldCount) }f
+			</div>
+		}
+	</td>
+}

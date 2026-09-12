@@ -1,0 +1,202 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// BoardPage is the whole board route: the board itself plus the live timeline
+// rail. Two swap targets, one stream.
+templ BoardPage(s state.Snapshot) {
+	<div class="main view-board">
+		<div class="stage">
+			@Board(s)
+			@GraphPanel(s)
+		</div>
+		@Rail(s)
+	</div>
+}
+
+// Board is the fragment replaced wholesale when board_revision advances.
+// hx-swap="outerHTML" means the replacement must carry these attributes too,
+// or the second repaint never arrives.
+templ Board(s state.Snapshot) {
+	<div id="board" sse-swap="board" hx-swap="outerHTML">
+		@banner(s)
+		if len(s.Members) == 0 {
+			@emptyTeam(s)
+		} else if s.Empty() {
+			@quietTeam(s)
+		} else {
+			<div class="lanes">
+				for _, lane := range s.Lanes() {
+					@laneView(s, lane)
+				}
+			</div>
+		}
+	</div>
+}
+
+// BoardFrame is what goes down the wire. It is the board plus an out-of-band
+// update for the two cursor chips in the header, so the numbers stay honest
+// without a third SSE event name.
+// The sequence chip is carried by the timeline frame, which only has a target
+// on the board page. Repeating it here keeps it honest on the pages that have
+// no timeline — those move on structural events anyway, which is exactly when
+// this frame is sent.
+templ BoardFrame(s state.Snapshot) {
+	@Board(s)
+	<span class="v" id="cursor-seq" hx-swap-oob="true">{ fmt.Sprint(s.Team.Sequence) }</span>
+	<span class="v" id="cursor-rev" hx-swap-oob="true">{ fmt.Sprint(s.Team.BoardRevision) }</span>
+	@NavCounts(s)
+	@GraphFrame(s)
+}
+
+// banner is the board's loudest element and is deliberately absent when the
+// team is calm — a permanent status bar teaches people to stop looking at it.
+templ banner(s state.Snapshot) {
+	if c := worstConflict(s); c != nil {
+		<div class={ "alertstrip", c.Severity }>
+			<span class={ "badge", conflictBadge(c) }><span class="glyph">{ severityGlyph(c.Severity) }</span> { c.Severity }</span>
+			<span class="what">{ conflictLabel(c.Kind) }</span>
+			<span class="why">{ suggestedAction(s, c) }</span>
+			<a class="go" href={ templ.SafeURL(fmt.Sprintf("/t/%s/conflicts", s.Team.Slug)) }>
+				{ plural(len(s.OpenConflicts()), "open conflict", "open conflicts") } →
+			</a>
+		</div>
+	} else if s.LiveSessions() > 0 {
+		<div class="calmstrip">
+			<span class="pip"></span>
+			<span>
+				{ calmLine(s) } { plural(s.LiveSessions(), "session", "sessions") } in flight.
+			</span>
+			<span style="margin-left:auto">
+				{ plural(len(s.Contracts), "contract", "contracts") } · { plural(len(s.Decisions), "decision", "decisions") }
+			</span>
+		</div>
+	}
+}
+
+templ laneView(s state.Snapshot, lane state.Lane) {
+	<section class={ laneClass(lane) }>
+		<header class="lane-head">
+			<span class="avatar">{ initials(lane.Member.DisplayName) }</span>
+			<span class="name">{ lane.Member.DisplayName }</span>
+			<span class="meta">
+				{ fmt.Sprintf("%d/%d", lane.Active(), len(lane.Agents)) }
+			</span>
+		</header>
+		<div class="lane-body">
+			if len(lane.Agents) == 0 {
+				<div class="statusline" style="color:var(--ink-3);font-style:italic">no agents connected</div>
+			}
+			for _, al := range lane.Agents {
+				@agentCard(s, al)
+			}
+		</div>
+	</section>
+}
+
+templ agentCard(s state.Snapshot, l state.AgentLane) {
+	<article class={ agentClass(l) }>
+		<div class="agent-head">
+			<span class={ pipClass(l.Session) }></span>
+			<span class="label">{ l.Agent.Label }</span>
+			if l.Session != nil && l.Session.Branch != "" {
+				<span class="branch" title={ l.Session.BaseCommit }>{ l.Session.Branch }</span>
+			}
+		</div>
+		if l.Session == nil {
+			<div class="statusline">idle — no session started</div>
+		} else {
+			<div class="statusline">{ l.Session.StatusLine }</div>
+			if l.Session.Goal != "" {
+				<div class="goal">goal: { l.Session.Goal }</div>
+			}
+		}
+		if l.Intent != nil {
+			<div class="intent">
+				<span class={ "chip", l.Intent.Status }>{ l.Intent.Status }</span>
+				<span class="summary">{ l.Intent.Summary }</span>
+			</div>
+		}
+		if len(l.Claims) > 0 {
+			<div class="paths">
+				for _, c := range l.Claims {
+					for i, p := range c.Paths {
+						if i < 4 {
+							<div class={ pathClass(l, p) } title={ p }>
+								<span class="mode">{ modeAbbrev(c.Mode) }</span>
+								<span>{ p }</span>
+							</div>
+						}
+					}
+					if len(c.Paths) > 4 {
+						<div class="more">+{ fmt.Sprint(len(c.Paths)-4) } more paths</div>
+					}
+				}
+			</div>
+		}
+		<div class="badges">
+			for _, c := range l.Conflicts {
+				<a
+					class={ "badge", conflictBadge(c) }
+					href={ templ.SafeURL(fmt.Sprintf("/t/%s/conflicts#%s", s.Team.Slug, c.Key)) }
+					title={ suggestedAction(s, c) }
+				>
+					<span class="glyph">{ severityGlyph(c.Severity) }</span>
+					{ conflictLabel(c.Kind) }
+				</a>
+			}
+			if l.Session != nil {
+				<a
+					class="badge plain"
+					href={ templ.SafeURL(fmt.Sprintf("/t/%s/runs/%s", s.Team.Slug, l.Session.Key)) }
+					title="run history for this session"
+				>
+					{ l.Session.Key } · { state.Ago(s.Now, l.Session.LastHeartbeatAt) }
+				</a>
+				if !l.Idle() {
+					// A nudge is a timeline event, never a board repaint. It is
+					// also advisory: the agent learns about it on its next call,
+					// because MCP cannot be pushed to.
+					<button
+						class="badge plain"
+						style="cursor:pointer"
+						hx-post={ fmt.Sprintf("/t/%s/sessions/%s/nudge", s.Team.Slug, l.Session.Key) }
+						hx-vals={ `{"nudge":"ask"}` }
+						hx-swap="none"
+						title="queue a nudge — delivered on this agent's next call"
+					>nudge</button>
+				}
+			}
+		</div>
+	</article>
+}
+
+templ emptyTeam(s state.Snapshot) {
+	<div class="empty">
+		<div class="glyph">◌</div>
+		<div class="title">Nobody has joined { s.Team.Name } yet</div>
+		<div class="hint">
+			The board fills itself in. Point an agent at this team and it appears here on its
+			first <code>join_team</code> call — there is nothing to configure on this page.
+		</div>
+	</div>
+}
+
+templ quietTeam(s state.Snapshot) {
+	<div class="empty">
+		<div class="glyph">◌</div>
+		<div class="title">{ plural(len(s.Members), "member", "members") } here, nobody working right now</div>
+		<div class="hint">
+			Every agent has ended its session. This is the quiet state, not a broken one — the
+			board stays connected and repaints the moment somebody starts.
+		</div>
+		<div class="badges" style="justify-content:center">
+			for _, m := range s.Members {
+				<span class="badge plain">{ m.DisplayName } · { plural(len(m.Agents), "agent", "agents") }</span>
+			}
+		</div>
+	</div>
+}

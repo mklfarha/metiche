@@ -1,0 +1,128 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/model"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// ConflictsPage lists what wants a human. Every card leads with the suggested
+// action, because a conflict without one is noise by definition.
+templ ConflictsPage(s state.Snapshot) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>Conflicts</h2>
+				<div class="sub">
+					Advisory, always. Nothing here blocked anybody — it is a record of collisions
+					detected at the moment they were declared.
+				</div>
+				if len(s.OpenConflicts()) == 0 {
+					<div class="empty">
+						<div class="glyph">✓</div>
+						<div class="title">Nothing open</div>
+						<div class="hint">No collisions detected across the live sessions.</div>
+					</div>
+				}
+				for _, c := range s.OpenConflicts() {
+					@conflictCard(s, c, true)
+				}
+				if len(s.ClosedConflicts()) > 0 {
+					<h2 style="margin-top:22px">Settled</h2>
+					<div class="sub">Kept so the team can see how a collision actually ended.</div>
+					for _, c := range s.ClosedConflicts() {
+						@conflictCard(s, c, false)
+					}
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
+	<div
+		id={ c.Key }
+		class={ "card", templ.KV("sev-"+c.Severity, open), templ.KV("settled", !open) }
+	>
+		<div class="card-head">
+			<span class={ "badge", conflictBadge(c) }>
+				<span class="glyph">{ severityGlyph(c.Severity) }</span>
+				{ c.Severity }
+			</span>
+			<span class="key">{ c.Key }</span>
+			<span class="badge kind">{ conflictLabel(c.Kind) }</span>
+			if text, class, show := ageBadge(s, c); show {
+				<span class={ "badge", class } title="how long this has been open, against what this cadence tolerates">{ text }</span>
+			}
+			<div class="right">
+				if !open {
+					<span class="badge good">{ c.Status }</span>
+					if c.Resolution != "" {
+						<span class="badge plain">{ c.Resolution }</span>
+					}
+				} else {
+					<span class="badge plain">{ c.Status } · { state.Ago(s.Now, c.RaisedAt) }</span>
+				}
+			</div>
+		</div>
+		if c.Detail != "" {
+			<div class="detail">{ c.Detail }</div>
+		}
+		if action := suggestedAction(s, c); action != "" {
+			<div class="suggest">
+				<span class="tag">do this</span>
+				<span class="text">{ action }</span>
+			</div>
+		} else if open {
+			<div class="suggest" style="border-left-color:var(--critical)">
+				<span class="tag" style="color:var(--critical)">defect</span>
+				<span class="text">
+					Raised with no suggested action. That is a detector bug, not a team problem.
+				</span>
+			</div>
+		}
+		if len(c.Paths) > 0 {
+			<div class="paths" style="margin-bottom:8px">
+				for _, p := range c.Paths {
+					<div class={ "path", "hot-"+c.Severity }><span>{ p }</span></div>
+				}
+			</div>
+		}
+		<div class="parties">
+			for _, p := range c.Participants {
+				<span class={ "party", partyClass(p.Role) }>
+					<span class="role">{ p.Role }</span>
+					<span>{ s.SessionLabel(p.SessionKey) }</span>
+					if p.Detail != "" {
+						<span style="color:var(--ink-3)">{ p.Detail }</span>
+					}
+				</span>
+			}
+		</div>
+		if open {
+			// The backend that serves these does not exist yet, so the controls
+			// post to this service's own stub endpoint and say so plainly
+			// rather than pretending to work.
+			<div class="actions">
+				<button
+					class="btn primary"
+					hx-post={ fmt.Sprintf("/t/%s/conflicts/%s/resolve", s.Team.Slug, c.Key) }
+					hx-vals={ `{"status":"resolved"}` }
+					hx-swap="none"
+				>Mark resolved</button>
+				<button
+					class="btn"
+					hx-post={ fmt.Sprintf("/t/%s/conflicts/%s/resolve", s.Team.Slug, c.Key) }
+					hx-vals={ `{"status":"acknowledged"}` }
+					hx-swap="none"
+				>Acknowledge</button>
+				<button
+					class="btn ghost"
+					hx-post={ fmt.Sprintf("/t/%s/conflicts/%s/resolve", s.Team.Slug, c.Key) }
+					hx-vals={ `{"status":"dismissed"}` }
+					hx-swap="none"
+				>Dismiss as false positive</button>
+			</div>
+		}
+	</div>
+}

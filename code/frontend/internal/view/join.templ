@@ -1,0 +1,105 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// TeamCard is one row on the join page.
+type TeamCard struct {
+	Slug     string
+	Name     string
+	Live     int
+	Members  int
+	Open     int
+	Severity string
+}
+
+// JoinPage is the front door: pick a team, or paste a join code.
+templ JoinPage(teams []TeamCard) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>metiche</title>
+			<link rel="icon" href="/static/metiche-icon.png" type="image/png"/>
+			<link rel="stylesheet" href="/static/app.css"/>
+			<script src="/static/htmx.min.js"></script>
+		</head>
+		<body>
+			<div class="join">
+				<div class="join-inner">
+					<div class="brandbig">
+						<img src="/static/metiche-icon.png" alt="" width="46" height="46"/>
+						<h1>metiche<span class="dot">.</span></h1>
+					</div>
+					<div class="tag">What everyone's agents are doing, right now.</div>
+					for _, t := range teams {
+						<a class="teamlink" href={ templ.SafeURL("/t/" + t.Slug) }>
+							<span>
+								<div class="nm">{ t.Name }</div>
+								<div class="sl">/t/{ t.Slug }</div>
+							</span>
+							<span class="st">
+								if t.Open > 0 {
+									<span class={ "badge", t.Severity }>
+										<span class="glyph">{ severityGlyph(t.Severity) }</span>
+										{ plural(t.Open, "conflict", "conflicts") }
+									</span>
+								} else {
+									<span class="badge good">clear</span>
+								}
+								<div class="sl" style="margin-top:4px">
+									{ fmt.Sprintf("%d live · %d members", t.Live, t.Members) }
+								</div>
+							</span>
+						</a>
+					}
+					<form method="get" action="/join">
+						<input name="code" placeholder="join code — e.g. MET-4QX7-PLUM" autocomplete="off"/>
+						<button class="btn primary" type="submit">Join</button>
+					</form>
+					<div class="note">
+						A join code mints a per-agent token server-side. No third-party credential is
+						ever required to run metiche — and the board is not public just because the
+						repository is.
+					</div>
+				</div>
+			</div>
+		</body>
+	</html>
+}
+
+// NotFound is the miss page for an unknown slug.
+templ NotFound(slug string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<title>no such team · metiche</title>
+			<link rel="icon" href="/static/metiche-icon.png" type="image/png"/>
+			<link rel="stylesheet" href="/static/app.css"/>
+		</head>
+		<body>
+			<div class="join">
+				<div class="join-inner">
+					<div class="brandbig">
+						<img src="/static/metiche-icon.png" alt="" width="46" height="46"/>
+						<h1>metiche<span class="dot">.</span></h1>
+					</div>
+					<div class="empty">
+						<div class="glyph">?</div>
+						<div class="title">No team called “{ slug }”</div>
+						<div class="hint"><a href="/" style="color:var(--accent)">Pick one from the list →</a></div>
+					</div>
+				</div>
+			</div>
+		</body>
+	</html>
+}
+
+// Wrap renders a page body inside the chrome.
+func Wrap(s state.Snapshot, tab Tab, streamURL string, body templ.Component) templ.Component {
+	return Layout(s, tab, streamURL, body)
+}

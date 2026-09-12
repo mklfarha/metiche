@@ -1,0 +1,155 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// GraphPage is the entanglement view: who is working on the same things as
+// whom. It rides the same SSE mechanic as the board — the board_revision
+// frame carries both, and the page's wrapper class decides which one is shown.
+templ GraphPage(s state.Snapshot) {
+	<div class="main full view-graph">
+		<div class="stage">
+			<div class="page" style="max-width:none">
+				<h2>Entanglement</h2>
+				<div class="sub">
+					Sessions on the left, the things they touch on the right. Where two sessions
+					reach the same thing, that node is the collision — and it is drawn the way the
+					mark draws it: two strokes crossing.
+				</div>
+				@GraphPanel(s)
+			</div>
+		</div>
+		@Board(s)
+	</div>
+}
+
+// GraphPanel is the swappable container. Like the board it replaces itself
+// outright, so a repaint can add and remove nodes without the client tracking
+// anything.
+templ GraphPanel(s state.Snapshot) {
+	<div id="graph">
+		@graphBody(s)
+	</div>
+}
+
+// GraphFrame is the out-of-band half. The board_revision frame carries the
+// graph alongside the board, so both views stay live on one stream and one
+// pair of event names — the page's wrapper class decides which is visible.
+templ GraphFrame(s state.Snapshot) {
+	<div id="graph" hx-swap-oob="true">
+		@graphBody(s)
+	</div>
+}
+
+templ graphBody(s state.Snapshot) {
+	{{ g := s.EntanglementGraph() }}
+	<div class="gbody">
+		if len(g.Nodes) == 0 {
+			<div class="empty">
+				<div class="glyph">◌</div>
+				<div class="title">Nothing to entangle yet</div>
+				<div class="hint">
+					This fills in as sessions claim paths and publish contracts. An empty graph
+					means nobody is working, not that something is broken.
+				</div>
+			</div>
+		} else {
+			<div class="gsummary">
+				if g.Alerts > 0 {
+					<span class="badge alert"><span class="glyph">✳</span> { plural(g.Alerts, "node nobody is building", "nodes nobody is building") }</span>
+				}
+				if g.Contended > 0 {
+					<span class="badge critical"><span class="glyph">◆</span> { plural(g.Contended, "shared node", "shared nodes") }</span>
+				} else {
+					<span class="badge good"><span class="glyph">✓</span> nothing shared between sessions</span>
+				}
+				<span class="badge plain">{ plural(len(g.Edges), "attachment", "attachments") }</span>
+			</div>
+			if g.Calm {
+				<div class="calmstrip" style="margin-top:10px">
+					<span class="pip"></span>
+					<span>
+						Everyone is in their own corner. { calmLine(s) }
+					</span>
+				</div>
+			}
+			<div class="gwrap">
+				<svg
+					class="graph"
+					viewBox={ fmt.Sprintf("0 0 %.0f %.0f", g.Width, g.Height) }
+					width="100%"
+					preserveAspectRatio="xMidYMin meet"
+					role="img"
+					aria-label="entanglement graph"
+				>
+					<g class="gedges">
+						for _, e := range g.Edges {
+							<path class={ graphEdgeClass(e) } d={ graphCurve(e) } fill="none">
+								<title>{ e.Title }</title>
+							</path>
+						}
+					</g>
+					<g class="gnodes">
+						for _, n := range g.Nodes {
+							@graphNode(n)
+						}
+					</g>
+				</svg>
+			</div>
+			<div class="legend" style="margin-top:14px">
+				<span class="item"><i class="sw round a"></i> a session — coral or indigo, one per side</span>
+				<span class="item"><i class="sw b"></i> an area of the repo</span>
+				<span class="item"><i class="sw round cross"></i> touched by two sessions — the crossing</span>
+				<span class="item"><i class="sw round alert"></i> consumed, nobody producing</span>
+			</div>
+		}
+	</div>
+}
+
+templ graphNode(n state.GraphNode) {
+	<g class={ graphNodeClass(n) }>
+		if n.Href != "" {
+			<a href={ templ.SafeURL(n.Href) }>
+				@graphShape(n)
+			</a>
+		} else {
+			@graphShape(n)
+		}
+		if n.Kind == "session" {
+			<text class="gl" x={ f(n.X - n.R - 10) } y={ f(n.Y + 1) } text-anchor="end">{ truncate(n.Label, 30) }</text>
+			<text class="gs" x={ f(n.X - n.R - 10) } y={ f(n.Y + 14) } text-anchor="end">{ truncate(n.Sub, 42) }</text>
+		} else {
+			<text class="gl" x={ f(n.X + n.R + 10) } y={ f(n.Y + 1) }>{ n.Label }</text>
+			<text class="gs" x={ f(n.X + n.R + 10) } y={ f(n.Y + 14) }>
+				if n.Degree > 1 {
+					{ fmt.Sprintf("%d sessions · %s", n.Degree, n.Sub) }
+				} else {
+					{ n.Sub }
+				}
+			</text>
+		}
+	</g>
+}
+
+templ graphShape(n state.GraphNode) {
+	switch n.Kind {
+		case "path":
+			<rect class="gsh" x={ f(n.X - n.R) } y={ f(n.Y - n.R) } width={ f(n.R * 2) } height={ f(n.R * 2) } rx="4">
+				<title>{ n.Label }</title>
+			</rect>
+		case "decision":
+			<polygon class="gsh" points={ graphDiamond(n) }>
+				<title>{ n.Label }</title>
+			</polygon>
+		default:
+			<circle class="gsh" cx={ f(n.X) } cy={ f(n.Y) } r={ f(n.R) }>
+				<title>{ n.Title }</title>
+			</circle>
+	}
+	if n.Degree > 1 {
+		// The crossing gets a ring: weight, not just hue.
+		<circle class="gring" cx={ f(n.X) } cy={ f(n.Y) } r={ f(n.R + 5) } fill="none"></circle>
+	}
+}
