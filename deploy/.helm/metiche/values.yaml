@@ -49,6 +49,39 @@ image:
   pullPolicy: Never
 imagePullSecrets: []
 
+# -- Entrypoint -------------------------------------------------------------
+# THE BINARY IS CALLED `backend`, NOT `metiche`, AND THE IMAGE DOES NOT KNOW.
+#
+# `go build .` names the executable after the LAST PATH ELEMENT OF THE GO
+# MODULE, not after the directory and not after the project. This module is
+# `github.com/mklfarha/metiche/backend` (go.mod), so the file that lands in
+# /root is `backend`.
+#
+# The generated Dockerfile ends with
+#
+#   ENTRYPOINT ["bash", "-c", "/root/metiche"]
+#
+# which is the project IDENTIFIER, not the module basename — a nuzur codegen
+# template assuming the two are the same. They are not here, so the image's
+# own entrypoint points at a path that does not exist. The Dockerfile carries
+# the generated DO-NOT-EDIT marker and is rewritten by every codegen run, so
+# the fix belongs here, where it survives.
+#
+# What it looks like when this is wrong, which is the reason for the length of
+# this comment:
+#
+#   bash: line 1: /root/metiche: No such file or directory
+#
+# — a missing-file error on a path that reads like the binary, which sends you
+# looking for a broken build, an empty COPY or a failed compile. The build was
+# fine every time; only the name was wrong.
+#
+# Overridable rather than hardcoded in the template: if a future codegen fixes
+# the ENTRYPOINT upstream, dropping this back to [] to use the image's own is a
+# values change, not a template edit.
+command: ["/root/backend"]
+args: []
+
 # -- Configuration ----------------------------------------------------------
 # The image ships config/base.yaml with `<< Database Host Here>>`-style
 # placeholders (it is generated, and regenerated on every codegen run). The

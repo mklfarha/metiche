@@ -73,7 +73,7 @@ deploy_mysql() {
     step "metiche-mysql"
     if [ -z "${DRY}" ]; then require_secret "${METICHE_DB_SECRET}"; fi
     # shellcheck disable=SC2046,SC2086
-    "${HELM}" upgrade --install metiche-mysql "${METICHE_CHART_DIR}/metiche-mysql" \
+    ${HELM} upgrade --install metiche-mysql "${METICHE_CHART_DIR}/metiche-mysql" \
         $(common_flags) \
         --set auth.existingSecret="${METICHE_DB_SECRET}" \
         ${METICHE_STORAGE_CLASS:+--set persistence.storageClass=${METICHE_STORAGE_CLASS}} \
@@ -86,7 +86,7 @@ deploy_backend() {
     require_tag
     if [ -z "${DRY}" ]; then require_secret "${METICHE_CONFIG_SECRET}"; fi
     # shellcheck disable=SC2046,SC2086
-    "${HELM}" upgrade --install metiche "${METICHE_CHART_DIR}/metiche" \
+    ${HELM} upgrade --install metiche "${METICHE_CHART_DIR}/metiche" \
         $(common_flags) \
         --set image.tag="${METICHE_TAG}" \
         --set config.secretName="${METICHE_CONFIG_SECRET}" \
@@ -101,7 +101,7 @@ deploy_web() {
     # "metiche" here because deploy_backend installs the release under that
     # name; with the api/mcp split it becomes "metiche-api".
     # shellcheck disable=SC2046,SC2086
-    "${HELM}" upgrade --install metiche-web "${METICHE_CHART_DIR}/metiche-web" \
+    ${HELM} upgrade --install metiche-web "${METICHE_CHART_DIR}/metiche-web" \
         $(common_flags) \
         --set image.tag="${METICHE_TAG}" \
         --set backend.serviceName=metiche \
@@ -118,5 +118,5 @@ esac
 
 if [ -z "${DRY}" ]; then
     step "Releases in ${METICHE_NAMESPACE}"
-    "${HELM}" list --namespace "${METICHE_NAMESPACE}" | sed 's/^/  /'
+    ${HELM} list --namespace "${METICHE_NAMESPACE}" | sed 's/^/  /'
 fi

@@ -18,9 +18,12 @@ FAIL=0
 note_fail() { warn "$1"; FAIL=1; }
 
 step "Tools"
+# ${KUBECTL} and ${HELM} may be MULTI-WORD ("microk8s kubectl"), which on a
+# microk8s box is the only form that exists. Resolve the first word.
 for c in "${KUBECTL}" "${HELM}"; do
-    if command -v "$c" >/dev/null 2>&1; then
-        log "$c        $(command -v "$c")"
+    c0=${c%% *}
+    if command -v "$c0" >/dev/null 2>&1; then
+        log "$c        $(command -v "$c0")"
     else
         note_fail "$c is not on PATH"
     fi
@@ -40,7 +43,8 @@ else
 fi
 
 step "Cluster reachable"
-if "${KUBECTL}" version -o json >/dev/null 2>&1 || "${KUBECTL}" cluster-info >/dev/null 2>&1; then
+# shellcheck disable=SC2086
+if ${KUBECTL} version -o json >/dev/null 2>&1 || ${KUBECTL} cluster-info >/dev/null 2>&1; then
     log "kubectl can reach the API server"
 else
     note_fail "kubectl cannot reach a cluster. On microk8s: microk8s kubectl, or 'microk8s config > ~/.kube/config'."
@@ -56,16 +60,16 @@ else
 fi
 
 step "Other namespaces on this box (metiche must not touch any of them)"
-"${KUBECTL}" get namespace -o name 2>/dev/null | sed 's/^/    /' || warn "could not list namespaces"
+${KUBECTL} get namespace -o name 2>/dev/null | sed 's/^/    /' || warn "could not list namespaces"
 
 step "IngressClasses  — charts default to ingress.className=public"
-"${KUBECTL}" get ingressclass 2>/dev/null | sed 's/^/    /' || note_fail "no IngressClass found; is an ingress controller installed?"
+${KUBECTL} get ingressclass 2>/dev/null | sed 's/^/    /' || note_fail "no IngressClass found; is an ingress controller installed?"
 log "microk8s' ingress addon registers 'public'; upstream ingress-nginx registers 'nginx'."
 log "If the name below is not 'public', pass --set ingress.className=<name> to every chart."
 
 step "ClusterIssuers  — charts default to ingress.clusterIssuer=letsencrypt-prod"
-if "${KUBECTL}" get clusterissuer >/dev/null 2>&1; then
-    "${KUBECTL}" get clusterissuer 2>/dev/null | sed 's/^/    /'
+if ${KUBECTL} get clusterissuer >/dev/null 2>&1; then
+    ${KUBECTL} get clusterissuer 2>/dev/null | sed 's/^/    /'
     log "This deployment REFERENCES one of these by name. It never creates or edits one:"
     log "a ClusterIssuer is cluster-scoped and shared with the other projects here."
 else
@@ -74,7 +78,7 @@ else
 fi
 
 step "StorageClasses  — metiche-mysql defaults to microk8s-hostpath"
-"${KUBECTL}" get storageclass 2>/dev/null | sed 's/^/    /' || note_fail "no StorageClass; MySQL's PVC will stay Pending"
+${KUBECTL} get storageclass 2>/dev/null | sed 's/^/    /' || note_fail "no StorageClass; MySQL's PVC will stay Pending"
 
 step "DNS — these must already resolve to this box's public address"
 for h in metiche.xyz api.metiche.xyz mcp.metiche.xyz; do

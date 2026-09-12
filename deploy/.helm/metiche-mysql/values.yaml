@@ -117,11 +117,35 @@ resources:
 podAnnotations: {}
 podLabels: {}
 
-# The mysql image starts as root, fixes ownership of the datadir, then steps
-# down to the mysql user (uid 999) with gosu. Forcing runAsUser here breaks
-# that on a freshly provisioned volume. fsGroup instead, so the kubelet hands
-# the volume to the mysql group before the container starts.
+# START AS mysql (999), DO NOT START AS ROOT AND STEP DOWN.
+#
+# The mysql image's entrypoint is written to start as root, chown the datadir,
+# and then drop to the mysql user with gosu. That needs CAP_SETUID and
+# CAP_SETGID — and `capabilities.drop: ["ALL"]` below takes both away. The
+# result is not a permissions warning, it is a CrashLoopBackOff before the
+# server ever starts, during the entrypoint's own `mysqld --verbose --help`
+# config check:
+#
+#   [ERROR] [MY-010126] [Server] setgid: Operation not permitted
+#   [ERROR] [MY-010119] [Server] Aborting
+#
+# fsGroup alone does not fix it: fsGroup decides who owns the VOLUME, not who
+# the process is, so the entrypoint still tries the switch and still cannot
+# make it. Starting the container as 999 in the first place means there is
+# nothing to drop — the privilege change the capabilities forbid never
+# happens, and the hardening below stays exactly as it is. The alternative,
+# adding SETUID/SETGID back, buys the same outcome by weakening the container.
+#
+# 999:999 is what the image itself says (`getent passwd mysql` in mysql:8.0:
+# `mysql:x:999:999::/var/lib/mysql:/bin/bash`), not a convention.
+#
+# fsGroup stays, and is still doing work: it is what makes a freshly
+# provisioned PVC group-owned by 999 and group-writable, so uid 999 can
+# initialise the datadir it now owns.
 podSecurityContext:
+  runAsUser: 999
+  runAsGroup: 999
+  runAsNonRoot: true
   fsGroup: 999
 securityContext:
   allowPrivilegeEscalation: false

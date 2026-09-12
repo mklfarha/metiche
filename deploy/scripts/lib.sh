@@ -43,7 +43,13 @@ warn() { printf '  !! %s\n' "$*" >&2; }
 die()  { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 need_cmd() {
-    command -v "$1" >/dev/null 2>&1 || die "$1 is not on PATH. $2"
+    # $1 may be a MULTI-WORD command. KUBECTL and HELM are documented right
+    # here, and in every hint these scripts print, as things you set to
+    # "microk8s kubectl" / "microk8s helm3" — which is the only way they work
+    # on a microk8s box, where there is no standalone kubectl or helm binary.
+    # `command -v` takes one word, so check the first and report the whole.
+    _first=${1%% *}
+    command -v "${_first}" >/dev/null 2>&1 || die "$1 is not on PATH. $2"
 }
 
 need_root() {
@@ -84,10 +90,16 @@ METICHE_TARGET_ARCH=${_arch} explicitly."
 }
 
 # ── Cluster helpers ──────────────────────────────────────────────────────────
-kube() { "${KUBECTL}" -n "${METICHE_NAMESPACE}" "$@"; }
+# UNQUOTED ${KUBECTL} here and below, deliberately: it may be a multi-word
+# command such as "microk8s kubectl", and word splitting is how that becomes
+# a command plus its first argument. Quoting it asks the shell for a binary
+# whose filename contains a space, which is the bug this comment replaces.
+# shellcheck disable=SC2086
+kube() { ${KUBECTL} -n "${METICHE_NAMESPACE}" "$@"; }
 
 namespace_exists() {
-    "${KUBECTL}" get namespace "${METICHE_NAMESPACE}" >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    ${KUBECTL} get namespace "${METICHE_NAMESPACE}" >/dev/null 2>&1
 }
 
 ensure_namespace() {
@@ -98,13 +110,27 @@ ensure_namespace() {
     # The ONLY cluster-scoped object anything here creates, and it creates it
     # by name so it can never touch another project's namespace on this box.
     log "creating namespace ${METICHE_NAMESPACE}"
-    "${KUBECTL}" create namespace "${METICHE_NAMESPACE}"
+    # shellcheck disable=SC2086
+    ${KUBECTL} create namespace "${METICHE_NAMESPACE}"
 }
 
+# The selector is the chart's SELECTOR labels and only those. The full label
+# set (app.kubernetes.io/part-of=metiche among them) is rendered onto the
+# StatefulSet, the Service and the ServiceAccount, but a StatefulSet's pod
+# TEMPLATE carries the selector labels alone — so a pod selector that asks
+# for part-of matches nothing, forever, no matter how healthy MySQL is.
+#
+# The `|| true` matters as much as the label. `kubectl -o jsonpath` on an
+# empty item list exits non-zero, and under `set -e` a failing command
+# substitution in an assignment kills the calling script THERE — before it can
+# reach its own `[ -n "$POD" ] || die "no metiche-mysql pod found"`. The
+# symptom is a script that prints its step header and exits 1 saying nothing,
+# which is the least useful failure available.
 mysql_pod() {
+    # shellcheck disable=SC2086
     kube get pod \
-        -l app.kubernetes.io/name=metiche-mysql,app.kubernetes.io/part-of=metiche \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null
+        -l app.kubernetes.io/name=metiche-mysql \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true
 }
 
 # ── Secret helpers ───────────────────────────────────────────────────────────
@@ -124,21 +150,23 @@ mysql_pod() {
 secret_from_env_file() {
     # $1 secret name, $2 env-file path
     [ -f "$2" ] || die "credentials file $2 does not exist. Run gen-credentials.sh first."
-    "${KUBECTL}" create secret generic "$1" \
+    # shellcheck disable=SC2086
+    ${KUBECTL} create secret generic "$1" \
         --namespace "${METICHE_NAMESPACE}" \
         --from-env-file="$2" \
         --dry-run=client -o yaml \
-    | "${KUBECTL}" apply --namespace "${METICHE_NAMESPACE}" -f - >/dev/null
+    | ${KUBECTL} apply --namespace "${METICHE_NAMESPACE}" -f - >/dev/null
     log "secret/$1 applied (${METICHE_NAMESPACE})"
 }
 
 secret_from_file() {
     # $1 secret name, $2 key inside the secret, $3 path on disk
     [ -f "$3" ] || die "$3 does not exist. Run gen-credentials.sh first."
-    "${KUBECTL}" create secret generic "$1" \
+    # shellcheck disable=SC2086
+    ${KUBECTL} create secret generic "$1" \
         --namespace "${METICHE_NAMESPACE}" \
         --from-file="$2=$3" \
         --dry-run=client -o yaml \
-    | "${KUBECTL}" apply --namespace "${METICHE_NAMESPACE}" -f - >/dev/null
+    | ${KUBECTL} apply --namespace "${METICHE_NAMESPACE}" -f - >/dev/null
     log "secret/$1 applied (${METICHE_NAMESPACE}, key $2)"
 }
