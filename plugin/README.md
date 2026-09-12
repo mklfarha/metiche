@@ -48,15 +48,20 @@ It should report one skill and one MCP server.
 
 ## The credential
 
-`.mcp.json` carries **no** join code and never will:
+`.mcp.json` carries **no** credential and never will:
 
 ```json
-"headers": { "Authorization": "Bearer ${METICHE_JOIN_CODE}" }
+"headers": { "Authorization": "Bearer ${METICHE_TOKEN}" }
 ```
 
 Claude Code expands `${VAR}` and `${VAR:-default}` in `.mcp.json` values, headers included. So the
-join code lives in your environment and nowhere in this repository. `install.sh` writes it to
+token lives in your environment and nowhere in this repository. `install.sh` writes it to
 `~/.metiche/env` (mode 0600) and prints the one line that loads it from your shell profile.
+
+**A token is not a join code**, and the bearer is always the token. A join code is an *invite*: you
+hand it to `join_team` as an argument, once, and the server mints you a token in exchange. Sending
+the join code as a bearer gets you a 401 — it is not a credential and the server does not accept it
+as one. The installer performs that exchange for you and writes the token it gets back.
 
 `${METICHE_MCP_URL:-https://mcp.metiche.xyz/v1/mcp}` lets you point at a local server without editing
 anything: `METICHE_MCP_URL=http://127.0.0.1:8788/mcp`.
