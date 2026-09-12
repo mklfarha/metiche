@@ -58,3 +58,8 @@ const envelopeHTML = `<span class="c">// the response to the declare_intent your
     }
   ]
 }`
+
+// installHTML is the one command. It is the whole of step two: the installer
+// registers the MCP server AND installs the skill, which is why the landing
+// page no longer walks through those as separate things to do.
+const installHTML = `<span class="c-dim">#</span> <span class="c-str">curl</span> -fsSL https://metiche.xyz/install.sh <span class="c-dim">|</span> sh`
