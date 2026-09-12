@@ -60,7 +60,7 @@ URL="${METICHE_URL:-$METICHE_URL_DEFAULT}"
 REPO="${METICHE_REPO:-$METICHE_REPO_DEFAULT}"
 MARKETPLACE="${METICHE_MARKETPLACE:-}"
 DRY_RUN=0
-WRITE_PROFILE=0
+WRITE_PROFILE=1
 ONLY=""
 
 ENV_DIR="$HOME/.metiche"
@@ -133,8 +133,11 @@ Options:
                       clone at ~/.metiche/src and uses ~/.metiche/src/plugin.
   --only <list>       Comma-separated subset of: claude,cursor,windsurf,codex.
                       Default: every assistant detected on this machine.
-  --write-profile     Append the line that loads ~/.metiche/env to your shell
-                      profile. Without this the line is printed, not written.
+  --no-write-profile  Do NOT append the line that loads ~/.metiche/env to your
+                      shell profile. It is appended by default: the token is
+                      read from the environment, so without that line every
+                      client sends an empty bearer and gets a 401.
+  --write-profile     Explicitly ask for the default.
   -h, --help          This.
 
 Joining, or creating. With no join code the script asks which you want; it
@@ -187,7 +190,8 @@ EOF
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run)       DRY_RUN=1 ;;
-        --write-profile) WRITE_PROFILE=1 ;;
+        --write-profile)    WRITE_PROFILE=1 ;;
+        --no-write-profile) WRITE_PROFILE=0 ;;
         --url)           [ $# -ge 2 ] || die "--url needs a value"; URL="$2"; shift ;;
         --url=*)         URL="${1#--url=}" ;;
         --marketplace)   [ $# -ge 2 ] || die "--marketplace needs a value"; MARKETPLACE="$2"; shift ;;
@@ -952,15 +956,38 @@ handle_profile() {
         return 0
     fi
 
+    # WRITING THIS BY DEFAULT IS THE POINT, not a convenience.
+    #
+    # The token is only ever read from the ENVIRONMENT. Codex stores the NAME
+    # of the variable and resolves it at connect time; Claude Code expands
+    # ${METICHE_TOKEN} in .mcp.json the same way. So a machine missing this
+    # line is a machine where every client is configured, the installer
+    # reports success, and every call then sends an EMPTY bearer -- which the
+    # server answers with a 401 that reads like a bad token rather than an
+    # absent one. That is an expensive way to learn about a shell profile.
+    #
+    # This was opt-in, out of caution about touching someone's shell config.
+    # The caution bought nothing and cost an install that looks finished and
+    # does not work. One guarded line in a profile is a smaller intrusion than
+    # a broken client left behind; --no-write-profile is there for anyone who
+    # manages their dotfiles themselves.
     if [ "$WRITE_PROFILE" -eq 1 ]; then
+        if [ ! -f "$profile" ]; then
+            info "$profile does not exist yet; creating it"
+        fi
         plan "append the loader line to $profile" && {
-            printf '\n# metiche\n%s\n' "$PROFILE_LINE" >> "$profile"
+            printf '\n# metiche - load the token your assistants authenticate with\n%s\n' \
+                "$PROFILE_LINE" >> "$profile"
             DID_SOMETHING=1
         }
+        # Say this whether or not we just wrote it: an assistant already
+        # running has read its environment and will not read it again.
+        info "open a new terminal (or run: . \"\$HOME/.metiche/env\")"
+        info "then RESTART your assistant — the MCP connection is made at startup"
     else
         say ""
-        info "Add this line to $profile so your assistants see the token"
-        info "(or re-run with --write-profile and this script will append it):"
+        info "--no-write-profile: add this line to $profile yourself, or your"
+        info "assistants will send an empty bearer and every call will 401:"
         say ""
         say "      $PROFILE_LINE"
         say ""
