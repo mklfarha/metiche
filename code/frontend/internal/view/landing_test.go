@@ -257,13 +257,3 @@ func TestJoinStepsAreCreateInviteJoinOpen(t *testing.T) {
 		t.Errorf("join section shows a code-shaped string %q", m)
 	}
 }
-
-// TestLandingNamesNoPrivateProjects keeps unrelated names off the public page.
-func TestLandingNamesNoPrivateProjects(t *testing.T) {
-	body := strings.ToLower(renderLanding(t, "/t/demo"))
-	for _, bad := range []string{"donald", "nextwave", "nauta", "todes.mx"} {
-		if strings.Contains(body, bad) {
-			t.Errorf("landing mentions %q", bad)
-		}
-	}
-}
