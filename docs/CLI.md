@@ -27,6 +27,19 @@ invisible until somebody spends hours reading logs by hand.**
   7. tokens dead after a server reset;
   8. an agent that could not learn its own identity, and guessed.
 - **Invites were revoked with a raw SQL statement**, because no tool lists, creates or revokes one.
+- **Nothing writes a `.metiche`, and nothing ties a project to its repository.** On 2026-09-12 two
+  agents of one person, on one clone of `github.com/mklfarha/taqueria`, called `start_session` with
+  different free-text `project_key`s: `taqueria_tracker` from the parent folder and `taqueria` from
+  the git root. The server finds a project by `(team, key)` alone (`app/mcp/sessions.go:111`,
+  `handler.go:226-240`, unique index `uq_project_team_key`) and stores `repo_url` only when it
+  creates one (`sessions.go:43,130`). So it made two projects, and a real collision on `app/rest.go`
+  was never detected. A server fix is in flight: `start_session` matches by normalized `repo_url`.
+  `metiche init` (§1.10) is the CLI half, and doctor detects the split (§2.2.1).
+- **A second team with the same name is one call away.** `create_team` dedupes only on its
+  idempotency key, from which it derives the team's uuid (`createteam.go:129-132`). The same name
+  with another key is a second team whose slug gets a `-xxxxxx` suffix (`createteam.go:215-221`).
+  `install.sh` checks `list_teams` for a same-named team before creating (`install.sh:1350-1358`);
+  an agent calling `create_team` directly does not.
 
 The REST API is default-deny now (`code/backend/metiche/app/rest.go`, `AllowedRoutes`): only
 `/healthz`, `/v1/mcp`, `/v1/metrics/mcp` and the board's `/v1/teams/{slug}…` routes answer, and the
@@ -81,9 +94,10 @@ takes a server-side record of which requests arrived with that client's token (`
 | Transport | MCP streamable HTTP via `github.com/modelcontextprotocol/go-sdk` v1.7.0, the SDK the server uses. No REST. |
 | Module | New Go module `code/cli`, `module github.com/mklfarha/metiche/cli`. It does **not** import the backend module. |
 | Credential | The anchor (`$METICHE_TOKEN`, else `~/.metiche/env`). The CLI is **not** its own agent. Fallback rules in §3. |
-| Scope | Read-mostly. The only writes are invite create and revoke. The CLI never touches sessions and never writes a file. |
+| Scope | Read-mostly. The server writes are invite create and revoke (§1.6) and team create, rename and leave (§1.4). The CLI never touches sessions. The **one file it writes is `.metiche`**, and only through `metiche init` (§1.10). |
+| Repo binding | `metiche init` writes `.metiche` at the git root by default: `team` (required) and `project` (the key the server has, or will derive, for this repository). On disagreement **the server's repository match wins over `project`**: it is reported, never silently obeyed (§1.10.4). |
 | Doctor | Through-the-client checks where a client offers one; server evidence via `whoami`; around checks labelled as such. Never modifies anything. |
-| Server additions | `whoami` (includes recent-request evidence and received header names), `get_team_state scope=projects`, `list_invites`, `create_invite`, `revoke_invite`. Four new tools, one new scope. |
+| Server additions | `whoami` (includes recent-request evidence and received header names), `get_team_state scope=projects` and `scope=members`, `list_invites`, `create_invite`, `revoke_invite`, `rename_team`, `leave_team`, and a duplicate-name guard on `create_team`. Six new tools, two new scopes, one changed tool (§4). |
 | Uninstall | `install.sh --uninstall` is the single owner. `metiche uninstall` prints that command and does nothing else. |
 | Release | GoReleaser v2, modeled on `/Users/mklfarha/Dropbox/nuzur-24/code/nuzur-cli/.goreleaser.yaml` and its `.github/workflows/release.yml`. darwin/linux × amd64/arm64, `CGO_ENABLED=0`, sha256 checksums, ldflags version. |
 | Install location | `~/.metiche/bin/metiche`, plus a symlink `~/.local/bin/metiche` when that directory is on `PATH`. Downloaded and checksum-verified by `install.sh`. |
@@ -127,10 +141,11 @@ Global flags (accepted by every command):
 |---|---|
 | 0 | success; for `doctor`, no errors (warnings allowed unless `--strict`) |
 | 1 | `doctor` found at least one error, or a tool returned an error not covered below |
-| 2 | usage error: unknown command or flag, ambiguous team with no `--team` |
+| 2 | usage error: unknown command or flag, ambiguous team with no `--team` (or an ambiguous project for `init`) and no TTY to ask on, a confirmation needed with no TTY and no `--yes` |
 | 3 | no usable credential: none found, or every candidate rejected. A 401 counts as a rejection only when an anonymous `health` then reports the database reachable; a 401 with the database down is exit 4. |
 | 4 | metiche unreachable: DNS, TLS, connect, timeout, HTTP 404 at the endpoint (wrong URL), 5xx, or `health` reporting the database unreachable |
-| 5 | refused by the server: `not_permitted` or `not_found` from a tool (§4 error codes) |
+| 5 | refused by the server: `not_permitted`, `not_found` or `rate_limited` from a tool (§4 error codes) |
+| 6 | conflict, nothing changed: `already_exists` from the server (you already have a team with that name; a project key belongs to another repository), or `init` finding a different binding in the `.metiche` it would write, without `--force` |
 
 ### 1.3 `metiche status`
 
@@ -185,20 +200,186 @@ Keys and names above are illustrative. `--json`:
            "sessions":[{"key":"S-41","member":"Mark","agent":"claude on laptop","project":"taqueria","branch":"feat/lanes","status_line":"…","status":"live","last_seen":"…","mine":true}]}]}
 ```
 
-### 1.4 `metiche teams`
+### 1.4 `metiche teams [create | show | rename | leave]`
 
-The cheap, scriptable list: one `list_teams` call.
+```
+metiche teams                                            # the list (below)
+metiche teams create <name> [--allow-duplicate-name] [--quiet] [--dry-run]
+metiche teams show   [<slug>]
+metiche teams rename <new-name> [--team <slug>] [--allow-duplicate-name]
+metiche teams leave  [<slug>] [--yes]
+```
+
+Every subcommand takes `--json`. A team argument or `--team` resolves exactly like `open` (§1.5):
+the argument, then the nearest `.metiche`, then your only team. It is never guessed.
+
+`metiche teams` with no subcommand stays the cheap, scriptable list: one `list_teams` call.
 
 ```
 $ metiche teams
 SLUG              NAME              ROLE    MEMBERS  YOU LIVE
 taqueria-tracker  Taqueria Tracker  owner   3        yes
 hack-night        Hack Night        member  6        no
+hack-night-3f9a1c Hack Night        owner   1        no     ! same name as hack-night
 ```
 
-No BOARD column: `list_teams` does not carry visibility, and printing a URL that 404s for every
-private team would be wrong more often than right. `metiche status` and `metiche open <slug>` show
-the board where one is viewable. Zero teams prints the server's `note` (create or join) and exits 0.
+- No BOARD column: `list_teams` does not carry visibility, and printing a URL that 404s for every
+  private team would be wrong more often than right. `metiche status` and `metiche open <slug>` show
+  the board where one is viewable.
+- **Duplicate names are marked**, computed locally from the same call. Two of your teams whose names
+  normalize to the same slug base (`slugKey(name, 40)`, `handler.go:285-305`: lowercase, runs of
+  non-alphanumerics collapsed to one `-`) get `! same name as <slug>`. `--json` adds
+  `"duplicate_of": ["<slug>", …]` per team. `doctor` reports the same thing as a warning (§2.2.1).
+- Zero teams prints the server's `note` (create or join) and exits 0.
+
+#### 1.4.1 `teams create <name>`
+
+1. **Duplicate check first.** `list_teams`, then compare normalized names as above. On a match it
+   exits 6 and creates nothing:
+
+   ```
+   $ metiche teams create "hack night"
+   You are already on a team named "Hack Night": hack-night (member, 6 members).
+   Nothing was created. Use it in a repository:  metiche init --team hack-night
+   To create a second team with the same name anyway:  metiche teams create "hack night" --allow-duplicate-name
+   ```
+
+   The server makes the same check (§4.8), so an agent that skips `list_teams` is refused too. The
+   CLI checks first only because it can give a better message before any write.
+2. **Who creates it.** `create_team` runs with the anchor, and only when `whoami` reports
+   `token_scope: agent`. The call sends **no** `client_key`, `member_name` or `agent_label`: with an
+   agent token the server defaults all three to the token's own agent and the account (§4.8). This
+   matters. Under `joinAs`'s token table (`join.go:162-171`), any other `client_key` would create a
+   new agent and mint it a token, which is exactly the `<machine_id>-cli` agent that §3 rejects. So:
+   - with no agent token available it exits 3 ("re-run the installer first"). A legacy account
+     anchor, or a dead one, falls back to a client's own agent token under §3's one-account rule, as
+     `open_board` does (`docs/BOARD_LOGIN.md` §5.3). That is safe here because the defaults keep
+     that client's token and mint nothing;
+   - a server that still requires those parameters (detected from `create_team`'s input schema in
+     `tools/list`) exits 1 with "this metiche server is too old for `teams create`; create the team
+     with the installer (`METICHE_TEAM_NAME`)", before any call;
+   - a response carrying `token` or `token_kept: false` is a bug. The token is dropped unread into a
+     `Secret` and never printed, and the command exits 1 naming `metiche doctor`.
+3. **Retry safety.** One random UUID per invocation is the `idempotency_key`, reused for the
+   command's own retries. A retry returns the same team and the same code (`created: false`,
+   `ensureFirstInvite` is idempotent, `createteam.go:305-313`).
+4. **The join code** follows §1.6's rules for `invite create`: shown once in human output, never
+   listable later. `--quiet` prints only the **slug**, with no code, because what a script wants
+   from `create` is the slug. `--json` carries `join_code`, as `create_invite`'s does. Unlike an
+   invite made with `invite create`, the first invite is uncapped and never expires
+   (`ensureFirstInvite`), so the output says so and suggests a narrower one:
+
+   ```
+   $ metiche teams create "Taqueria Tracker"
+   created team taqueria-tracker ("Taqueria Tracker") · private · you are its owner
+
+     join code   <shown here once — it never expires and has no use limit>
+
+     For a narrower code:  metiche invite create --team taqueria-tracker --max-uses 5 --expires 48h
+     then revoke this one: metiche invite list --team taqueria-tracker; metiche invite revoke <invite-id>
+     Bind a repository:    cd <repo> && metiche init --team taqueria-tracker
+   ```
+
+   Every client on this machine can use the team at once: membership belongs to the account
+   (`uq_member_account_team`), and `RequireTeam` checks the account (`auth.go:571-615`).
+5. `--dry-run` runs the duplicate check and the version check, prints what it would call, and
+   creates nothing.
+
+Exit codes: 0 created or replayed; 6 duplicate name (from the CLI's check or the server's
+`already_exists`); 3; 4; 5 (`rate_limited`: `createLimit`, `createteam.go:102-106`); 1 server too
+old.
+
+#### 1.4.2 `teams show [<slug>]`
+
+One team in full, for a person. It calls `get_team_state` with `scope=members` (new, §4.9),
+`scope=projects` (§4.2) and `scope=sessions`, and reads the `team` block (§4.2) for visibility.
+
+```
+$ metiche teams show
+taqueria-tracker  "Taqueria Tracker"  private · you are owner · bound here by /Users/me/work/taqueria/.metiche
+board     not viewable in a browser: private team, and the board has no login yet
+members   Mark (owner, you)   joined 2026-09-01   agents: claude on laptop (live 12s ago), codex on laptop (3d ago)
+          Ana  (member)       joined 2026-09-03   agents: cursor on ana-mbp (1m ago)
+projects  taqueria   github.com/mklfarha/taqueria   2 live   last activity 12s ago
+          api        (no repository recorded)       0 live   last activity 3d ago
+live      S-41  Mark · claude on laptop  taqueria  feat/lanes  "wiring the lane builder"  12s ago  mine
+          S-39  Ana · cursor on ana-mbp  api       main        "rate limiter tests"        1m ago
+```
+
+- Two projects that share a repository are flagged `! same repository as <key>`: the split from the
+  incident, seen from the team side (`doctor` sees it from the repo side, §2.2.1).
+- `--json`: `metiche.cli.teams.show/1` with `team`, `role`, `binding` (the `.metiche` path that names
+  this team, if any), `members[]`, `projects[]`, `sessions[]`, `board_url` (null unless public).
+- Exit codes: 0; 2 ambiguous team; 3; 4; 5 not a member or no such team.
+
+#### 1.4.3 `teams rename <new-name>`
+
+Calls `rename_team` (new, §4.10), which is **owner only**. It changes the display name and **never
+the slug**. The slug is what `.metiche` files, board URLs and `METICHE_TEAM_SLUG` installs point at,
+so changing it would silently unbind every clone. The same duplicate-name guard applies:
+`--allow-duplicate-name` passes through.
+
+```
+$ metiche teams rename "Taqueria Tracker v2" --team taqueria-tracker
+renamed taqueria-tracker: "Taqueria Tracker" → "Taqueria Tracker v2" (the slug does not change)
+```
+
+Renaming to the current name prints `unchanged` and exits 0. Exit codes: 0; 2; 3; 4; 5
+`not_permitted` (a member); 6 duplicate name.
+
+#### 1.4.4 `teams leave [<slug>]`
+
+Calls `leave_team` (new, §4.11) for **yourself only**. The server refuses, and the CLI exits 5 with
+its message, when:
+- **any of your agents has a live or stale session on the team.** It lists them, and you end them
+  in those agents or wait for the sweeper; the CLI never ends a session (§7);
+- **you are the only owner and other members remain.** Transferring ownership needs a role change,
+  which is not in the CLI yet (below);
+- **you are the only member.** Leaving would orphan the team and its uncapped first invite, and
+  archiving is not in the CLI yet (§10).
+
+Leaving is a destructive act for you. On a TTY the CLI asks you to type the slug; without a TTY it
+needs `--yes`, or it exits 2.
+
+```
+$ metiche teams leave hack-night
+Leave hack-night ("Hack Night", 6 members)? You will lose access to its board and team state.
+Getting back needs a new join code from a member. Type the slug to confirm: hack-night
+left hack-night.
+  /Users/me/work/orbital/.metiche still names hack-night; your agents there will stop until you rebind:
+    cd /Users/me/work/orbital && metiche init --force
+```
+
+The `.metiche` hint appears only for the nearest binding from the working directory; the CLI does
+not scan your disk. Leaving a team you already left prints `already left` and exits 0. Exit codes:
+0; 2; 3; 4; 5.
+
+#### 1.4.5 Not in the CLI until board login ships
+
+These stay out of the CLI for now:
+- **Changing visibility.** `create_team` keeps every team private so that going public is "a
+  deliberate act" (`createteam.go:231-235`). Today the move is unsafe to offer in either direction:
+  - private → public exposes the board to anyone holding the slug;
+  - public → private does not take effect: the board keeps serving a team it discovered while public
+    (`docs/BOARD_LOGIN.md` §0, finding F2).
+- **Removing a member, or changing a member's role** (which ownership transfer needs).
+
+Both are owner acts against *another person*, on anonymous accounts whose display names nobody
+verified (`createteam.go:73-80`).
+
+**Dependency on `docs/BOARD_LOGIN.md`** (a design for owner review; nothing is implemented):
+- It gives people an authenticated browser view of private boards, through a sign-in link minted
+  by `open_board`.
+- It fixes F2 and re-checks membership on every request, and every 60 s on an open stream (its
+  §2.8, §4.4). So a removal or a visibility change would finally take effect everywhere a person
+  can look.
+- It keeps the board **read-only against the backend** (its Non-goals), so these writes will not
+  live on the board either.
+
+**Recommendation:** add them after board login's deploy, as owner-only MCP tools
+(`set_team_visibility`, `remove_member`, `set_member_role`). Each gets a `metiche teams` subcommand,
+destructive annotations and a structural event (§10). §1.4.4's "only owner" refusal then gets its
+remediation.
 
 ### 1.5 `metiche open`
 
@@ -206,13 +387,29 @@ the board where one is viewable. Zero teams prints the server's `note` (create o
 metiche open [<slug>] [--print]
 ```
 
-The team is resolved in this order, never guessed:
+> **This command changes when board login lands** (`docs/BOARD_LOGIN.md` §5.3, a design for owner
+> review). What changes:
+> - a private team: `open` calls `open_board`, writes the single-use sign-in link into a 0600
+>   redirect file in a private temp directory, opens that file, and removes it;
+> - `--print` prints the link and its expiry;
+> - a public team: `--signin` also signs the browser in;
+> - a new `metiche signout` command;
+> - §7 gains that temp file as a second write exception, and `open_board` and `sign_out_browsers`
+>   join the tool allowlist.
+>
+> Team resolution below does not change. Until board login ships, the behaviour below stands.
+
+The team is resolved in this order, never guessed (the same order `invite`, `teams show|rename|leave`
+and `status --team` use):
 1. the argument;
 2. the nearest `.metiche` walking up from the working directory (`team = <slug>`, the rule in
-   `PLAN.md`);
+   `PLAN.md`, as written by `metiche init`, §1.10);
 3. `list_teams` with exactly one team.
 
-With several teams and no binding it exits 2 and lists the slugs.
+With several teams and no binding it exits 2 and lists the slugs, adding: "bind this repository once
+with `metiche init`". When the slug came from a `.metiche` and the server answers `not_found`, the
+exit-5 message names the file and the two ways out: join that team, or rebind with
+`metiche init --force`.
 
 **Decision: `open` opens only boards a browser can show.** Once the slug is resolved, it always calls
 `get_team_state` for that team (`scope=projects`, `limit=1`). That confirms you are a member, and the
@@ -368,6 +565,242 @@ It backs up and removes ~/.metiche, including this binary (~/.metiche/bin/metich
 no server. The Claude Code plugin stays installed; the uninstaller prints how to remove it.
 ```
 
+Neither the installer nor this command removes `.metiche` files. They live in your repositories,
+and may be committed; they are yours.
+
+### 1.10 `metiche init`
+
+Bind a directory (by default the repository) to a team and a project, once, so no agent in it has to
+ask or guess again. This is the command `PLAN.md` "Binding a repo to a team" assumes exists, and the
+one the installer was meant to be (`IDENTITY.md`: "The installer writing `.metiche`", still open).
+
+```
+metiche init [--team <slug>] [--project <key>] [--here | --parent] [--dry-run] [--force] [--json]
+```
+
+#### 1.10.1 Where the file goes
+
+The CLI learns the repository from git, through `execx` with a fixed argv (§5):
+`git rev-parse --show-toplevel` and `git config --get remote.origin.url`. With no `origin` but
+exactly one remote (`git remote`), that remote is used; with several and no `origin`, there is no
+repository URL, and it says so. No `git` on `PATH` → walk up for a `.git` directory or file for the
+root, and treat the URL as unknown.
+
+| flag | target | writes `project`? |
+|---|---|---|
+| (default), inside a git repo | `<git root>/.metiche` | yes |
+| (default), not in a git repo | `<cwd>/.metiche`, with a note that there is no repository to match | only with `--project` |
+| `--here` | `<cwd>/.metiche`, even below the git root | yes when inside a repo (it is the same repository); otherwise only with `--project` |
+| `--parent` | the directory **containing** the git root: the "folder of five hackathon repos" placement from `PLAN.md` | **never**. `--parent --project` exits 2. Not in a git repo → exit 2 ("use --here"). |
+
+`--here` and `--parent` together exit 2.
+
+**Why `project` never goes above the git root.** A `project` line in a parent directory would bind
+every repository beneath it to one project. That is the incident, made permanent in a file. So
+readers (the CLI, doctor, agents) **ignore `project` from a `.metiche` above the git root**, and
+doctor warns about it (§2.2.1). `team` inherits downward as `PLAN.md` says; `project` does not.
+
+#### 1.10.2 Resolution: team, then project, never guessed
+
+**Team:**
+1. `--team <slug>`.
+2. Otherwise, a `team` already in effect here: the file being rewritten, or an inherited parent
+   `.metiche`. It is used and announced ("inherited from `<path>`"), because a person wrote it.
+3. Otherwise `list_teams`:
+   - **0 teams** → exit 1: "you are not on any team: `metiche teams create <name>`, or join one
+     with the installer and a join code".
+   - **1 team** → used, and **said once**: "you are on one team, taqueria-tracker; binding to it".
+   - **several** → on a TTY, a numbered prompt in `list_teams` order (most recently used first,
+     `listteams.go:146-164`). There is **no default**: Enter alone asks again, because a
+     preselected answer is a guess the person did not make. Without a TTY, or with `--json`, it
+     exits 2 and lists the slugs.
+
+**Membership is verified.** The slug must appear in `list_teams`; otherwise exit 5 with "`<slug>` is
+not one of your teams". The server does not say whether the team exists (`app/authz` answers private
+and missing alike), and neither does the CLI.
+
+**Project** (skipped for `--parent`, and outside a repo without `--project`). `get_team_state
+scope=projects` is read for the chosen team (§4.2; after the `start_session` fix it returns the
+normalized `repo_url`):
+1. `--project <key>`. It must match `^[a-z0-9][a-z0-9._-]{0,63}$`. If the server already has that key
+   bound to a **different** repository, exit 6: "project `<key>` on `<team>` belongs to
+   `<other repo>`; choose another key". That is the same refusal `start_session` will give.
+2. Otherwise, the project whose normalized `repo_url` equals this repository's is used, with the
+   note "this repository is already project `taqueria` on taqueria-tracker".
+   - **Several projects with this repository** (a split made before the fix backfilled `repo_url`):
+     a TTY prompt listing their keys, live sessions and last activity, with no default; without a
+     TTY, exit 2. Either way the output points at `metiche doctor`, which reports the split
+     (§2.2.1).
+3. Otherwise the key the server **will** derive from this repository on the first `start_session`
+   with no `project_key`: the repository name from the normalized remote (`taqueria` for
+   `github.com/mklfarha/taqueria`). With no remote, it is the git root's directory name, normalized
+   the same way.
+   - The derivation and the URL normalization are the server fix's. The CLI copies them, and a
+     shared vector file guards drift (§8.1), exactly like `machine_id`.
+   - A project with no `repo_url` whose key equals the derived key is used: the note says the next
+     `start_session` will record the repository on it (the fix's backfill).
+
+**The repository URL is sanitized before anything else.** `userinfo` is stripped
+(`https://<user>:<token>@host/…` happens with credential helpers and CI), the raw value is never
+printed, and the redactor is seeded with it (§7). `.metiche` never contains a URL.
+
+#### 1.10.3 Writing: format, overwrite, idempotence, parents
+
+The format is `PLAN.md`'s, with nothing added:
+
+```
+# metiche: which team (and project) agent sessions in this repository belong to.
+# Safe to commit: it names a team and grants no access. Written by `metiche init`.
+team = taqueria-tracker
+project = taqueria
+```
+
+- **Never a credential, a join code or a URL.** A test asserts the written bytes against canaries
+  (§8.1).
+- **Existing file at the target, same `team` and `project`:** prints `already bound`, writes
+  nothing (the file stays byte-identical, mtime included), exits 0. This is the idempotent re-run.
+- **Existing file with a different binding:** prints the diff and exits 6, unless `--force`.
+
+  ```
+  $ metiche init --team hack-night
+  /Users/me/work/taqueria/.metiche already binds this repository differently:
+    - team = taqueria-tracker
+    + team = hack-night
+    - project = taqueria
+    + project = taqueria        (resolved again on hack-night: project keys are per team)
+  Nothing was written. Re-run with --force to replace it.
+  ```
+
+- **`--force`** rewrites only the `team` and `project` lines in place. Comments and unknown keys are
+  kept, and unknown keys are warned about. There is no backup file, because a backup would litter
+  the repository; the diff above is printed either way.
+- **The write** is atomic: a temp file in the same directory, then rename. The file is mode 0644,
+  since it is meant to be committed and holds nothing secret. A `.metiche` that is a symlink or not
+  a regular file is refused (exit 1), as is a target directory not owned by you.
+- **Parents.** After writing, the CLI resolves nearest-wins again from the working directory and
+  prints what is now in effect:
+  - A parent `.metiche` naming **another** team → "this file overrides `<parent>` (hack-night) for
+    `<dir>` and below". That is `PLAN.md`'s opt-out, stated so it is not a surprise.
+  - A parent naming the **same** team → "redundant for you, but it binds every clone of this
+    repository once committed".
+  - With `--parent`, a repository's own `.metiche` naming a different team → a warning that the
+    repository's file still wins inside it.
+  - A parent file carrying `project` → a warning that it is ignored (§1.10.1).
+- **Commit suggestion.** When the file is at or below the git root, is untracked, and
+  `git check-ignore -q .metiche` says it is not ignored, the CLI prints
+  `git add .metiche && git commit -m "Bind to metiche team <slug>"`. It never runs `git add`. It also
+  prints one caveat line: "If this repository is public, committing publishes the team slug. A slug
+  grants no access, but if you would rather not publish it, add `.metiche` to `.git/info/exclude`."
+  An ignored file gets "`.metiche` is git-ignored here; teammates' agents will not see it". With
+  `--parent` there is no suggestion: the file is not inside a repository.
+- **`--dry-run`** does every read and resolution step, prints the file it would write and the diff,
+  writes nothing, and exits with the code the real run would have.
+
+```
+$ cd ~/work/taqueria/app && metiche init
+repository  /Users/me/work/taqueria  (origin github.com/mklfarha/taqueria)
+You are on 2 teams. Which one does this repository belong to?
+  1) taqueria-tracker  Taqueria Tracker  owner   3 members  you are live here
+  2) hack-night        Hack Night        member  6 members
+team [1-2]: 1
+project     taqueria: already a project on taqueria-tracker for this repository
+wrote       /Users/me/work/taqueria/.metiche
+  team = taqueria-tracker
+  project = taqueria
+Commit it so every clone binds the same way:
+  git add .metiche && git commit -m "Bind to metiche team taqueria-tracker"
+```
+
+`--json` (`metiche.cli.init/1`):
+
+```json
+{"schema":"metiche.cli.init/1","ok":true,
+ "path":"/Users/me/work/taqueria/.metiche","placement":"git_root",
+ "action":"created","dry_run":false,
+ "team":{"slug":"taqueria-tracker","name":"Taqueria Tracker","source":"prompt"},
+ "project":{"key":"taqueria","source":"server_repo_match","server_project_exists":true},
+ "repository":{"root":"/Users/me/work/taqueria","remote":"origin","repo_url":"github.com/mklfarha/taqueria"},
+ "previous":null,
+ "effective":{"path":"/Users/me/work/taqueria/.metiche","team":"taqueria-tracker","project":"taqueria"},
+ "overrides":[],"warnings":[],"commit_hint":true}
+```
+
+- `action` is `created` | `updated` | `unchanged` | `would_create` | `would_update`.
+- `team.source` is `flag` | `inherited` | `only_team` | `prompt`.
+- `project.source` is `flag` | `server_repo_match` | `derived_remote` | `derived_dirname` | `none`.
+- `repo_url` is the normalized, credential-free form, or null.
+- An ambiguous team prints `metiche.cli.error/1` with `"error":"ambiguous_team","candidates":[…]`; an
+  ambiguous project uses `"error":"ambiguous_project"`.
+
+Exit codes:
+- 0: written, unchanged or dry run;
+- 1: no teams, or a write refused (symlink, ownership, I/O);
+- 2: usage, or ambiguous with no TTY;
+- 3, 4: as §1.2;
+- 5: not a member of `--team`, or no such team;
+- 6: a different binding without `--force`, or a key bound to another repository.
+
+#### 1.10.4 `project` from `.metiche` versus the repository URL: which wins
+
+Once the `start_session` fix lands, an agent sends both `project_key` (from `.metiche`) and
+`repo_url`, and they can disagree: the file is stale, it was copied from another repository, or it
+was written by hand.
+
+**Recommendation: the repository wins.** The server matches the project by normalized `repo_url`
+first. When that project's key differs from the `project_key` sent, the session goes on the
+repository's project, and the response note says so ("this repository is project `taqueria`;
+`.metiche` says `taqueria_tracker`"). The agent tells the person once and suggests
+`metiche init --force`. `doctor` reports the mismatch (§2.2.1). Why:
+- The failure that matters is two projects for one repository, because collisions stop being
+  detected. A stale file must not be able to recreate that split.
+- The disagreement is loud, never silent. The person fixes the file; the server never guesses a
+  *team* from the URL. Team binding stays "ask, never infer" (`listteams.go:33-34`); inferring a
+  project **within the team the person chose** is a different act.
+- **No remote** (a local-only repository): `project` from `.metiche` is the only key and is used as
+  is.
+- **The key named in `.metiche` is bound to another repository:** the fix refuses. The agent stops
+  and tells the person, and never invents a third key.
+- **A consequence to accept:** one repository is one project. A monorepo that wants several
+  projects is not supported until the server supports it (§10).
+
+The alternative, `.metiche` wins, was considered and rejected: an explicit human declaration is
+attractive, but tonight's split came from a *plausible* key, and a committed file would make a wrong
+key permanent for every clone.
+
+#### 1.10.5 What agents and the skill do with it
+
+The contract that the skill, the server instructions, the `list_teams` note and the installer's
+Codex `AGENTS.md` block must all say (their owners write it; §4.12 lists the text changes):
+1. **Team.** Walk up from the working directory; the nearest `.metiche` with `team` wins. Pass it
+   as `team_slug` on every call, and do not call `list_teams` to second-guess it. When a call with
+   that slug fails with not-a-member, **stop and tell the person** which file names which team,
+   suggesting `metiche doctor`. Never fall back to another team.
+2. **Project.** Take `project` only from a `.metiche` at or below the git root. Pass it as
+   `project_key`, and **always** pass `repo_url` (from `git remote get-url origin`, with
+   credentials stripped). When `start_session`'s note reports that the repository is a different
+   project, work on that one (the server already put the session there), tell the person once, and
+   suggest `metiche init --force`. Never edit `.metiche` silently.
+3. **No `.metiche`.** Follow `list_teams`'s note: one team → bind and announce; several → ask. Then
+   record the answer, preferring `metiche init --team <slug>` when `metiche` is on `PATH` so format
+   and placement stay consistent. Otherwise write the two lines of §1.10.3 at the **git root**, not
+   in the working directory. The latter is how a parent-folder session made `taqueria_tracker`.
+4. **Before `create_team`**, call `list_teams`. If you are already on a team with that name, use its
+   slug. Create a second only when the person explicitly asks, with `allow_duplicate_name: true`.
+
+#### 1.10.6 Is `.metiche` honoured today? (verified 2026-09-12, before the in-flight fix)
+
+| where | what it does | gap |
+|---|---|---|
+| server | never reads the disk, by design (`PLAN.md:303-304`) | correct; honouring it is entirely the agent's job, so the instructions below are the whole mechanism |
+| `list_teams` description (`app/mcp/server.go:239-242`) | "Read a .metiche file first … the team it names WINS" | the **only** place a connected agent is told `.metiche` exists; says nothing about `project`, or where to write the file |
+| `list_teams` note (`listteams.go:173-197`) | tells the agent to write `team = <slug>` "into a .metiche file in the repo" | an agent reads this only if it calls `list_teams`; no `project` line; "in the repo" is read as the working directory |
+| server instructions (`server.go:115-160`) | the loop starts at `join_team`; "pass team_slug when you are on more than one" | no mention of `.metiche` or `list_teams` |
+| skill (`skill/metiche-teamwork/SKILL.md`, byte-identical to `plugin/skills/metiche-teamwork/SKILL.md`) | the loop (lines 29-37) and tool table (lines 47-63) | **zero mentions** of `.metiche`, `list_teams` or `team_slug`. The worked example (line 267) calls `start_session(project: "metiche", …)`, with a parameter name the tool does not have (`project_key`, `sessions.go:35`) and no `repo_url` |
+| installer's Codex block (`install.sh:2120-2141`) | "Call `start_session` before you touch any file" | no team binding, no `.metiche`, no project guidance; `install.sh` never writes `.metiche` (`IDENTITY.md:305-306`) |
+| `start_session` (`sessions.go:35,61-64,111-143`) | `project_key` is required free text; lookup is by `(team, key)`; `repo_url` is stored only on creation | the incident. The in-flight fix covers matching, derivation, backfill and refusal; nothing server-side can read `project` from the file |
+| `RequireTeam` with no slug (`auth.go:578-592`) | exactly one team → silently used | "say so once" (`PLAN.md:286-291`) is agent-side only; nothing enforces or records the announcement |
+| CLI (this plan, before this revision) | `open` and `doctor` read `.metiche`; nothing writes one; `binding/` is a reader only (§5) | closed by §1.10 |
+
 ---
 
 ## 2. `doctor` in depth
@@ -377,7 +810,7 @@ no server. The Claude Code plugin stays installed; the uninstaller prints how to
 ```go
 type Check struct {
     ID          string            // stable: "claude.connection"
-    Client      string            // "machine" | "claude" | "cursor" | "windsurf" | "codex" | "identity"
+    Client      string            // "machine" | "claude" | "cursor" | "windsurf" | "codex" | "identity" | "binding" | "account"
     Mode        string            // "through" | "server" | "around"
     Status      string            // "ok" | "warn" | "error" | "skip" | "info"
     Summary     string            // one line, redacted
@@ -391,7 +824,8 @@ type Check struct {
    with "the endpoint is unreachable".
 2. Per client: presence → config file → registrations → entry shape → **through probe** →
    **server delivery evidence** → around token check.
-3. Identity checks last, across every token that was read.
+3. Identity checks next, across every token that was read; then binding and account checks
+   (§2.2.1), last.
 4. One root cause, one error. When `claude.connection` already reported HTTP 401, `claude.token`
    is `info` ("same finding as connection"), not a second error.
 
@@ -413,8 +847,42 @@ compares (§8).
 | `machine.anchor.file` | around | `~/.metiche/env` (parsed, never sourced). Read from the managed `# >>> metiche >>>` block, or from a legacy file starting `# metiche — created by install.sh`; other lines in the file are the user's and are ignored. | exists; file 0600, dir 0700, owned by you; one `METICHE_TOKEN=` line of token shape (`[A-Za-z0-9._-]{16,}`, the installer's `token_shape_ok`) | missing → warn: "No ~/.metiche/env. Run the installer: curl -fsSL https://metiche.xyz/install.sh \| sh". Mode → error: "~/.metiche/env is mode `<m>` and holds a token. Run: chmod 600 ~/.metiche/env". `METICHE_CLIENT_KEY` present → warn: "~/.metiche/env still exports METICHE_CLIENT_KEY from an install before per-agent tokens. Re-run the installer; it rewrites the file." |
 | `machine.anchor.token` | around | `whoami` with the anchor | accepted; `token_scope: agent` | 401 with the database reachable → error: "The server rejects the anchor token in ~/.metiche/env (HTTP 401). Tokens do not survive a server reset. Re-run the installer with a join code from your team (METICHE_JOIN_CODE, or it asks); a rejected saved token makes it start a new identity, and it says so." 401 with the database down → reported only under `machine.endpoint`. `account` scope → warn: "The anchor is a pre-per-agent account token. It still works; re-run the installer to convert it." |
 | `machine.env.shell` | around | current process env, cwd's `.mcp.json` | only relevant when a project `.mcp.json` in cwd uses `${METICHE_TOKEN}` | var unset → warn: "This repository's .mcp.json expands ${METICHE_TOKEN}, which is not set in this shell. Claude Code started from here gets an empty bearer. Load it: `. ~/.metiche/env`" |
-| `machine.binding` | around + server | nearest `.metiche` up from cwd; `list_teams` | the named slug is one of your teams | not a member → error: "`<path>` binds this repo to team `<slug>`, which you are not on. Fix the file or join that team." No file and several teams → info: "No .metiche here and you are on N teams; your agent will ask which one." |
+| `machine.binding` | around + server | nearest `.metiche` up from cwd; `list_teams` | the named slug is one of your teams | not on it → error: "`<path>` binds this directory to team `<slug>`, which is not one of your teams (metiche does not say whether it exists). Your agents here will stop at every call. Join it with a code from one of its members, or rebind: `metiche init --force`." A team you left (§4.11) → the same error, worded "you left `<slug>` on `<date>`". No file and several teams → info: "No .metiche here and you are on N teams; your agent will ask which one. Bind it once: `metiche init`." The other binding checks are in §2.2.1. |
 | `machine.files.perms` | around | every file doctor read that holds a token: client configs and backups (`~/.claude.json`, `~/.cursor/mcp.json`, `~/.codeium/windsurf/mcp_config.json`, `$CODEX_HOME/config.toml`, `<file>.metiche-backup-<timestamp>`, `~/.metiche.metiche-backup-<timestamp>/env`, `config.toml.bak*`) | mode 0600 (no group or other bits), owned by you | error: "`<path>` holds a metiche token and is readable by others (mode `<m>`). Run: chmod 600 `<path>`" |
+
+### 2.2.1 Binding and account checks
+
+Inputs:
+- every `.metiche` from the working directory up to `/`, the nearest first;
+- the git root and normalized remote (§1.10.1);
+- `list_teams`;
+- `get_team_state scope=projects` for the bound team and, for the cross-team row, for each of your
+  teams.
+
+They run after the identity checks (§2.1). With `--offline` only the `binding.file` and
+`binding.project_scope` rows run, and every server row is `skip`. Doctor still writes nothing:
+every remediation is a command for the person.
+
+| ID | mode | healthy | finding → remediation (exact) |
+|---|---|---|---|
+| `binding.file` | around | the nearest `.metiche` parses; has `team`; no key appears twice; it is a regular file | missing `team` → error: "`<path>` has no `team =` line, so agents ignore it. Run `metiche init --force` here." Duplicate key → warn: "`<path>` sets `<key>` twice; the last one wins." Unknown key named like a secret (`token`, `secret`, `code`, `key`, `password`) or any value containing `://…@` → error: "`<path>` holds something that looks like a credential (`<key>`). A .metiche must only name a team and a project. Remove it, and if it was ever committed, treat that credential as leaked." The value is never printed. |
+| `binding.project_scope` | around | no `project` line in any `.metiche` above the git root | → warn: "`<path>` is above this repository (`<root>`) and sets `project = <key>`, which agents ignore: a project belongs to one repository. Remove that line; bind the repository itself with `metiche init`." |
+| `binding.project` | server | the `project` in effect (from a file at or below the git root) is the bound team's project for this repository, or there is none yet | differs from the project whose `repo_url` is this repository → warn: "`<path>` says project `taqueria_tracker`, but this repository is project `taqueria` on taqueria-tracker. Agents land on `taqueria` (the repository wins, §1.10.4). Fix the file: `metiche init --force`." The key belongs to another repository → error: "Project `<key>` on `<team>` belongs to `<other repo>`, so start_session will refuse it here. Run `metiche init --force`." No project yet → info: "Project `<key>` will be created on the first start_session." No remote → `skip`: "no repository URL to compare". |
+| `binding.split` | server | at most one active project on the bound team has this repository's normalized `repo_url` | ≥ 2 → **error**: "This repository is N projects on `<team>`: `taqueria` (2 live, 12s ago), `taqueria_tracker` (1 live, 3m ago). Collisions between sessions in different projects are never detected. Have the agents in `<the ones not named in .metiche>` end their sessions and start again from the repository root. Folding the old project's history in is a server-side decision (§10)." Projects with **no** `repo_url` whose key equals the derived key or the name of a directory between the git root and the working directory's parents → info, listing them: "These projects have no repository recorded and may be this repository from before it was recorded: `taqueria_tracker`." It is never an error, because that is a hint, not a match. |
+| `binding.teams_split` | server | this repository is a project on at most one of your teams | ≥ 2 → warn: "Sessions from this repository go to N boards: `taqueria` on taqueria-tracker (live 12s ago), `taqueria` on hack-night (3d ago). If one is wrong, end its sessions and bind the repository: `metiche init --team <slug> --force`." |
+| `account.duplicate_teams` | server | no two of your teams share a normalized name (`slugKey(name, 40)`) | → warn: "You are on N teams named "Hack Night": `hack-night` (member, 6 members), `hack-night-3f9a1c` (owner, 1 member). An agent asked to choose sees both. Keep one: bind repositories with `metiche init --team <slug>`, and leave the other with `metiche teams leave <slug>` once nothing runs there." Runs anywhere, not only in a repository. |
+
+```
+binding   /Users/me/work/taqueria  (origin github.com/mklfarha/taqueria)
+  ✔ binding           .metiche names taqueria-tracker, one of your teams                       server
+  ! project           .metiche says taqueria_tracker; this repository is project taqueria        server
+                      → Agents land on taqueria (the repository wins). Fix the file: metiche init --force
+  ✘ split             this repository is 2 projects on taqueria-tracker: taqueria, taqueria_tracker  server
+                      → Collisions between them are never detected. End the sessions in taqueria_tracker
+                        and start again from the repository root.
+account
+  ! duplicate teams   2 teams named "Hack Night": hack-night, hack-night-3f9a1c                  server
+```
 
 ### 2.3 Claude Code
 
@@ -534,6 +1002,8 @@ Inputs: `whoami` for the anchor and for each client token that the server accept
 | 6 | plugin config cached by version | `claude.plugin` | around |
 | 7 | tokens dead after a server reset | `machine.anchor.token`, `claude.connection` (401), `cursor.connection`, `codex.startup`, `*.token` | through + around |
 | 8 | an agent cannot learn its own identity | not a doctor check: the `whoami` tool (§4.1), and `metiche status` | server |
+| 9 | (2026-09-12, later) one repository split into two projects by two agents' different `project_key`s | `binding.split`, `binding.project`, `binding.project_scope`; prevented by the `start_session` fix and `metiche init` (§1.10) | server + around |
+| 10 | a second team with the same name on one account | `account.duplicate_teams`; prevented by `create_team`'s guard (§4.8) | server |
 
 ---
 
@@ -575,8 +1045,10 @@ call `whoami` for that client, keeps it in memory for the run, and never uses it
 **When the anchor is dead.** "Dead" means a 401 while an anonymous `health` reports the database
 reachable. A 401 with the database down is exit 4 ("metiche's database is down"), never a dead
 token.
-- `status`, `teams`, `open` and `invite` fall back as above, or exit 3 with: "no usable metiche
-  token on this machine. Run `metiche doctor` to see why, then re-run the installer."
+- `status`, `teams`, `open`, `init` and `invite` fall back as above, or exit 3 with: "no usable
+  metiche token on this machine. Run `metiche doctor` to see why, then re-run the installer."
+  `teams create` additionally needs an **agent** token: a legacy account anchor falls back to a
+  client's agent token too (§1.4.1).
 - `doctor` reports `machine.anchor.token` as an error and continues with every client token
   independently.
 - Recovery is the installer's job. Re-running it with a rejected saved anchor starts a new identity
@@ -603,11 +1075,27 @@ Still needed:
 
 ## 4. Server-side changes
 
-Four tools and one scope. Every other gap is closed without a new tool, for the reasons in §4.7.
-All code lives in `code/backend/metiche/app/mcp/` and is registered in `server.go:newServer` next to
-`list_teams`. `AllowedRoutes` does not change. Errors from the new tools start with a stable code
-and a colon (`not_permitted: …`, `not_found: …`, `invalid_argument: …`, `rate_limited: …`), so the
-CLI maps them to exit codes without matching prose.
+Six tools, two scopes and one changed tool, plus guidance text. Every other gap is closed without a
+new tool, for the reasons in §4.7. All code lives in `code/backend/metiche/app/mcp/` and is
+registered in `server.go:newServer` next to `list_teams`. `AllowedRoutes` does not change. Errors
+from the new and changed tools start with a stable code and a colon (`not_permitted: …`,
+`not_found: …`, `invalid_argument: …`, `rate_limited: …`, `already_exists: …`), so the CLI maps them
+to exit codes without matching prose.
+
+| change | kind | who may call it | § | phase |
+|---|---|---|---|---|
+| `whoami` | new tool | anyone; token optional | 4.1 | 1 |
+| `get_team_state scope=projects`, `team` block | new scope | live member | 4.2 | 1 |
+| `get_team_state scope=members` | new scope | live member | 4.9 | 1 |
+| `list_invites` | new tool | member (own invites), owner (all) | 4.3 | 2 |
+| `create_invite` | new tool | member (capped), owner | 4.4 | 2 |
+| `revoke_invite` | new tool | the invite's creator, owner | 4.5 | 2 |
+| `create_team`: duplicate-name guard, `allow_duplicate_name` | changed tool | unchanged (unauthenticated allowed); the guard applies when a token is carried | 4.8 | **0** |
+| `create_team`: identity defaults for an agent token | changed tool | unchanged | 4.8 | 2 |
+| `rename_team` | new tool | **owner** | 4.10 | 2 |
+| `leave_team` | new tool | **the member themself**, never another | 4.11 | 2 |
+| guidance: `list_teams` note and description, `create_team` description, server instructions, skill, Codex block | text | — | 4.12 | **0** |
+| `start_session` repository match (in flight, owned elsewhere) | changed tool | unchanged | 4.12 | prerequisite |
 
 ### 4.1 `whoami`
 
@@ -805,6 +1293,7 @@ true` and `ok`. Revocation takes effect on the next redemption: `redeemInvite` a
   - a member revoking the owner's invite is refused;
   - **create → `join_team` with the code succeeds → revoke → `join_team` fails with
     `ErrInviteNotUsable`**, end to end through the real transport.
+- **Team writes, members, and the `create_team` guard:** the lists in §4.8–§4.11.
 - Run with `-p 1` and `METICHE_TEST_MYSQL_DSN` (`…?parseTime=true&interpolateParams=true`), as the
   existing suite does.
 
@@ -817,8 +1306,202 @@ true` and `ok`. Revocation takes effect on the next redemption: `redeemInvite` a
 | `list_agents` / `retire_agent` | doctor detects collapse and stale identities from per-token `whoami`. Retiring stale server-side agents is a real gap, but a separate decision (§10) |
 | REST routes for the CLI | the REST API is default-deny by design; the MCP endpoint is the one public door |
 | rotating a token from the CLI | tokens are minted and kept by `join_team`, which the installer drives. A second writer of client tokens is exactly what `IDENTITY.md` removed. |
+| `list_members` | a scope on `get_team_state` (§4.9) |
+| `set_team_visibility`, `remove_member`, `set_member_role`, `archive_team` (for now) | acts on exposure or on other people, on anonymous accounts. They come after board login's deploy, which fixes the board serving a team made private (F2) and keeps the board itself read-only. Owner-only MCP tools then (§1.4.5, §10). |
+| `merge_projects`, to heal a split repository | the `start_session` fix stops new splits. Folding sessions, claims and conflicts from one project into another is a data migration that needs owner judgement, not a CLI verb. Doctor reports splits (§2.2.1); §10 asks. |
+| the server reading `.metiche`, or deriving a **team** from `repo_url` | the server never reads the disk (`PLAN.md:303-304`), and a team inferred from a URL is the guess `PLAN.md` forbids. A *project* matched within the chosen team is not that guess (§1.10.4). |
 
-The surface goes from 13 registered tools (8 in `server.go`, 3 work tools, 2 instruction tools) to 17.
+The surface goes from 13 registered tools (8 in `server.go`, 3 work tools, 2 instruction tools) to 19:
+six new tools. The two scopes and the `create_team` change add none.
+
+### 4.8 `create_team`: refuse a second team with the same name, and mint nothing for a caller who already has an agent
+
+The gap is in Context: dedupe is by idempotency key only. Agents choose a fresh key per attempt, so
+an agent that retries "create a team called X" after a lost response, or in a new conversation,
+makes a second X.
+
+| | |
+|---|---|
+| Params | existing `CreateTeamParams`, plus `allow_duplicate_name` bool (default false). With an **agent token**, `client_key`, `member_name` and `agent_label` become optional (below). |
+| Annotations | unchanged (`additive`) |
+| Authorization | unchanged: unauthenticated calls are allowed. The guard applies only when the request carries a token, because only then is there an account with teams. |
+| Errors | new `already_exists: …`; existing validation messages gain the `invalid_argument:` prefix |
+
+**The guard, in order inside `CreateTeam`**, after the rate limit and validation
+(`createteam.go:102-127`):
+1. Derive `teamID` as today (`createteam.go:129-130`).
+2. **Replay first.** If a team exists at `teamID`, return it as today (`created: false`), with no
+   duplicate check. Otherwise a retry of the very call that created the team would be refused by its
+   own result. Replay-safe by construction.
+3. **Then the guard.** The request carries a token, `allow_duplicate_name` is false, and this
+   account has a live membership (`revoked_at IS NULL`, status active) in an **active** team whose
+   `slugKey(name, 40)` equals `slugKey(team_name, 40)`. Then refuse:
+
+   `already_exists: you are already on a team named "Hack Night" (slug: hack-night). Use it: pass team_slug="hack-night" on your calls; to attach another client, call join_team with that team_slug. Only if the person explicitly wants a second team with this name, call create_team again with allow_duplicate_name: true.`
+
+   Every matching slug is listed. Only teams the caller is a live member of are ever named, so the
+   refusal leaks nothing. A same-named team you are not on, have left, or that is inactive does not
+   block.
+4. **Concurrency.** The check and the insert run under a lock on the caller's `account` row
+   (`SELECT id FROM account WHERE id = ? FOR UPDATE`, in one transaction with `ensureTeam`'s
+   insert), so two concurrent calls with different keys serialize and the second is refused. If
+   `teammod`'s insert cannot join that transaction without invasive change, the race is accepted for
+   v1: `account.duplicate_teams` (§2.2.1) is the backstop, and the concurrency test names which
+   behaviour shipped.
+
+Normalization is `slugKey`, the function that makes slugs (`handler.go:285-305`). So "Hack Night",
+"hack-night" and " HACK  night " are one name, exactly when they would have produced the same slug
+base. `install.sh:1351-1352` compares `ascii_downcase` of the raw name and should switch to the same
+rule (owned there). Its check stays, because it refuses before anything is written.
+
+**Identity defaults for an agent token.** `metiche teams create` needs these (§1.4.1); they are
+independent of the guard.
+- When the token names an agent: `client_key` defaults to that agent's, and a *different* one is
+  refused with `RequireAgent`'s message (`auth.go:673-677`). `member_name` defaults to the account's
+  display name (`ensureMember` already falls back to `acct.DisplayName`, `join.go`), and
+  `agent_label` to the agent's label. `joinAs` then keeps the token (`token_kept: true`,
+  `join.go:162-171`), and no agent or token is minted.
+- With no token, or a legacy account token, the three stay required as today
+  (`createteam.go:115-121`).
+
+**Description.** This replaces the first sentence of `server.go:186-189`; the rest is unchanged:
+"Create a new metiche team and join it. **Call list_teams first**: if you are already on a team
+with this name, use its slug instead. create_team refuses a second team with the same name on your
+account unless you pass allow_duplicate_name: true, which you should do only when the person
+explicitly asked for a second team. If you were given a join code, use join_team instead."
+
+Tests:
+- same name, a different idempotency key, same token → `already_exists:` naming the existing slug,
+  and no team row created;
+- **replay**: the call that created the team, retried → `created: false`, not refused;
+- `allow_duplicate_name: true` → created, with the `-xxxxxx` slug suffix;
+- normalization table: "Hack Night", "hack-night" and " HACK  night " refused; "Hack Nights"
+  allowed;
+- a same-named team the account is **not** on, has left, or that is inactive → allowed, and a canary
+  slug for that team never appears in any error;
+- unauthenticated first contact → allowed;
+- two concurrent calls with different keys → exactly one team, or, if the lock was not taken, a
+  test named for the accepted race that asserts doctor's warning instead;
+- agent token with no `client_key`, `member_name` or `agent_label` → `token_kept: true`, no `token`
+  in the response, agent-row count unchanged; a different `client_key` → refused.
+
+### 4.9 `get_team_state scope=members`
+
+The gap: nothing lists who is on a team and which agents they run there, which `metiche teams show`
+needs. **A scope, not a tool**, for §4.2's reason.
+
+| | |
+|---|---|
+| Params | existing; `scope` gains `members`; `cursor` and `limit` apply |
+| Annotations | unchanged (`readOnly`) |
+| Authorization | unchanged: `RequireTeam` (live member). Members see members, as the board already shows them. |
+| Errors | the invalid-scope message becomes "scope must be one of sessions, events, me, projects, members" |
+
+```json
+{"ok":true,"scope":"members","team":{"slug":"taqueria-tracker","name":"Taqueria Tracker","visibility":"private"},
+ "members":[{"key":"mark","display_name":"Mark","role":"owner","joined_at":"…","last_seen_at":"…","mine":true,
+             "agents":[{"key":"AG-12","label":"claude on laptop","client_kind":"claude","status":"active","last_session_at":"…"}]}],
+ "next_cursor":null}
+```
+
+- Live members only (`revoked_at IS NULL`, status active); owners first, then by `joined_at`.
+- **`agents` lists only agents with at least one session on this team.** Agents are account-wide
+  (`agent.account_uuid`, no team column), so listing every one would show teammates the labels of
+  clients you use on *other* teams. Your own row (`mine: true`) lists all your active agents.
+- No `client_key`, no account key, nothing derived from a token.
+- Tests: a revoked member is absent; an agent used only on another team is absent from a
+  teammate's view and present in your own; ordering; pagination.
+
+### 4.10 `rename_team`
+
+| | |
+|---|---|
+| Params | `team_slug` (optional, `RequireTeam` rules); `name` (1–120, at least one letter or digit, as `create_team`); `allow_duplicate_name` bool |
+| Annotations | `idempotent`: the same name twice changes nothing |
+| Authorization | live member via `RequireTeam` **and** `member.role = owner`; otherwise `not_permitted: only an owner can rename a team` |
+| Errors | `invalid_argument`; `not_permitted`; `already_exists` (§4.8's guard, over the caller's *other* teams); `RequireTeam`'s errors |
+
+- Updates `team.name` and `updated_at` under the team row lock. **Never `slug`**: `.metiche` files,
+  board URLs and installs name the slug, and a rename that moved it would unbind every clone
+  silently.
+- Result: `{"ok":true,"team_slug":"…","previous_name":"…","name":"…","changed":true}`. The same name
+  gives `changed: false`.
+- **Event.** `EventKind` has no rename kind (`enums/event_kind.go:15-37`). The recommendation is to
+  add `team_renamed` in the nuzur model, as a structural event, so `board_revision` moves and boards
+  re-render the title. Without it, the board shows the new name on its next full load (§10).
+- Tests: an owner renames; a member is refused; the slug is unchanged; a duplicate is refused, and
+  allowed with the flag; idempotent.
+
+### 4.11 `leave_team`
+
+| | |
+|---|---|
+| Params | `team_slug` (optional, `RequireTeam` rules) |
+| Annotations | DestructiveHint **true**, IdempotentHint true: the caller loses access, and getting it back takes a new invite |
+| Authorization | the caller's own membership only. There is no member argument: removing someone else waits for board login (§1.4.5). |
+| Errors | `not_permitted: …` for each refusal below; `RequireTeam`'s errors |
+
+Refusals, checked under the team row lock:
+1. The account has sessions on the team with status `live` or `stale` →
+   `not_permitted: end your sessions on <slug> first: S-41 (claude on laptop, live 12s ago), …`. The
+   server does not end them itself: a session ended by anyone but its agent confuses that agent, and
+   the sweeper already handles abandoned ones.
+2. The caller is the team's only owner and other live members remain →
+   `not_permitted: you are the only owner of <slug>; ownership cannot be transferred yet`.
+3. The caller is the only live member →
+   `not_permitted: you are the last member of <slug>; leaving would orphan it and its invites`.
+
+- Otherwise: `member.revoked_at = now`, status inactive. That is the soft removal
+  `liveMemberships` already honours (`auth.go:718-720`). Already revoked → `already_left: true`.
+- Your invites stay valid: they belong to the team, and an owner can revoke them. A leaver who
+  redeems a still-valid invite is reinstated (`ensureMember`, `join.go:339-360`), which by design is
+  the invite issuer's decision.
+- **Event.** The recommendation is to add `member_left` in the nuzur model, as a structural event,
+  since a lane disappears. Without it, the lane goes on the next full load (§10).
+- **`RequireTeam`'s error for a former member.** When the slug names a team where the caller has a
+  *revoked* membership row, the message is `not_found: you left <slug> on <date>` instead of the
+  generic one. It reveals the team's existence only to a former member, and it is how `doctor`'s
+  `machine.binding` explains why a `.metiche` stopped working.
+- Tests: leave → `list_teams` no longer lists the team → `get_team_state` refused with the
+  former-member message; each refusal; an idempotent re-leave; a leaver cannot `start_session` on
+  the team.
+
+### 4.12 What this plan needs from the `start_session` fix, and the guidance text
+
+The fix in flight is owned elsewhere (`sessions.go`, `server.go`, the skill). It matches projects by
+normalized `repo_url`, derives the key when `project_key` is omitted, backfills `repo_url`, refuses a
+key bound to another repository, and notes existing projects when it creates one. `metiche init` and
+doctor depend on it for four things:
+1. **`scope=projects` returns the normalized `repo_url`.** §4.2's example already carries the
+   field.
+2. **The normalization and the key derivation are published as a vector table** (input URL →
+   normalized URL → derived key). It is checked into the backend's tests and mirrored under
+   `code/cli/testdata/`, with a CLI test that fails on drift. At minimum these four must normalize
+   alike:
+   - `git@github.com:mklfarha/taqueria.git`
+   - `https://github.com/mklfarha/taqueria`
+   - `ssh://git@github.com/mklfarha/taqueria.git`
+   - `https://<user>:<token>@github.com/mklfarha/taqueria.git` — this one proves `userinfo` is
+     stripped and never stored.
+3. **Precedence as in §1.10.4: the repository first.** When the passed `project_key` differs from
+   the matched project's key, the note names both. If the fix lands with the other precedence,
+   §1.10.4 and `binding.project` change with it.
+4. **The refusal names the other repository's normalized URL**, so `init` and the agent can say
+   which repository holds the key.
+
+The guidance text is written by the owners of the server and the skill. This plan fixes only what it
+must say (§1.10.5):
+- `list_teams` note (`listteams.go:173-197`): write `.metiche` **at the git root**, not the working
+  directory, and prefer `metiche init --team <slug>` when it is available.
+- `list_teams` description (`server.go:239-242`): `.metiche`'s `team` wins; `project` counts only
+  from a file at or below the git root.
+- `create_team` description: "call list_teams first" (§4.8).
+- Server instructions (`server.go:115-160`): one line before step 2: "Find your team first: the
+  nearest .metiche file's team, else list_teams. Pass repo_url to start_session."
+- The skill and its plugin copy: a "Which team, which project" section carrying §1.10.5 items 1–4.
+  The worked example's `project:` becomes `project_key:` and gains `repo_url:`.
+- The installer's Codex `AGENTS.md` block (`install.sh:2120-2141`): one step before `start_session`
+  with the same rule, keeping the block well inside 32 KiB.
 
 ---
 
@@ -831,8 +1514,9 @@ code/cli/
   .goreleaser.yaml            §6.1
   internal/
     buildinfo/                Version, Commit, Date — set by -ldflags -X; "dev" otherwise
-    cmd/                      dispatcher (stdlib flag, one FlagSet per command) + status.go teams.go open.go
-                              invite.go doctor.go version.go uninstall.go; exit-code mapping in one place
+    cmd/                      dispatcher (stdlib flag, one FlagSet per command) + status.go teams.go (list, create,
+                              show, rename, leave) open.go init.go invite.go doctor.go version.go uninstall.go;
+                              exit-code mapping in one place; prompt.go (TTY-only numbered choice, no default)
     config/                   endpoint (--url > METICHE_MCP_URL > default), board base, HOME / CLAUDE_CONFIG_DIR /
                               CODEX_HOME resolution, machine_id (install.sh's algorithm)
     secret/                   type Secret; String/GoString/MarshalJSON/Format all yield "<redacted>"; Reveal() used
@@ -840,7 +1524,11 @@ code/cli/
     credential/               anchor (env, ~/.metiche/env), client-token fallback, one-account rule
     mcpclient/                Dial(ctx, url, Secret) over go-sdk; typed calls; error classification
     wire/                     result structs mirroring the tools the CLI calls (never imports the backend)
-    binding/                  .metiche nearest-wins reader (team =, project =, # comments)
+    binding/                  .metiche nearest-wins reader (team =, project =, # comments; project ignored above
+                              the git root) and the ONE file writer in the binary (atomic rename, in-place line
+                              rewrite keeping comments, symlink and ownership refusal, canary-tested)
+    gitx/                     git root and remote through execx; URL sanitizing (userinfo stripped, raw value
+                              seeds the redactor), normalization and key derivation from §4.12's vectors
     clients/
       client.go               interface: Name, Detect, Registrations, Probe, Logs
       claude/ cursor/ windsurf/ codex/   config readers, CLI output parsers, log readers
@@ -881,13 +1569,17 @@ integration test guards drift.
 - **SQLite** (Codex logs): `modernc.org/sqlite`, pure Go. The release is `CGO_ENABLED=0` like
   nuzur-cli, which rules out `mattn/go-sqlite3`; shelling out to `sqlite3` is not guaranteed on
   Linux. Opened `file:<path>?mode=ro`. It costs a few MB of binary.
-- **CLI framework:** none. Seven commands and a handful of flags fit stdlib `flag`, keeping the
-  dependency list to the SDK, go-toml and sqlite.
+- **CLI framework:** none. Nine commands, two with subcommands, and a handful of flags fit stdlib
+  `flag`, keeping the dependency list to the SDK, go-toml and sqlite.
 
 **Client CLI allowlist** (`execx`, enforced by a test):
 - `claude --version`, `claude mcp get <name>`;
 - `codex --version`, `codex mcp get <name> --json`;
-- `cursor-agent --version`, `cursor-agent mcp list-tools <name>`.
+- `cursor-agent --version`, `cursor-agent mcp list-tools <name>`;
+- `git rev-parse --show-toplevel`, `git config --get remote.origin.url`, `git remote`,
+  `git check-ignore -q .metiche`, `git ls-files --error-unmatch .metiche`, each run with its working
+  directory set to the directory being bound. Read-only: never `add`, `commit` or `config` writes.
+  `GIT_TERMINAL_PROMPT=0`, and no network subcommand.
 
 `<name>` must match `^[A-Za-z0-9._-]{1,64}$` and come from a registration already read.
 
@@ -1095,7 +1787,15 @@ lands, or when the CLI gains behaviour that drifts with the server.
   `Bearer <non-space>`. `claude mcp get` prints header values (verified), so its output is parsed in
   memory, and only `Status:` / `Issue:` lines survive.
 - **Never print a join code**, except the `create_invite` result (`invite create`, including its
-  `--json`). `list_invites` does not return codes at all: the server enforces it, not the CLI.
+  `--json`) and the `create_team` result (`teams create`, including its `--json`, but not with
+  `--quiet`). `list_invites` does not return codes at all: the server enforces it, not the CLI.
+- **Repository URLs can carry credentials** (`https://<user>:<token>@host/…`). `gitx` strips
+  `userinfo` before any other use, seeds the redactor with the raw value, never prints it, and never
+  writes any URL into `.metiche`. A test runs `init` and `doctor` against a remote with a canary in
+  its userinfo and asserts the canary appears nowhere: stdout, stderr, JSON, or the written file.
+- **`.metiche` is the one file the binary writes**, and only from `metiche init`. It is written
+  atomically at mode 0644, never through a symlink, and never outside the chosen directory. It holds
+  only `team` and `project`.
 - **Other tools' files are read-only.** Opened with `os.Open`. The CLI never writes, chmods, renames
   or locks them. SQLite is opened `mode=ro`. Permission problems are findings with the exact
   `chmod` for the person to run.
@@ -1110,19 +1810,23 @@ lands, or when the CLI gains behaviour that drifts with the server.
   never the list forms, which contact every configured server). No telemetry.
 - **HTTPS** is required, except `localhost` / `127.0.0.1` with a warning.
 - **The binary must never:**
-  - write any file;
-  - run sudo;
+  - write any file other than a `.metiche` from `metiche init`. Board login will add one more
+    exception, its sign-in redirect file (`docs/BOARD_LOGIN.md` §5.3);
+  - run sudo, or any `git` subcommand outside the §5 allowlist;
   - modify a client config, or run `claude mcp add|remove`, `codex mcp add|remove`,
     `cursor-agent mcp enable|login` or `claude plugin …`;
-  - call `join_team`, `create_team`, `start_session`, `end_session`, `heartbeat`, `declare_intent`,
+  - call `join_team`, `start_session`, `end_session`, `heartbeat`, `declare_intent`,
     `update_intent`, `check_paths`, `get_instructions` or `report_back`;
+  - call `create_team` anywhere but `teams create`, or with no agent token, or with `client_key`,
+    `member_name` or `agent_label` (§1.4.1). Any of those would mint an agent or an account;
   - accept a secret as an argument;
   - pass a token to a child process (argv or env it adds);
   - log to disk;
   - execute a downloaded script.
 
   The MCP tool allowlist (`health`, `whoami`, `list_teams`, `get_team_state`, `list_invites`,
-  `create_invite`, `revoke_invite`) is a compile-time list with a test.
+  `create_invite`, `revoke_invite`, `create_team`, `rename_team`, `leave_team`) is a compile-time
+  list with a test.
 
 ---
 
@@ -1169,6 +1873,28 @@ fixture, so parsers run through `execx` exactly as in production.
 - `open` and `status` against a stub server: a public team opens or prints its URL; a private team
   opens nothing, prints no URL, exits 1 and gives `board_url: null` in JSON (the stub opener records
   that it was never called).
+- **`init`**, in scratch git repositories against a stub server:
+  - team resolution: flag, inherited, only team, TTY prompt (Enter alone is not accepted), no TTY →
+    exit 2 with `candidates`;
+  - placement: default, `--here` below the root, `--parent`, `--parent --project` → 2, `--here
+    --parent` → 2, no git → cwd with team only;
+  - project sources: flag, server repository match, several matches → prompt or 2, derived from the
+    remote, derived from the directory name, a key bound to another repository → 6;
+  - a different binding → 6 with the diff and no write; `--force` keeps comments and unknown keys;
+  - a re-run leaves the file byte-identical with its mtime unchanged;
+  - a symlinked `.metiche` is refused; `--dry-run` writes nothing;
+  - the reader ignores `project` above the git root.
+- **The written `.metiche` never contains a canary**: a token, a join code, or URL userinfo, under
+  any input.
+- **Repository-URL vector parity** with the backend (§4.12), like `machine_id` parity.
+- **`teams`:**
+  - duplicate-name marking;
+  - `teams create` sends none of `client_key`, `member_name`, `agent_label` (the stub server records
+    the arguments), refuses without an agent token (3), refuses when the schema still requires them
+    (1), and its `--quiet` output contains no code;
+  - `teams leave` with no TTY and no `--yes` exits 2 and makes no call.
+- **Doctor §2.2.1 rows**: each has a passing and a failing fixture, including the incident's
+  two-projects-one-repository state.
 
 ### 8.2 Integration: against a locally built backend
 
@@ -1189,6 +1915,21 @@ fixture, so parsers run through `execx` exactly as in production.
    prints `<board>/t/<slug>`.
 5. Exit codes: an unknown token → 3; `METICHE_MCP_URL` ending `/mcp` → 4 with the path message; a
    member revoking the owner's invite → 5.
+6. Binding, in a scratch git repository with remote `https://github.com/example/demo.git`:
+   - `metiche init` (one team) writes `team` and `project = demo`, and a re-run is `unchanged`;
+   - `start_session` with that `repo_url` and no `project_key` lands on project `demo` (needs the
+     fix);
+   - a second project with the same `repo_url`, inserted in the test database → `metiche doctor
+     --json` reports `binding.split` as an error;
+   - the file rewritten to `project = other` → `binding.project` warns.
+7. Teams:
+   - `teams create "Demo"` → created; again → exit 6 naming the slug; `--allow-duplicate-name` → a
+     second slug;
+   - `doctor` then reports `account.duplicate_teams`, and `whoami`'s agent is unchanged throughout;
+   - `teams rename` by a member → 5;
+   - `teams leave` with a live session → 5; after `end_session` it succeeds;
+   - `open`, run inside the directory whose `.metiche` names the team just left, exits 5 with the
+     former-member message.
 
 ### 8.3 End to end: doctor must catch every failure from that night
 
@@ -1263,30 +2004,74 @@ Each phase follows `IDENTITY.md`'s execution rules:
 - commits are authored by the owner, with no trailers;
 - no credential in any file.
 
-### Phase 1 — server read tools, then `version`, `status`, `teams`, `open`, `doctor` (read-only)
+**Ordering, and why.** Phase 0 is server-only and small, and it stops new damage now (duplicate
+teams). The `start_session` repository fix, in flight elsewhere, stops new splits and is a
+prerequisite for `init`'s project resolution. Phase 1 gives a person the reads and the one local
+write (`init`) that repairs bindings. Phase 2 adds every server write the CLI makes (invites, team
+create, rename, leave), so all mutating tools ship and are proven together. Phase 3 releases.
+
+### Phase 0 — stop duplicate teams (server and guidance only, now)
+
+**Scope.**
+- `create_team`'s duplicate-name guard and `allow_duplicate_name` (§4.8, the guard half), with its
+  tests.
+- The guidance text in §4.12, except what depends on `init` existing (the "prefer `metiche init`"
+  clause is added in phase 1).
+- `install.sh`'s duplicate check switches to `slugKey` normalization, mirrored to
+  `code/frontend/static/install.sh`.
+
+**Coordination.** `server.go`, `sessions.go` and the skill are being changed by the `start_session`
+fix right now. Phase 0 starts `createteam.go` immediately. It touches `server.go`, the skill and
+`listteams.go`'s note only **after that work is committed**, and rebases onto it.
+
+Agents with distinct files:
+- A · `createteam.go` and its tests;
+- B · text in `server.go`, `listteams.go`, the skill and its plugin copy, and `install.sh` (the
+  block and the check), after the fix lands.
+
+**Done when:**
+1. §4.8's guard tests are green through the real transport, output pasted, including the replay
+   that must not be refused and the concurrency test.
+2. Against a local backend: create "Phase Zero"; a second `create_team` with another key is refused
+   naming the slug; `allow_duplicate_name` succeeds. On production, only the refusal half is run, on
+   a team the owner already has, since it creates nothing.
+3. A fresh agent session, told only "set up a metiche team called `<a name the account already
+   has>`", uses the existing slug: it calls `list_teams` first, or is refused and follows the
+   refusal. Transcript pasted.
+
+### Phase 1 — server read tools, then `version`, `status`, `teams`, `teams show`, `open`, `init`, `doctor` (no server writes)
 
 **Scope.**
 
 Server (`app/mcp/`):
 - `whoami`, with the `recent_requests` record in `authMiddleware`;
-- `get_team_state scope=projects`;
-- tests per §4.6;
+- `get_team_state scope=projects` (with the normalized `repo_url` from the fix) and
+  `scope=members`;
+- tests per §4.6 and §4.9;
 - a deploy.
 
 CLI:
 - `code/cli` module, §5 layout;
-- `version`, `status`, `teams`, `open`, `uninstall` (pointer only), `doctor` with every check in §2
-  and `--prove`;
+- `version`, `status`, `teams`, `teams show`, `open`, `uninstall` (pointer only), `doctor` with
+  every check in §2, including §2.2.1, and `--prove`;
+- `init` (§1.10): the one local write, and the fix for the incident on the person's side;
 - `--json` and exit codes;
 - built with `go build`, not released.
 
-Agents with distinct files:
-- A · server: `whoami.go`, `auth.go` middleware, `state.go`, tests;
-- B · CLI core: `cmd`, `config`, `secret`, `credential`, `mcpclient`, `wire`, `render`, `binding`;
-- C · doctor clients: `clients/*`, `execx`, fixtures;
-- D · doctor runner: `doctor/*`, `deploy/scripts/smoke-doctor.sh`.
+**Prerequisite for `init`'s project half:** the `start_session` fix is deployed and its vector table
+exists (§4.12). Until then `init` may ship writing `team` and a derived `project` with a warning,
+but proof 9 below needs the fix.
 
-C and D are written against B's interfaces; D waits for A's deploy for the server rows.
+Agents with distinct files:
+- A · server: `whoami.go`, `auth.go` middleware, `state.go` (both scopes), tests;
+- B · CLI core: `cmd` (except `init.go`), `config`, `secret`, `credential`, `mcpclient`, `wire`,
+  `render`;
+- C · doctor clients: `clients/*`, `execx`, fixtures;
+- D · doctor runner: `doctor/*` (including §2.2.1), `deploy/scripts/smoke-doctor.sh`;
+- E · binding: `binding/` (reader and writer), `gitx/`, `cmd/init.go`, the URL vectors, and the
+  guidance clause "prefer `metiche init`" (§4.12).
+
+C, D and E are written against B's interfaces; D and E wait for A's deploy for the server rows.
 
 **Done when:**
 1. The backend `go test -p 1 ./app/...` is green, with the new tests' output pasted.
@@ -1302,14 +2087,27 @@ C and D are written against B's interfaces; D waits for A's deploy for the serve
    `<board>/t/<slug>` URL the CLI withheld returns 404. A 200 for a private team means the premise
    has changed (a board token was configured, with no viewer gate), and it is a stop-the-line
    finding, not a CLI bug.
+9. In the owner's `taqueria` clone, `metiche init` run from the git root and again from a
+   subdirectory writes **one** `.metiche`, at the git root, with `project = taqueria`. The second
+   run reports `unchanged`. Outputs pasted.
+10. `metiche doctor` in that clone reports the existing `taqueria` / `taqueria_tracker` split as
+    `binding.split` until the owner resolves it. A green doctor there before that is broken.
+11. Through the artifact: two agent sessions started in that clone, one from the git root and one
+    from its parent folder, both reading the committed `.metiche`, land on **one** project, and a
+    deliberate overlapping `declare_intent` on one file raises a conflict. That is the incident,
+    replayed and caught.
 
-### Phase 2 — invites
+### Phase 2 — invites and team writes
 
 **Scope.**
-- Server: `list_invites`, `create_invite`, `revoke_invite`, and `METICHE_CREATE_INVITE_PER_HOUR`.
-- CLI: `invite list|create|revoke`.
+- Server:
+  - `list_invites`, `create_invite`, `revoke_invite`, and `METICHE_CREATE_INVITE_PER_HOUR`;
+  - `rename_team`, `leave_team` (with the former-member `RequireTeam` message);
+  - `create_team`'s identity defaults for an agent token (§4.8);
+  - the `team_renamed` and `member_left` event kinds, if §10 approves the nuzur model change.
+- CLI: `invite list|create|revoke`; `teams create|rename|leave`.
 - Docs:
-  - `docs/PLAN.md` tool table (17 tools);
+  - `docs/PLAN.md` tool table (19 tools);
   - `skill/metiche-teamwork/SKILL.md` and its plugin copy ("call `whoami` instead of guessing your
     identity; invite tools only when the person asks").
 
@@ -1321,6 +2119,12 @@ C and D are written against B's interfaces; D waits for A's deploy for the serve
    owner revokes it, and a second join is refused, with the outputs pasted (the code redacted in
    the report).
 4. No SQL is run by hand.
+5. §4.8's identity-default tests and §4.10–§4.11's tests are green; §8.2 step 7 is green.
+6. On production: `metiche teams create` makes a scratch team, and `whoami` shows the same agent and
+   the same agent count before and after. A second create is refused with exit 6. `teams rename`
+   works, and `teams leave` by the owner is refused (only owner). Outputs pasted, the code redacted.
+   The scratch team stays until archiving exists (§10); the leave path is proven on the local
+   backend (§8.2 step 7).
 
 ### Phase 3 — release pipeline and installer download
 
@@ -1347,8 +2151,13 @@ C and D are written against B's interfaces; D waits for A's deploy for the serve
 - Windows builds and paths.
 - Cosign keyless signing of the checksums, and an SBOM.
 - `retire_agent` and `metiche agents` (if §10 says so).
-- `metiche open` for private teams, once the board service has a viewer gate (browser login).
-  Until then `open` declines private teams (§1.5).
+- `metiche open` for private teams, once the board service has a viewer gate (browser login,
+  `docs/BOARD_LOGIN.md`). Until then `open` declines private teams (§1.5).
+- After board login's deploy: `set_team_visibility`, `remove_member`, `set_member_role` (ownership
+  transfer, which unblocks `teams leave` for a sole owner) and `archive_team`, as owner-only MCP
+  tools with `metiche teams` subcommands (§1.4.5). The board stays read-only.
+- `merge_projects`, or a one-off migration, for repositories split before the fix, if §10 says so.
+- Several projects per repository (monorepos), if the server ever supports it (§1.10.4).
 - Delivery evidence across several replicas, if the deployment splits.
 
 ---
@@ -1367,8 +2176,58 @@ C and D are written against B's interfaces; D waits for A's deploy for the serve
 
    Should the gate join this roadmap as a phase after 3, so `open` can serve private teams? Or should
    it stay a separate board-service project, with `metiche status` as the private-team view for now?
+
+   **Update:** the gate is now designed in `docs/BOARD_LOGIN.md`: sign-in links minted by
+   `open_board`, and no board token. It is for owner review, and nothing is implemented. Its §5.3
+   lists what changes here.
 4. **Stale server-side agents.** Old per-machine agents and agents holding account tokens linger in
    team state (and on public teams' boards). Add `retire_agent` plus `metiche agents list|retire` in phase 2, or leave it for later?
+5. **`project` in `.metiche` versus the repository URL.** **Recommendation: the repository wins**
+   (§1.10.4). The server matches by normalized `repo_url`; a differing `project_key` is reported in
+   the note and by doctor, never obeyed. The file wins only when there is no remote. The alternative
+   (the file wins) lets one stale or copied file recreate tonight's split for every clone. This must
+   agree with the in-flight `start_session` fix; please confirm before it merges.
+6. **`project` in a parent-directory `.metiche`.** **Recommendation: ignored, with a doctor
+   warning**, and `init --parent` refuses to write one. A parent file covers several repositories,
+   and a project is one repository. `PLAN.md`'s example (`~/work/hackathon/.metiche` with
+   `project = orbital-freight`) should drop that line, and its comment "defaults to the repo
+   directory name" should become "defaults to the name the server derives from the repository's
+   remote" (owned in `PLAN.md`).
+7. **Should `init` suggest committing `.metiche`?** **Recommendation: yes, print-only, never run
+   git**, with the one-line caveat that a public repository publishes the slug, which grants no
+   access (`PLAN.md:284-285`). Committing is what makes every teammate's clone bind with no
+   question. The cost is a visible slug, and the private-by-default board makes that harmless.
+8. **Duplicate-name guard: refuse or warn?** **Recommendation: refuse, with
+   `allow_duplicate_name: true` as the explicit override** (§4.8). A warning inside a successful
+   response is exactly what a model skims past, and the second team is what then confuses every
+   later "which team?" question. Normalization is `slugKey` (the slug base), so the check fires
+   exactly when the slugs would have collided.
+9. **Leaving as the sole owner, or the last member.** **Recommendation: refuse both for now**
+   (§4.11). Ownership transfer and archiving come later as owner-only tools, after board login
+   (§1.4.5). Auto-promoting the
+   longest-standing member would silently make someone an owner who never asked. Allowing the last
+   member to leave orphans a team whose first invite never expires.
+10. **Event kinds for rename and leave.** **Recommendation: add `team_renamed` and `member_left` to
+    the nuzur model in phase 2**, both structural. Invites could skip events because they are not
+    board state; a team's name and its member lanes are.
+11. **Visibility, member removal and roles.** **Recommendation: owner-only MCP tools with CLI
+    subcommands after board login's deploy, not board controls** (§1.4.5). `docs/BOARD_LOGIN.md`
+    keeps the board read-only against the backend, so the board is not their home. Its F2 fix and
+    per-request membership checks are what make a visibility change or a removal take effect
+    everywhere a person can look. Each gets a structural event, so the change is visible on the
+    board.
+12. **Do agents write `.metiche` themselves?** **Recommendation: they may, but prefer
+    `metiche init --team <slug>` when `metiche` is on `PATH`** (§1.10.5), and always at the git
+    root. `PLAN.md` has agents write it; the CLI makes placement and format consistent, which is
+    precisely what went wrong from the parent folder.
+13. **Repositories already split** (`taqueria` / `taqueria_tracker`). **Recommendation: no merge
+    tool now.** Doctor reports the split. The owner ends the sessions in the stray project and lets
+    it go idle, and the fix's backfill keeps new sessions on one project. Revisit `merge_projects`
+    only if splits recur after the fix.
+14. **Should the installer run `metiche init`?** `IDENTITY.md` lists "the installer writing
+    `.metiche`" as open. **Recommendation: no.** The installer is machine-global and runs outside
+    any particular repository. It ends by printing "in each repository: `metiche init`", and the
+    agents' `list_teams` note covers repositories nobody bound.
 
 Known unknowns that are not questions, verified during phase 1 on real installs:
 - Cursor's `list-tools` and IDE-log text on an HTTP 401;
@@ -1391,3 +2250,10 @@ Known unknowns that are not questions, verified during phase 1 on real installs:
 5. `curl -fsSL https://metiche.xyz/install.sh | sh` on a fresh machine installs a checksum-verified
    `metiche` from a tagged GitHub release, ends with a clean doctor summary, and
    `install.sh --uninstall` leaves nothing behind.
+6. A repository bound with `metiche init` sends every agent session, from the root or from a parent
+   folder, to one project on one team, and an overlapping edit between two of them is detected
+   (phase 1 proof 11). `metiche doctor` reports a split repository, a stale `project`, a `project`
+   above the git root, and a `.metiche` naming a team you are not on.
+7. No account can gain a second team with a name it already has without saying
+   `allow_duplicate_name`, whether through the CLI (exit 6) or an agent calling `create_team`
+   directly (`already_exists`). `teams create` mints no agent and no token.
