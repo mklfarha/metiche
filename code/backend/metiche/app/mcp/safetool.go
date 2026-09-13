@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,7 +55,9 @@ func addTool[In, Out any](s *mcp.Server, hdl *Handler, logger *zap.Logger, t *mc
 // the tool, the tool finds no account, and the agent is told to authenticate
 // while holding a perfectly good token it is already sending. That is a
 // confusing enough dead end to have cost an afternoon; it is tested by
-// TestAuthIsPerCallNotPerSession so it cannot come back.
+// TestAuthToolReadsTheHeaderOfThisCall, TestAuthToolToleratesAMissingHeader and
+// TestEveryToolIsWrappedForPerCallAuth (authpercall_test.go) so it cannot come
+// back.
 //
 // req.Extra.Header is the header of the request being served right now, which
 // is exactly the thing the session context cannot tell us.
@@ -69,8 +72,32 @@ func authTool[In, Out any](hdl *Handler, next mcp.ToolHandlerFor[In, Out]) mcp.T
 		// already belong to whoever authenticated, and is meaningless without
 		// that. See ClientKeyFromContext for why it rides on the connection
 		// rather than being passed as an argument.
-		if ck := strings.TrimSpace(req.Extra.Header.Get("X-Metiche-Client-Key")); ck != "" {
+		ck := strings.TrimSpace(req.Extra.Header.Get("X-Metiche-Client-Key"))
+		if ck != "" {
 			ctx = WithClientKey(ctx, ck)
+		}
+		// WHICH HEADERS ACTUALLY ARRIVED. Names only, never values -- one of
+		// them is a bearer token.
+		//
+		// This exists because "the client is configured correctly" and "the
+		// server received it" are different claims, and confusing them cost a
+		// long evening: a config file on disk was read, verified and still
+		// produced a request with no identity on it, and nothing in the system
+		// could say whether the client never sent it or something in between
+		// dropped it. Debug level, so it costs nothing in normal operation.
+		// Logged at INFO when the identity header is ABSENT, and not at all
+		// when it is present: the anomaly is worth a line, the normal case is
+		// noise. zap.NewProduction is Info level, so a Debug line here would
+		// have been invisible in the place it is actually needed.
+		if ck == "" && hdl.logger != nil {
+			names := make([]string, 0, len(req.Extra.Header))
+			for k := range req.Extra.Header {
+				names = append(names, k)
+			}
+			sort.Strings(names)
+			hdl.logger.Info("mcp call arrived with no agent identity header",
+				zap.String("tool", toolName(req)),
+				zap.Strings("headers_received", names))
 		}
 
 		token := BearerFromHeader(req.Extra.Header.Get("Authorization"))
@@ -91,11 +118,22 @@ func authTool[In, Out any](hdl *Handler, next mcp.ToolHandlerFor[In, Out]) mcp.T
 			// call, and an agent that has to reconnect to recover is an
 			// agent that stops using the tool.
 			hdl.logger.Warn("a tool call carried a token that did not resolve",
-				zap.String("tool", req.Params.Name))
+				zap.String("tool", toolName(req)))
 			return next(ctx, req, in)
 		}
 		return next(WithAccount(ctx, acct), req, in)
 	}
+}
+
+// toolName is the called tool's name for a log line, or "" when the request
+// carries no Params. Real calls always have Params, but a log line is the last
+// place that should be able to panic: authTool wraps every tool, and a nil
+// dereference here takes down a call that would otherwise have succeeded.
+func toolName(req *mcp.CallToolRequest) string {
+	if req == nil || req.Params == nil {
+		return ""
+	}
+	return req.Params.Name
 }
 
 // registered records every tool passed to addTool so a test can assert over
