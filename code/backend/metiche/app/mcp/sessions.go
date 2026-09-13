@@ -38,6 +38,9 @@ type StartSessionParams struct {
 	ProjectName    string `json:"project_name,omitempty" jsonschema:"Human-readable repository name, used only when the project is created on this call."`
 	RepoURL        string `json:"repo_url,omitempty" jsonschema:"The output of 'git remote get-url origin', run in the repository; omit it only if there is no remote. This is how metiche knows two agents are in the SAME repository: https and ssh forms, .git and letter case are normalized away, and an existing project for this repository is used whatever project_key says. Credentials in the URL are stripped and never stored."`
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"Pass a key of your own and retrying this exact call returns the exact same answer instead of starting a second session. Omit it and every call starts a new session."`
+
+	// Not persisted: it gates creating a project, and nothing else (repobinding.go).
+	ConfirmNewProject string `json:"confirm_new_project,omitempty" jsonschema:"Matters only when this repository is not yet a project on the team. 'metiche_file' when a .metiche file (walking up from your working directory to the git root) names this team, passed as team_slug. 'person' when your person said yes to the question in a confirm_repo_binding answer. Omit it otherwise: start_session then creates nothing and answers with code confirm_repo_binding."`
 }
 
 // StartSession opens one bounded piece of work by one agent on one branch.
@@ -69,6 +72,10 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 	if projectKey == "" {
 		return nil, nil, errors.New("project_key is required when there is no repo_url — claims are scoped to a repository, and an unscoped claim collides with every other repo the team owns; " +
 			"send repo_url (git remote get-url origin) or project_key (the basename of git rev-parse --show-toplevel)")
+	}
+	confirmedNew, err := parseConfirmNewProject(args.ConfirmNewProject, args.TeamSlug)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	idem := strings.TrimSpace(args.IdempotencyKey)
@@ -120,11 +127,12 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			// racing to open the first session in one repository cannot each
 			// create a project for it. See resolveProject for the order.
 			in := projectInput{
-				Key:        projectKey,
-				KeyDerived: keyDerived,
-				RepoURL:    repoURL,
-				Name:       args.ProjectName,
-				Branch:     args.Branch,
+				Key:          projectKey,
+				KeyDerived:   keyDerived,
+				RepoURL:      repoURL,
+				Name:         args.ProjectName,
+				Branch:       args.Branch,
+				ConfirmedNew: confirmedNew,
 			}
 			resolved, err := h.resolveProject(ctx, tc, team.ID, in)
 			if err != nil {
@@ -188,6 +196,12 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			return nil
 		},
 	})
+	var binding *repoBindingRequired
+	if errors.As(err, &binding) {
+		// Not a failure: Apply refused before writing, commit rolled back, and
+		// the agent has a question for its person. See repobinding.go.
+		return jsonValue(repoBindingRefusal(team, binding))
+	}
 	if err != nil {
 		return nil, nil, err
 	}

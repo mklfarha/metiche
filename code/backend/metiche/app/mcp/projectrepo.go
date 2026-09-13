@@ -48,6 +48,10 @@ type projectInput struct {
 	RepoURL string
 	Name    string
 	Branch  string
+	// ConfirmedNew is true when the caller confirmed that a NEW project may
+	// be created on this team (confirm_new_project). Without it (c) refuses
+	// with *repoBindingRequired and writes nothing. See repobinding.go.
+	ConfirmedNew bool
 }
 
 type projectResolution struct {
@@ -152,6 +156,11 @@ func (h *Handler) resolveProject(ctx context.Context, tc *TxContext, teamUUID uu
 	// other agent on files nobody hand-edits.
 	if err := load(); err != nil {
 		return projectResolution{}, err
+	}
+	// Putting a repository's work on a team's board is the person's call, not
+	// the agent's: asked once per new repository, before anything is written.
+	if !in.ConfirmedNew {
+		return projectResolution{}, newRepoBindingRequired(in, active)
 	}
 	id, err := uuid.NewV4()
 	if err != nil {

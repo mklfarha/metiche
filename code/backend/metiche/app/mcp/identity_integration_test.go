@@ -194,7 +194,7 @@ func TestIntegrationTwoAgentsTwoTokensNoHints(t *testing.T) {
 
 	// Each token, alone, starts a session.
 	connA := connectAs(t, endpoint, tokenA)
-	res, text = callTool(t, connA, "start_session", map[string]any{"project_key": "metiche", "branch": "feat/a"})
+	res, text = callTool(t, connA, "start_session", map[string]any{"project_key": "metiche", "branch": "feat/a", "confirm_new_project": "person"})
 	if res.IsError {
 		t.Fatalf("start_session with only token A: %s", text)
 	}
@@ -331,7 +331,7 @@ func TestIntegrationLegacyAccountTokenStillWorks(t *testing.T) {
 	// one agent needs nothing else, exactly as before v4.
 	endpoint, _ := realServer(t, hs)
 	conn := connectAs(t, endpoint, legacy)
-	res, text := callTool(t, conn, "start_session", map[string]any{"project_key": "metiche"})
+	res, text := callTool(t, conn, "start_session", map[string]any{"project_key": "metiche", "confirm_new_project": "person"})
 	if res.IsError {
 		t.Fatalf("start_session with a legacy token: %s", text)
 	}

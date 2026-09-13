@@ -16,9 +16,13 @@ import (
 
 // startOn runs start_session with exactly these arguments and fails the test
 // on an error. Unlike startFor it supplies no default project_key: whether
-// one was sent is the thing under test here.
+// one was sent is the thing under test here. It does confirm a new project,
+// as a person would (repobinding_integration_test.go tests the ask itself).
 func startOn(t *testing.T, hs *harness, c *caller, args StartSessionParams) (Envelope, string) {
 	t.Helper()
+	if args.ConfirmNewProject == "" {
+		args.ConfirmNewProject = "person"
+	}
 	res, _, err := hs.h.StartSession(c.ctx, nil, args)
 	if err != nil {
 		t.Fatalf("start_session(key=%q): %v", args.ProjectKey, err)

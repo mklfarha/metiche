@@ -20,6 +20,11 @@ func startFor(t *testing.T, hs *harness, ctx context.Context, args StartSessionP
 	if args.ProjectKey == "" {
 		args.ProjectKey = "metiche"
 	}
+	// These tests are about sessions, not binding: the first one creates the
+	// project, and the person confirmed it (repobinding.go).
+	if args.ConfirmNewProject == "" {
+		args.ConfirmNewProject = "person"
+	}
 	res, _, err := hs.h.StartSession(ctx, nil, args)
 	if err != nil {
 		t.Fatalf("start_session %+v: %v", args, err)
