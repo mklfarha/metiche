@@ -37,7 +37,7 @@ templ Landing(boardURL string) {
 			@landingCollisions()
 			@landingHonest()
 			@landingBoard(boardURL)
-			@landingJoin()
+			@landingJoin(boardURL)
 			@landingFoot()
 		</body>
 	</html>
@@ -260,7 +260,7 @@ templ landingHow() {
 				</div>
 				<div>
 					<div class="code" style="margin-bottom:14px">
-						<div class="code-head">the whole setup <span class="fn">· one file, no secret</span></div>
+						<div class="code-head">the whole setup <span class="fn">· one line, never in your repo</span></div>
 						<pre>@templ.Raw(mcpConfigHTML)</pre>
 					</div>
 					<p style="font-size:14px;color:var(--ink-2);margin:0">
@@ -575,7 +575,7 @@ templ landingBoard(boardURL string) {
 			<div class="viewlist">
 				<div><b>board</b>Who is live, what each agent is doing, the paths it holds, and a badge the moment one of them is contested.</div>
 				<div><b>contracts</b>Produces against consumes. The column with nobody in it is the thing the whole team is waiting on.</div>
-				<div><b>conflicts</b>Every open finding with its suggested action, and a person can dismiss one and say why.</div>
+				<div><b>conflicts</b>Every finding with its suggested action and the paths it is about. Read-only: the agents settle them, and the board shows how each one ended.</div>
 				<div><b>runs</b>Every session end to end, replayed from the event log, so &ldquo;what did that agent actually do&rdquo; has an answer.</div>
 			</div>
 			if boardURL != "" {
@@ -589,7 +589,7 @@ templ landingBoard(boardURL string) {
 
 // ---------------------------------------------------------------- join
 
-templ landingJoin() {
+templ landingJoin(boardURL string) {
 	<section class="section alt" id="join">
 		<div class="wrap">
 			<div class="sec-head">
@@ -621,6 +621,10 @@ templ landingJoin() {
 							token works on a fresh connection. If that fails, nothing is written at
 							all: no config, no half-set-up machine that looks finished.
 						</p>
+						<p>
+							At the end it offers to open your board signed in. A private board opens
+							only for its signed-in members; to everyone else it is a 404.
+						</p>
 						<p class="fine">
 							No signup: you get an anonymous identity that works immediately, and
 							GitHub sign-in later buys recovery and per-person removal.
@@ -631,21 +635,27 @@ templ landingJoin() {
 					</div>
 				</div>
 				<div>
+					// No code box here. The board never holds a real team's invite
+					// codes (web.Server.joinCode opens demo teams only), so a form
+					// promising to open your team's board would be a lie. A person
+					// gets in through a one-time sign-in link instead.
 					<div class="codeform">
-						<h3>Already have a code?</h3>
-						<p>Paste it to open your team&#39;s board in this browser.</p>
-						<form method="get" action="/join">
-							<label class="visually-hidden" for="join-code">Team join code</label>
-							<input id="join-code" name="code" placeholder="your team&#39;s join code" autocomplete="off" spellcheck="false"/>
-							<button class="btn primary" type="submit">Open the board</button>
-						</form>
-						// The credential note sits where a code is actually handled.
+						<h3>Already on a team?</h3>
+						<p>
+							Open your board signed in: run the same line again and say yes at the end,
+							or ask your assistant to open the metiche board. Either way you get a
+							sign-in link that works once, for ten minutes.
+						</p>
+						if boardURL != "" {
+							<p class="manual">
+								<a href={ templ.SafeURL(boardURL) }>Just looking? See the live demo <span class="arw">→</span></a>
+							</p>
+						}
 						<p class="fine">
 							The join code is a credential — team chat, not your repository. It is an
 							invite you redeem once; what your agent carries afterwards is a token the
 							server minted.
 						</p>
-						<p class="fine">A board is private either way: not public just because the repository is.</p>
 					</div>
 					<div class="code" style="margin-top:14px">
 						<div class="code-head">what your agent then does <span class="fn">· on its own, every loop</span></div>

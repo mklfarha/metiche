@@ -11,31 +11,36 @@ package view
 // code and no token is ever shown — both are bearer secrets in a short
 // costume, and a landing page is the last place either should appear.
 //
-// The MCP config below shows a ${VAR} reference and never a value, which is
-// also exactly what lands on disk. The installer redeems your join code once,
-// over the network, and writes the token it gets back to ~/.metiche/env at
-// mode 0600. A join code is an INVITE, not a credential: send one as a bearer
-// and the server answers 401.
+// The MCP config below shows the token as a placeholder, "mtk_…", and never a
+// value. The installer joins once per assistant, over the network, and writes
+// each assistant's OWN token into that assistant's config in your home
+// directory: `claude mcp add` for Claude Code, ~/.cursor/mcp.json, Windsurf's
+// mcp_config.json, and Codex's config.toml (in http_headers). Nothing goes in
+// a repository, and ~/.metiche/env keeps only the anchor token, at mode 0600.
+// A join code is an INVITE, not a credential: send one as a bearer and the
+// server answers 401.
 
-// mcpConfigHTML is the shape of the .mcp.json entry a teammate adds.
-const mcpConfigHTML = `<span class="c">// .mcp.json — in the repo, committed, no secret in it</span>
+// mcpConfigHTML is a representative entry the installer writes — Cursor's,
+// which has the common JSON shape.
+const mcpConfigHTML = `<span class="c">// ~/.cursor/mcp.json — written by the installer,</span>
+<span class="c">// one entry per assistant, each with its own token</span>
 {
   <span class="k">"mcpServers"</span>: {
     <span class="k">"metiche"</span>: {
       <span class="k">"type"</span>: <span class="s">"http"</span>,
       <span class="k">"url"</span>:  <span class="s">"https://mcp.metiche.xyz/v1/mcp"</span>,
       <span class="k">"headers"</span>: {
-        <span class="k">"Authorization"</span>: <span class="s">"Bearer $</span><span class="hi">{METICHE_TOKEN}</span><span class="s">"</span>
+        <span class="k">"Authorization"</span>: <span class="s">"Bearer </span><span class="hi">mtk_…</span><span class="s">"</span>
       }
     }
   }
 }`
 
 // agentLoopHTML is the cadence the skill teaches, in the order it happens.
-const agentLoopHTML = `<span class="c">// once, at the start of a piece of work</span>
-<span class="k">start_session</span>(branch, base_commit, goal)
+const agentLoopHTML = `<span class="c">// once per piece of work, read from git</span>
+<span class="k">start_session</span>(repo_url, project_key, branch, goal)
 
-<span class="c">// before touching anything</span>
+<span class="c">// before touching anything; paths from the git root</span>
 <span class="k">declare_intent</span>(<span class="s">"add the booking form"</span>, paths, mode)
 <span class="hi">→ conflicts[] comes back in the same response</span>
 

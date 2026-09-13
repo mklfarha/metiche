@@ -629,16 +629,12 @@ body.lp {
 }
 .codeform h3 { font-size: 16px; margin-bottom: 6px; }
 .codeform p { font-size: 13.5px; color: var(--ink-3); }
-.codeform form { display: flex; gap: 8px; margin-top: 14px; }
-@media (max-width: 420px) { .codeform form { flex-direction: column; } }
-.codeform input, .codeform .btn { min-height: 44px; }
-.codeform input {
-  flex: 1; min-width: 0; font: inherit; font-family: var(--mono); font-size: 13.5px;
-  padding: 10px 12px; border-radius: 7px; background: var(--bg);
-  border: 1px solid var(--line); color: var(--ink);
+.codeform .manual { margin-top: 8px; }
+.codeform .manual a {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 40px;
+  color: var(--accent); font-size: 14px; font-weight: 550;
 }
-.codeform input::placeholder { color: var(--ink-3); }
-.codeform input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.codeform .manual a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .codeform .fine { margin-top: 14px; font-size: 12.5px; color: var(--ink-3); line-height: 1.55; }
 
 .tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
