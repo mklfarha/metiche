@@ -51,8 +51,16 @@
 # network error, a 5xx or a timeout refuses and writes nothing — a flaky
 # connection must never turn you into somebody new. A $METICHE_TOKEN that is
 # byte for byte the token in ~/.metiche/env (the profile line loads it) is the
-# saved token; a different one was passed on purpose, and a rejection of it
-# refuses.
+# saved token; one that matches a BACKUP of that file is a stale shell from
+# before the last install, and the current saved token is used instead; any
+# other one was passed on purpose, and a rejection of it refuses.
+#
+# Last, only in a terminal, never under CI, and only when you say yes (the
+# default answer): one open_board call, which returns a single-use sign-in
+# link to your team's board. The link reaches the browser through a 0600 file
+# in a private temporary directory; the file is what `open` or `xdg-open` is
+# given, never the link, and it is removed before the script exits. Over SSH
+# the link is printed for you to open on your own machine instead.
 #
 # --uninstall removes exactly what the list above says metiche owns, with the
 # same backups, and does not contact the server.
@@ -118,6 +126,13 @@ DRY_RUN=0
 UNINSTALL=0
 WRITE_PROFILE=1
 ONLY=""
+# ask, yes or no: whether the last step opens the board signed in. See
+# board_step. --open and --no-open override the environment.
+OPEN_BOARD="${METICHE_OPEN_BOARD:-ask}"
+# How long the sign-in file stays on disk after the opener returns: the opener
+# hands the path to the browser and exits, and the browser reads the file a
+# moment later.
+BOARD_FILE_SECONDS=10
 
 ENV_DIR="$HOME/.metiche"
 ENV_FILE="$ENV_DIR/env"
@@ -153,6 +168,9 @@ ANCHOR_TEAMS=""
 TOKEN_EXPLICIT=0
 # 1 when $METICHE_TOKEN is set but is byte for byte the saved token.
 TOKEN_FROM_PROFILE=0
+# 1 when $METICHE_TOKEN is not the saved token but WAS: it matches a backup of
+# ~/.metiche/env, left in this shell from before the last install rewrote it.
+TOKEN_STALE_SHELL=0
 
 # The clients found on this machine, in KNOWN_CLIENTS order; the one being
 # configured and its generated identity; and what is done so far.
@@ -233,6 +251,12 @@ Options:
                       its own token in its own config — but the .mcp.json in
                       the metiche repository expands ${METICHE_TOKEN}.
   --write-profile     Explicitly ask for the default.
+  --open              At the end, open your team's board in a browser, signed
+                      in, without asking. Only in a terminal and never under
+                      CI: without a terminal no sign-in link is created.
+  --no-open           Never create a sign-in link. By default a terminal run
+                      asks, and the default answer is yes.
+                      METICHE_OPEN_BOARD=ask|yes|no says the same.
   -h, --help          This.
 
 Joining, or creating. With no join code and no token of yours on this machine
@@ -253,9 +277,18 @@ starts a new identity; a network error or a 5xx refuses instead.
 
 $METICHE_TOKEN holding the SAME token as ~/.metiche/env (the profile line
 loads it into every shell) counts as that saved token: a rejection starts a
-new identity, and METICHE_JOIN_CODE / METICHE_TEAM_NAME still apply. Only a
-DIFFERENT token in $METICHE_TOKEN is one you passed; it outranks both, and a
-rejection of it refuses.
+new identity, and METICHE_JOIN_CODE / METICHE_TEAM_NAME still apply. A token
+that matches a backup of ~/.metiche/env is what a shell opened before the last
+install still holds: the current saved token is used, and you are told to open
+a new terminal. Only a token that is neither is one you passed; it outranks
+both, and a rejection of it refuses.
+
+Signing in to the board. The last step offers to open your team's board in
+your browser, signed in. open_board returns a sign-in link that works once,
+for 10 minutes, and signs one browser in as you. It is handed to the browser
+through a private 0600 file, never on a command line, and the file is removed
+before the script exits. Over SSH the link is printed instead, to open on your
+own machine. Nothing is created without a terminal, or when CI is set.
 
 Every file it changes that already existed is backed up first, next to
 itself, as <file>.metiche-backup-<timestamp>.
@@ -319,6 +352,8 @@ while [ $# -gt 0 ]; do
         --marketplace=*) MARKETPLACE="${1#--marketplace=}" ;;
         --only)          [ $# -ge 2 ] || die "--only needs a value"; ONLY="$2"; shift ;;
         --only=*)        ONLY="${1#--only=}" ;;
+        --open)          OPEN_BOARD="yes" ;;
+        --no-open)       OPEN_BOARD="no" ;;
         -h|--help)       usage; exit 0 ;;
         *)
             # A bare argument is most likely someone passing their join code
@@ -344,6 +379,11 @@ case "$URL" in
     https://*) ;;
     http://localhost*|http://127.0.0.1*) [ "$UNINSTALL" -eq 1 ] || warn "using a plaintext local endpoint: $URL" ;;
     *) die "--url must be https (or a local http endpoint), got: $URL" ;;
+esac
+
+case "$OPEN_BOARD" in
+    ask|yes|no) ;;
+    *) die "METICHE_OPEN_BOARD must be ask, yes or no, got: $OPEN_BOARD" ;;
 esac
 
 # A typo in --only would otherwise configure nothing and say so only as "no
@@ -667,14 +707,33 @@ idempotency_key() {
     fi
 }
 
-# A token already sitting in ~/.metiche/env. Read only; never printed.
-existing_token() {
-    [ -f "$ENV_FILE" ] || return 0
-    _prior=$(sed -n "s/^$TOKEN_ENV=//p" "$ENV_FILE" | sed -n '1p')
+# The METICHE_TOKEN= value in an env file ($1), if it has one of token shape.
+# Read with sed: the file is never sourced or eval'd. Never printed.
+env_file_token() {
+    [ -f "$1" ] || return 0
+    _prior=$(sed -n "s/^$TOKEN_ENV=//p" "$1" | sed -n '1p')
     case "$_prior" in
         ""|*[!A-Za-z0-9._-]*) return 0 ;;
     esac
     printf '%s' "$_prior"
+}
+
+# A token already sitting in ~/.metiche/env. Read only; never printed.
+existing_token() {
+    env_file_token "$ENV_FILE"
+}
+
+# True when $1 is the token in a backup of ~/.metiche/env: one backup_file made
+# (~/.metiche/env.metiche-backup-<TS>) or one --uninstall made
+# (~/.metiche.metiche-backup-<TS>/env). Compared here, never printed.
+token_in_env_backups() {
+    for _bk in "$ENV_FILE".metiche-backup-* "$ENV_DIR".metiche-backup-*/env; do
+        [ -f "$_bk" ] || continue
+        if [ "$(env_file_token "$_bk")" = "$1" ]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # The ANCHOR is a token of yours that a join carries so the server attaches a
@@ -693,17 +752,34 @@ existing_token() {
 # that file (read the way existing_token reads it: never sourced, never
 # eval'd), it is the saved token and is treated exactly as the file would be —
 # which is what lets a saved token the server has since rejected start a new
-# identity instead of refusing forever. A DIFFERENT token in $METICHE_TOKEN
-# was passed on purpose, and a rejection of it still refuses.
+# identity instead of refusing forever.
+#
+# Nor is a token that WAS the saved token. An install that starts a new
+# identity rewrites ~/.metiche/env and keeps the old file as a backup, but the
+# shell that ran it still exports the old value until a new terminal opens. A
+# $METICHE_TOKEN that matches a backup is that stale shell: with a saved token
+# the saved token is the anchor, and without one (after --uninstall) the stale
+# value is an anchor candidate exactly as the saved token would be.
+#
+# A token that matches neither was passed on purpose, and a rejection of it
+# still refuses.
 anchor_token() {
     ANCHOR=""
     ANCHOR_SOURCE=""
     TOKEN_EXPLICIT=0
     TOKEN_FROM_PROFILE=0
+    TOKEN_STALE_SHELL=0
     _found=$(existing_token)
     if [ -n "${METICHE_TOKEN:-}" ]; then
         if [ -n "$_found" ] && [ "$METICHE_TOKEN" = "$_found" ]; then
             TOKEN_FROM_PROFILE=1
+        elif token_in_env_backups "$METICHE_TOKEN"; then
+            TOKEN_STALE_SHELL=1
+            if [ -z "$_found" ]; then
+                ANCHOR="$METICHE_TOKEN"
+                ANCHOR_SOURCE="your shell's \$METICHE_TOKEN (it matches a backup of $ENV_FILE)"
+                return 0
+            fi
         else
             validate_token "$METICHE_TOKEN"
             TOKEN_EXPLICIT=1
@@ -1232,6 +1308,13 @@ resolve_team() {
         info "anchor: the token from $ANCHOR_SOURCE (never printed)"
         if [ "$TOKEN_FROM_PROFILE" -eq 1 ]; then
             info "  \$METICHE_TOKEN is set to that same saved token (your shell profile loads $ENV_FILE), so it counts as the saved token, not one you passed"
+        fi
+        if [ "$TOKEN_STALE_SHELL" -eq 1 ] && [ "$ANCHOR_SOURCE" = "$ENV_FILE" ]; then
+            warn "your shell still has the METICHE_TOKEN from before this machine's last install"
+            warn "(it matches a backup of $ENV_FILE); using the current saved token."
+            warn "Open a new terminal, or run: . $ENV_FILE"
+        elif [ "$TOKEN_STALE_SHELL" -eq 1 ]; then
+            info "  it is not a token you passed: there is no saved token now, so if the server rejects it a new identity is started"
         fi
     else
         info "anchor: none yet — the first client's token becomes it"
@@ -2259,6 +2342,243 @@ note_unverified() {
 EOF
 }
 
+# --------------------------------------------------------------- the board ---
+#
+# The last step: open the team's board in a browser, signed in.
+#
+# open_board mints a sign-in link, <board>/signin#mbl_<secret>. The secret is a
+# credential of its own: it works once, for ten minutes, signs ONE browser in
+# as this account, and cannot call a tool. That is why it may be shown to the
+# person running this, once, and a token may not.
+#
+# It still never goes on a command line, because `ps` shows every user's argv.
+# The browser gets it through a small redirect page written with printf (a
+# shell built-in, so no argv) into a 0600 file inside this run's 0700 scratch
+# directory. The opener is given that file's path, and the file is removed
+# before the script exits (by the exit trap too, on Ctrl-C).
+#
+# Nothing is minted under CI or without a terminal. Nobody is there to use the
+# link, and a CI log is the worst place a secret can land.
+
+# The opener for a local graphical session, or nothing.
+board_opener() {
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin)
+            if command -v open >/dev/null 2>&1; then printf 'open'; fi ;;
+        Linux)
+            if command -v xdg-open >/dev/null 2>&1 &&
+               { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+                printf 'xdg-open'
+            fi ;;
+    esac
+    return 0
+}
+
+over_ssh() {
+    [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_TTY:-}" ]
+}
+
+# The link goes, literally, into an HTML attribute, a script string and the
+# terminal. So only the shape open_board makes is accepted, over a character
+# set that cannot close a quote or start a tag.
+board_link_ok() {
+    case "$1" in
+        https://*/signin#mbl_?*|http://localhost*/signin#mbl_?*|http://127.0.0.1*/signin#mbl_?*) ;;
+        *) return 1 ;;
+    esac
+    case "$1" in
+        *[!A-Za-z0-9._~:/#-]*|*"#"*"#"*) return 1 ;;
+    esac
+    return 0
+}
+
+board_url_ok() {
+    case "$1" in
+        https://?*|http://localhost*|http://127.0.0.1*) ;;
+        *) return 1 ;;
+    esac
+    case "$1" in
+        *[!A-Za-z0-9._~:/-]*) return 1 ;;
+    esac
+    return 0
+}
+
+# The page the browser opens: it replaces itself with the link, sending no
+# referrer. $1 has passed board_link_ok.
+board_redirect_html() {
+    printf '<!doctype html>\n<meta charset="utf-8">\n<meta name="referrer" content="no-referrer">\n<meta http-equiv="refresh" content="0; url=%s">\n<title>metiche: signing in</title>\n<script>location.replace("%s")</script>\n' "$1" "$1"
+}
+
+# "18:12 (10 minutes)" in local time, from open_board's RFC 3339 UTC stamp.
+board_expiry_text() {
+    case "$1" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z) ;;
+        *) printf 'a few minutes from now'; return 0 ;;
+    esac
+    _estamp=$(printf '%s' "$1" | cut -c1-19)
+    _eepoch=$(TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%S' "$_estamp" +%s 2>/dev/null) ||
+        _eepoch=$(date -u -d "$_estamp" +%s 2>/dev/null) || _eepoch=""
+    case "$_eepoch" in
+        ""|*[!0-9]*)
+            printf '%s UTC' "$(printf '%s' "$_estamp" | cut -c12-16)"
+            return 0 ;;
+    esac
+    _emin=$(( (_eepoch - $(date +%s) + 30) / 60 ))
+    _elocal=$(date -r "$_eepoch" +%H:%M 2>/dev/null) ||
+        _elocal=$(date -d "@$_eepoch" +%H:%M 2>/dev/null) || _elocal=""
+    if [ "$_emin" -eq 1 ]; then _eunit="minute"; else _eunit="minutes"; fi
+    printf '%s (%s %s)' "${_elocal:-$(printf '%s' "$_estamp" | cut -c12-16) UTC}" "$_emin" "$_eunit"
+}
+
+board_later() {
+    info "Later: ask your assistant to \"open the metiche board\", or re-run this installer in a terminal."
+}
+
+board_step() {
+    step "Your board"
+    _btok=$(tok_get "$FIRST_CLIENT")
+    _btitle=$(client_title "$FIRST_CLIENT")
+    if [ -z "$_btok" ]; then
+        _btok="$ANCHOR"
+        _btitle="the anchor"
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        if [ "$OPEN_BOARD" = "no" ]; then
+            info "--no-open: would create no sign-in link"
+            return 0
+        fi
+        if [ "$OPEN_BOARD" = "yes" ]; then
+            info "would create a sign-in link with open_board as $FIRST_CLIENT for team \"${METICHE_TEAM_SLUG:-<the team>}\" (requested_via=installer), without asking"
+        else
+            info "would ask \"Open your board in a browser now, signed in? [Y/n]\" and, on yes, create a sign-in link with"
+            info "  open_board as $FIRST_CLIENT for team \"${METICHE_TEAM_SLUG:-<the team>}\" (requested_via=installer)"
+        fi
+        info "  only in a terminal, and never when CI is set: otherwise no link is created"
+        info "  on this machine's desktop: write it into a 0600 file in a private temporary directory, open that"
+        info "  file (never the link itself), and remove it; over SSH: print the link to open on your own machine"
+        return 0
+    fi
+
+    if [ "$OPEN_BOARD" = "no" ]; then
+        info "not opening it (--no-open or METICHE_OPEN_BOARD=no): no sign-in link was created."
+        board_later
+        return 0
+    fi
+    if [ -n "${CI:-}" ]; then
+        info "CI is set: no sign-in link was created (a secret has no business in a CI log)."
+        board_later
+        return 0
+    fi
+    if ! have_tty; then
+        info "no terminal: no sign-in link was created."
+        board_later
+        return 0
+    fi
+    if [ -z "$_btok" ] || [ -z "$TEAM_SLUG" ]; then
+        warn "no verified token or team to open the board with; skipping"
+        return 0
+    fi
+    if [ "$OPEN_BOARD" = "ask" ]; then
+        printf '    Open your board in a browser now, signed in? [Y/n] ' >/dev/tty
+        IFS= read -r _bans </dev/tty || _bans=""
+        case "$_bans" in
+            n|N|no|No|NO)
+                info "not opened: no sign-in link was created."
+                board_later
+                return 0 ;;
+        esac
+    fi
+
+    info "creating a sign-in link with open_board, as $_btitle"
+    _bres=""
+    if ! mcp_connect "$_btok" ||
+       ! _bres=$(mcp_call "$_btok" "open_board" "$(printf '{"team_slug":"%s","requested_via":"installer"}' "$TEAM_SLUG")"); then
+        _bwhy=$(mcp_error)
+        case "$_bwhy" in
+            *"unknown tool"*)
+                info "$URL has no open_board yet (an older metiche server), so the board cannot be opened signed in from here." ;;
+            *)
+                warn "could not create a sign-in link: $_bwhy"
+                board_later ;;
+        esac
+        return 0
+    fi
+    _blink=$(printf '%s' "$_bres" | jq -r '.login_url // empty' 2>/dev/null) || _blink=""
+    _bexp=$(printf '%s' "$_bres" | jq -r '.login_expires_at // empty' 2>/dev/null) || _bexp=""
+    _bboard=$(printf '%s' "$_bres" | jq -r '.board_url // empty' 2>/dev/null) || _bboard=""
+    _bvis=$(printf '%s' "$_bres" | jq -r '.team.visibility // empty' 2>/dev/null) || _bvis=""
+    _bres=""
+    : > "$MCP_TMP/body"
+    if ! board_link_ok "$_blink"; then
+        warn "open_board answered, but not with a sign-in link of the expected shape; not using it"
+        board_later
+        return 0
+    fi
+    board_url_ok "$_bboard" || _bboard=""
+    case "$_bvis" in
+        private) info "\"$TEAM_SLUG\" is private: its board is for members, after signing in." ;;
+        public)  info "\"$TEAM_SLUG\" is public: anyone can open ${_bboard:-its board}; signing in adds your view." ;;
+    esac
+    _bwhen=$(board_expiry_text "$_bexp")
+
+    _bopener=$(board_opener)
+    if [ -n "$_bopener" ] && ! over_ssh; then
+        mcp_tmpdir
+        _bdir="$MCP_TMP/signin"
+        _bfile="$_bdir/metiche-signin.html"
+        if (umask 077; mkdir -p "$_bdir" && board_redirect_html "$_blink" > "$_bfile") &&
+           chmod 600 "$_bfile" 2>/dev/null; then
+            if "$_bopener" "$_bfile" >/dev/null 2>&1; then
+                info "opened ${_bboard:-your board} in your browser."
+            else
+                warn "$_bopener could not open the sign-in page"
+            fi
+        else
+            warn "could not write the sign-in page into $_bdir"
+        fi
+        say ""
+        info "If nothing opened, this sign-in link does the same in any browser. It works ONCE and"
+        info "only until $_bwhen, and it signs that browser in as you, so do not share it:"
+        say ""
+        say "      $_blink"
+        say ""
+        # The browser reads the file after the opener has returned.
+        sleep "$BOARD_FILE_SECONDS"
+        rm -rf "$_bdir"
+        info "the sign-in page file is removed."
+    else
+        if over_ssh; then
+            info "this is an SSH session, so nothing is opened here."
+        else
+            info "no desktop browser to open here."
+        fi
+        info "Open this sign-in link in a browser on your own machine. It works ONCE and only until"
+        info "$_bwhen, and it signs that browser in as you, so do not share it:"
+        say ""
+        say "      $_blink"
+        say ""
+    fi
+    _blink=""
+    board_later
+    return 0
+}
+
+# The shell that ran this still exports whatever METICHE_TOKEN it had when it
+# started. If this run wrote a different anchor, a re-run or the metiche
+# repository's .mcp.json in this shell would use the old one.
+stale_shell_note() {
+    [ "$DRY_RUN" -eq 0 ] || return 0
+    [ -n "${METICHE_TOKEN:-}" ] || return 0
+    _saved=$(existing_token)
+    if [ -n "$_saved" ] && [ "$METICHE_TOKEN" != "$_saved" ]; then
+        say ""
+        warn "this terminal still has the previous METICHE_TOKEN. Open a new terminal (or run"
+        warn ". $ENV_FILE) before re-running the installer or using the metiche repository's .mcp.json."
+    fi
+    return 0
+}
+
 # --------------------------------------------------------------- uninstall ---
 #
 # Removes exactly what metiche owns — the same list the header gives — and
@@ -2489,6 +2809,9 @@ main() {
     else
         info "everything was already configured:$CONFIGURED"
     fi
+
+    board_step
+    stale_shell_note
 }
 
 main
