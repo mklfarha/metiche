@@ -422,7 +422,7 @@ stdin. It never selects a row value.
 
 - Last step of every `deploy/sql/*.sql` migration and of `deploy/scripts/apply-schema.sh`. apply-schema never adds columns (`deploy/scripts/apply-schema.sh:12-16`), so migrations are applied by hand.
 - In CI, against the committed `code/backend/metiche/core/repository/sql/schema/create.sql`. That check needs no database.
-- Daily drift check: see Q2.
+- Daily drift check: a host systemd timer on the box runs `gen-views.sh --check` through `kubectl exec`, like `apply-schema.sh`, in addition to the CI check above (§13 Q2).
 
 ---
 
@@ -808,7 +808,7 @@ the node's disk was lost.
 | `nuzur_ro` password | step 1, random | `/etc/metiche/nuzur_ro.env` (root 0600) → Secret `nuzur-agent-db`, plus inside the encrypted DSN on the PVC | `printf` builtin into `kubectl exec` stdin (MySQL); Secret volume in setup mode → in-pod `nuzur-cli` argv (D7) | typed, echoed, in `kubectl`'s argv, in values, in the repo, on the laptop |
 | machine-id | step 4, random | `/etc/metiche/nuzur-agent.machine-id` (0600) → Secret `nuzur-agent-machine-id` | Secret volume, read-only | regenerated, retyped, in values, in the repo |
 | provisioning token | owner, browser, just before step 9 | nowhere; single use, 15 min | pasted into the masked prompt | argv, env, file |
-| agent token | pairing | PVC, 0600 (`cli/app/command_agent.go:270-281`) | read by the daemon and sent in `Hello` | copied, backed up (Q1), hashed for display |
+| agent token | pairing | PVC, 0600 (`cli/app/command_agent.go:270-281`) | read by the daemon and sent in `Hello` | copied, backed up (§13 Q1: no PVC backup), hashed for display |
 | DSN | step 10 | PVC `keyring/dsn-<uuid>`, encrypted, 0600 | read by the daemon | the plaintext fallback files or env (§4.E) |
 
 Nothing under `deploy/` contains a secret. `.gitignore` already covers
@@ -923,14 +923,10 @@ Changes to existing files:
 
 ---
 
-## 13. Open questions
+## 13. Decisions (owner-approved 2026-09-13)
 
-1. **Q1: back up the PVC?** It holds the agent token and the encrypted DSN.
-   - **Recommendation: no backup.** Losing it costs one provisioning token, one re-pair and re-pointing the data manager (§8, "PVC loss"). A backup would be a second copy of a live credential to protect.
-2. **Q2: where does the daily views drift check run?**
-   - Option A: a host systemd timer on the box running `gen-views.sh --check`. It uses `kubectl exec`, like `apply-schema.sh`.
-   - Option B: an in-cluster CronJob. It would need MySQL root credentials in a pod and its own NetworkPolicy exception.
-   - **Recommendation: Option A plus the CI check.** No root credential leaves the MySQL pod.
-3. **Q3: CLI upgrade policy.**
-   - **Recommendation:** stay pinned at 1.9.2. Upgrade only when needed, for example when the server raises `min_cli_version` and the pod reports CLI-too-old (`cli/agent/daemon.go:141-143`, `:220-225`).
-   - Each upgrade is a rebuild with a new pinned sha256, a `helm upgrade`, then P1.
+These add to the decisions already recorded in §2, which stand unchanged.
+
+1. **Q1: back up the PVC?** No backup. Losing it costs one provisioning token, one re-pair and re-pointing the data manager (§8, "PVC loss"), while a backup would be a second copy of a live credential (the agent token and the encrypted DSN) to protect.
+2. **Q2: where does the daily views drift check run?** A host systemd timer on the box runs `gen-views.sh --check` via `kubectl exec` (like `apply-schema.sh`), plus the CI check; no in-cluster CronJob. No MySQL root credential leaves the MySQL pod, and no extra NetworkPolicy exception is needed.
+3. **Q3: CLI upgrade policy.** `nuzur-cli` stays pinned at 1.9.2 and is upgraded only when the server forces it (it raises `min_cli_version` and the pod reports CLI-too-old, `cli/agent/daemon.go:141-143`, `:220-225`); each upgrade is a rebuild with a new pinned sha256, a `helm upgrade`, then P1 re-run (§10.3). Every upgrade has to re-prove P1, so none happens without a reason.

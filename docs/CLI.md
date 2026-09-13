@@ -33,7 +33,7 @@ invisible until somebody spends hours reading logs by hand.**
   the git root. The server finds a project by `(team, key)` alone (`app/mcp/sessions.go:111`,
   `handler.go:226-240`, unique index `uq_project_team_key`) and stores `repo_url` only when it
   creates one (`sessions.go:43,130`). So it made two projects, and a real collision on `app/rest.go`
-  was never detected. A server fix is in flight: `start_session` matches by normalized `repo_url`.
+  was never detected. A server fix is committed (`1b44075`): `start_session` matches by normalized `repo_url`.
   `metiche init` (§1.10) is the CLI half, and doctor detects the split (§2.2.1).
 - **A second team with the same name is one call away.** `create_team` dedupes only on its
   idempotency key, from which it derives the team's uuid (`createteam.go:129-132`). The same name
@@ -367,7 +367,7 @@ These stay out of the CLI for now:
 Both are owner acts against *another person*, on anonymous accounts whose display names nobody
 verified (`createteam.go:73-80`).
 
-**Dependency on `docs/BOARD_LOGIN.md`** (a design for owner review; nothing is implemented):
+**Dependency on `docs/BOARD_LOGIN.md`** (a design the owner approved on 2026-09-13; nothing is implemented):
 - It gives people an authenticated browser view of private boards, through a sign-in link minted
   by `open_board`.
 - It fixes F2 and re-checks membership on every request, and every 60 s on an open stream (its
@@ -376,7 +376,7 @@ verified (`createteam.go:73-80`).
 - It keeps the board **read-only against the backend** (its Non-goals), so these writes will not
   live on the board either.
 
-**Recommendation:** add them after board login's deploy, as owner-only MCP tools
+**Decided (§10 Q11):** add them after board login's deploy, as owner-only MCP tools
 (`set_team_visibility`, `remove_member`, `set_member_role`). Each gets a `metiche teams` subcommand,
 destructive annotations and a structural event (§10). §1.4.4's "only owner" refusal then gets its
 remediation.
@@ -387,8 +387,8 @@ remediation.
 metiche open [<slug>] [--print]
 ```
 
-> **This command changes when board login lands** (`docs/BOARD_LOGIN.md` §5.3, a design for owner
-> review). What changes:
+> **This command changes when board login lands** (`docs/BOARD_LOGIN.md` §5.3, a design the owner
+> approved on 2026-09-13). What changes:
 > - a private team: `open` calls `open_board`, writes the single-use sign-in link into a 0600
 >   redirect file in a private temp directory, opens that file, and removes it;
 > - `--print` prints the link and its expiry;
@@ -742,11 +742,11 @@ Exit codes:
 
 #### 1.10.4 `project` from `.metiche` versus the repository URL: which wins
 
-Once the `start_session` fix lands, an agent sends both `project_key` (from `.metiche`) and
+With the `start_session` fix (commit `1b44075`), an agent sends both `project_key` (from `.metiche`) and
 `repo_url`, and they can disagree: the file is stale, it was copied from another repository, or it
 was written by hand.
 
-**Recommendation: the repository wins.** The server matches the project by normalized `repo_url`
+**Decided (§10 Q5): the repository wins.** The server matches the project by normalized `repo_url`
 first. When that project's key differs from the `project_key` sent, the session goes on the
 repository's project, and the response note says so ("this repository is project `taqueria`;
 `.metiche` says `taqueria_tracker`"). The agent tells the person once and suggests
@@ -762,6 +762,21 @@ repository's project, and the response note says so ("this repository is project
   and tells the person, and never invents a third key.
 - **A consequence to accept:** one repository is one project. A monorepo that wants several
   projects is not supported until the server supports it (§10).
+
+**Gap in commit `1b44075`** (verified against `app/mcp/projectrepo.go` and `app/mcp/sessions.go`):
+- The precedence matches: an active project with the same normalized `repo_url` is used whatever key
+  was sent, and a key bound to another repository is refused, naming that repository.
+- **The disagreement is not reported.** `resolveProject`'s repository match returns no note; the only
+  project note is `newProjectNote`, on creation; and the response does not carry the project's key.
+  So the note quoted above, and §4.12 item 3, are still owed by the server's owner. Until then
+  `doctor`'s `binding.project` is the only place the mismatch is reported.
+- **The disagreeing key is not entirely unused.** The `session_started` event summary
+  ("… started work on <key>", `sessions.go:100`) is built from the key as sent, before resolution,
+  so the board timeline can show the `.metiche` key while the session is on the repository's project.
+- **"The key decides only without a remote" is narrower in the code.** With a remote but no active
+  project for that repository yet, the key still picks the project: an existing project with that
+  key and no `repo_url` is backfilled, otherwise a new project is created under that key. A remote
+  with no host (a local path) counts as no remote.
 
 The alternative, `.metiche` wins, was considered and rejected: an explicit human declaration is
 attractive, but tonight's split came from a *plausible* key, and a committed file would make a wrong
@@ -787,7 +802,7 @@ Codex `AGENTS.md` block must all say (their owners write it; §4.12 lists the te
 4. **Before `create_team`**, call `list_teams`. If you are already on a team with that name, use its
    slug. Create a second only when the person explicitly asks, with `allow_duplicate_name: true`.
 
-#### 1.10.6 Is `.metiche` honoured today? (verified 2026-09-12, before the in-flight fix)
+#### 1.10.6 Is `.metiche` honoured today? (verified 2026-09-12, before the `start_session` fix `1b44075`)
 
 | where | what it does | gap |
 |---|---|---|
@@ -797,7 +812,7 @@ Codex `AGENTS.md` block must all say (their owners write it; §4.12 lists the te
 | server instructions (`server.go:115-160`) | the loop starts at `join_team`; "pass team_slug when you are on more than one" | no mention of `.metiche` or `list_teams` |
 | skill (`skill/metiche-teamwork/SKILL.md`, byte-identical to `plugin/skills/metiche-teamwork/SKILL.md`) | the loop (lines 29-37) and tool table (lines 47-63) | **zero mentions** of `.metiche`, `list_teams` or `team_slug`. The worked example (line 267) calls `start_session(project: "metiche", …)`, with a parameter name the tool does not have (`project_key`, `sessions.go:35`) and no `repo_url` |
 | installer's Codex block (`install.sh:2120-2141`) | "Call `start_session` before you touch any file" | no team binding, no `.metiche`, no project guidance; `install.sh` never writes `.metiche` (`IDENTITY.md:305-306`) |
-| `start_session` (`sessions.go:35,61-64,111-143`) | `project_key` is required free text; lookup is by `(team, key)`; `repo_url` is stored only on creation | the incident. The in-flight fix covers matching, derivation, backfill and refusal; nothing server-side can read `project` from the file |
+| `start_session` (`sessions.go:35,61-64,111-143`) | `project_key` is required free text; lookup is by `(team, key)`; `repo_url` is stored only on creation | the incident. The fix, since committed as `1b44075`, covers matching, derivation, backfill and refusal; nothing server-side can read `project` from the file |
 | `RequireTeam` with no slug (`auth.go:578-592`) | exactly one team → silently used | "say so once" (`PLAN.md:286-291`) is agent-side only; nothing enforces or records the announcement |
 | CLI (this plan, before this revision) | `open` and `doctor` read `.metiche`; nothing writes one; `binding/` is a reader only (§5) | closed by §1.10 |
 
@@ -868,7 +883,7 @@ every remediation is a command for the person.
 | `binding.file` | around | the nearest `.metiche` parses; has `team`; no key appears twice; it is a regular file | missing `team` → error: "`<path>` has no `team =` line, so agents ignore it. Run `metiche init --force` here." Duplicate key → warn: "`<path>` sets `<key>` twice; the last one wins." Unknown key named like a secret (`token`, `secret`, `code`, `key`, `password`) or any value containing `://…@` → error: "`<path>` holds something that looks like a credential (`<key>`). A .metiche must only name a team and a project. Remove it, and if it was ever committed, treat that credential as leaked." The value is never printed. |
 | `binding.project_scope` | around | no `project` line in any `.metiche` above the git root | → warn: "`<path>` is above this repository (`<root>`) and sets `project = <key>`, which agents ignore: a project belongs to one repository. Remove that line; bind the repository itself with `metiche init`." |
 | `binding.project` | server | the `project` in effect (from a file at or below the git root) is the bound team's project for this repository, or there is none yet | differs from the project whose `repo_url` is this repository → warn: "`<path>` says project `taqueria_tracker`, but this repository is project `taqueria` on taqueria-tracker. Agents land on `taqueria` (the repository wins, §1.10.4). Fix the file: `metiche init --force`." The key belongs to another repository → error: "Project `<key>` on `<team>` belongs to `<other repo>`, so start_session will refuse it here. Run `metiche init --force`." No project yet → info: "Project `<key>` will be created on the first start_session." No remote → `skip`: "no repository URL to compare". |
-| `binding.split` | server | at most one active project on the bound team has this repository's normalized `repo_url` | ≥ 2 → **error**: "This repository is N projects on `<team>`: `taqueria` (2 live, 12s ago), `taqueria_tracker` (1 live, 3m ago). Collisions between sessions in different projects are never detected. Have the agents in `<the ones not named in .metiche>` end their sessions and start again from the repository root. Folding the old project's history in is a server-side decision (§10)." Projects with **no** `repo_url` whose key equals the derived key or the name of a directory between the git root and the working directory's parents → info, listing them: "These projects have no repository recorded and may be this repository from before it was recorded: `taqueria_tracker`." It is never an error, because that is a hint, not a match. |
+| `binding.split` | server | at most one active project on the bound team has this repository's normalized `repo_url` | ≥ 2 → **error**: "This repository is N projects on `<team>`: `taqueria` (2 live, 12s ago), `taqueria_tracker` (1 live, 3m ago). Collisions between sessions in different projects are never detected. Have the agents in `<the ones not named in .metiche>` end their sessions and start again from the repository root. There is no merge tool: let the stray project go idle (§10 Q13)." Projects with **no** `repo_url` whose key equals the derived key or the name of a directory between the git root and the working directory's parents → info, listing them: "These projects have no repository recorded and may be this repository from before it was recorded: `taqueria_tracker`." It is never an error, because that is a hint, not a match. |
 | `binding.teams_split` | server | this repository is a project on at most one of your teams | ≥ 2 → warn: "Sessions from this repository go to N boards: `taqueria` on taqueria-tracker (live 12s ago), `taqueria` on hack-night (3d ago). If one is wrong, end its sessions and bind the repository: `metiche init --team <slug> --force`." |
 | `account.duplicate_teams` | server | no two of your teams share a normalized name (`slugKey(name, 40)`) | → warn: "You are on N teams named "Hack Night": `hack-night` (member, 6 members), `hack-night-3f9a1c` (owner, 1 member). An agent asked to choose sees both. Keep one: bind repositories with `metiche init --team <slug>`, and leave the other with `metiche teams leave <slug>` once nothing runs there." Runs anywhere, not only in a repository. |
 
@@ -1095,7 +1110,7 @@ to exit codes without matching prose.
 | `rename_team` | new tool | **owner** | 4.10 | 2 |
 | `leave_team` | new tool | **the member themself**, never another | 4.11 | 2 |
 | guidance: `list_teams` note and description, `create_team` description, server instructions, skill, Codex block | text | — | 4.12 | **0** |
-| `start_session` repository match (in flight, owned elsewhere) | changed tool | unchanged | 4.12 | prerequisite |
+| `start_session` repository match (committed `1b44075`, owned elsewhere) | changed tool | unchanged | 4.12 | prerequisite |
 
 ### 4.1 `whoami`
 
@@ -1226,7 +1241,7 @@ Only `project.status` active projects. Ordered by `last_activity_at` desc, then 
 |---|---|
 | Params | `team_slug` (optional); `label` (≤ 80, optional); `max_uses` (1–1000, optional = unlimited); `expires_in_hours` (1–720, optional = never); `idempotency_key` (required, ≥ 8 chars) |
 | Annotations | `additive` (DestructiveHint false, IdempotentHint false, OpenWorldHint false): two keys make two invites; the key makes a *retry* safe |
-| Authorization | live member via `RequireTeam`. **Owner:** unrestricted. **Member:** `max_uses` ≤ 25 and `expires_in_hours` ≤ 168 are required; omitted values default to 10 and 72 (owner question, §10). |
+| Authorization | live member via `RequireTeam`. **Owner:** unrestricted. **Member:** `max_uses` ≤ 25 and `expires_in_hours` ≤ 168 are required; omitted values default to 10 and 72 (decided, §10 Q1). |
 | Rate limit | new `createInviteLimit`, keyed by account id; `METICHE_CREATE_INVITE_PER_HOUR`, default 30 |
 | Errors | `invalid_argument: …` (bounds, missing key), `not_permitted: members may create invites with at most 25 uses and 7 days`, `rate_limited: …`, `RequireTeam`'s errors |
 
@@ -1303,12 +1318,12 @@ true` and `ok`. Revocation takes effect on the next redemption: `redeemInvite` a
 |---|---|
 | a separate identity-debug tool | folded into `whoami` (`headers_received`, `recent_requests`): one question, "what does the server see of me" |
 | `list_projects` | a scope on `get_team_state` (§4.2) |
-| `list_agents` / `retire_agent` | doctor detects collapse and stale identities from per-token `whoami`. Retiring stale server-side agents is a real gap, but a separate decision (§10) |
+| `list_agents` / `retire_agent` | doctor detects collapse and stale identities from per-token `whoami`. Retiring stale server-side agents is a real gap, left for later (§10 Q4) |
 | REST routes for the CLI | the REST API is default-deny by design; the MCP endpoint is the one public door |
 | rotating a token from the CLI | tokens are minted and kept by `join_team`, which the installer drives. A second writer of client tokens is exactly what `IDENTITY.md` removed. |
 | `list_members` | a scope on `get_team_state` (§4.9) |
 | `set_team_visibility`, `remove_member`, `set_member_role`, `archive_team` (for now) | acts on exposure or on other people, on anonymous accounts. They come after board login's deploy, which fixes the board serving a team made private (F2) and keeps the board itself read-only. Owner-only MCP tools then (§1.4.5, §10). |
-| `merge_projects`, to heal a split repository | the `start_session` fix stops new splits. Folding sessions, claims and conflicts from one project into another is a data migration that needs owner judgement, not a CLI verb. Doctor reports splits (§2.2.1); §10 asks. |
+| `merge_projects`, to heal a split repository | the `start_session` fix stops new splits. Folding sessions, claims and conflicts from one project into another is a data migration that needs owner judgement, not a CLI verb. Doctor reports splits (§2.2.1); no merge tool now (§10 Q13). |
 | the server reading `.metiche`, or deriving a **team** from `repo_url` | the server never reads the disk (`PLAN.md:303-304`), and a team inferred from a URL is the guess `PLAN.md` forbids. A *project* matched within the chosen team is not that guess (§1.10.4). |
 
 The surface goes from 13 registered tools (8 in `server.go`, 3 work tools, 2 instruction tools) to 19:
@@ -1426,9 +1441,9 @@ needs. **A scope, not a tool**, for §4.2's reason.
   silently.
 - Result: `{"ok":true,"team_slug":"…","previous_name":"…","name":"…","changed":true}`. The same name
   gives `changed: false`.
-- **Event.** `EventKind` has no rename kind (`enums/event_kind.go:15-37`). The recommendation is to
-  add `team_renamed` in the nuzur model, as a structural event, so `board_revision` moves and boards
-  re-render the title. Without it, the board shows the new name on its next full load (§10).
+- **Event.** `EventKind` has no rename kind (`enums/event_kind.go:15-37`). The decision (§10 Q10) is to
+  add `team_renamed` in the nuzur model in phase 2, as a structural event, so `board_revision` moves
+  and boards re-render the title. Until it exists, the board shows the new name on its next full load.
 - Tests: an owner renames; a member is refused; the slug is unchanged; a duplicate is refused, and
   allowed with the flag; idempotent.
 
@@ -1456,8 +1471,8 @@ Refusals, checked under the team row lock:
 - Your invites stay valid: they belong to the team, and an owner can revoke them. A leaver who
   redeems a still-valid invite is reinstated (`ensureMember`, `join.go:339-360`), which by design is
   the invite issuer's decision.
-- **Event.** The recommendation is to add `member_left` in the nuzur model, as a structural event,
-  since a lane disappears. Without it, the lane goes on the next full load (§10).
+- **Event.** The decision (§10 Q10) is to add `member_left` in the nuzur model in phase 2, as a
+  structural event, since a lane disappears. Until it exists, the lane goes on the next full load.
 - **`RequireTeam`'s error for a former member.** When the slug names a team where the caller has a
   *revoked* membership row, the message is `not_found: you left <slug> on <date>` instead of the
   generic one. It reveals the team's existence only to a former member, and it is how `doctor`'s
@@ -1468,7 +1483,7 @@ Refusals, checked under the team row lock:
 
 ### 4.12 What this plan needs from the `start_session` fix, and the guidance text
 
-The fix in flight is owned elsewhere (`sessions.go`, `server.go`, the skill). It matches projects by
+The fix is committed (`1b44075`) and owned elsewhere (`sessions.go`, `server.go`, the skill). It matches projects by
 normalized `repo_url`, derives the key when `project_key` is omitted, backfills `repo_url`, refuses a
 key bound to another repository, and notes existing projects when it creates one. `metiche init` and
 doctor depend on it for four things:
@@ -1483,9 +1498,9 @@ doctor depend on it for four things:
    - `ssh://git@github.com/mklfarha/taqueria.git`
    - `https://<user>:<token>@github.com/mklfarha/taqueria.git` — this one proves `userinfo` is
      stripped and never stored.
-3. **Precedence as in §1.10.4: the repository first.** When the passed `project_key` differs from
-   the matched project's key, the note names both. If the fix lands with the other precedence,
-   §1.10.4 and `binding.project` change with it.
+3. **Precedence as in §1.10.4: the repository first** (decided, §10 Q5; `1b44075` implements it).
+   When the passed `project_key` differs from the matched project's key, the note names both.
+   **`1b44075` does not do this yet** (§1.10.4, "Gap"), so it is still owed by the server's owner.
 4. **The refusal names the other repository's normalized URL**, so `init` and the agent can say
    which repository holds the key.
 
@@ -1669,7 +1684,7 @@ Assets per release `vX.Y.Z`: `metiche_Darwin_arm64.tar.gz`, `metiche_Darwin_x86_
 
 **Tags.** The repo has no tags today (verified), and images are tagged by short commit
 (`deploy/scripts/build-images.sh`), so `v*` is free for the CLI. GoReleaser OSS has no monorepo tag
-prefix. (Owner question, §10.)
+prefix. (Decided: bare `v*` tags are reserved for CLI releases, §10 Q2.)
 
 ### 6.2 Workflows
 
@@ -2005,7 +2020,7 @@ Each phase follows `IDENTITY.md`'s execution rules:
 - no credential in any file.
 
 **Ordering, and why.** Phase 0 is server-only and small, and it stops new damage now (duplicate
-teams). The `start_session` repository fix, in flight elsewhere, stops new splits and is a
+teams). The `start_session` repository fix, committed elsewhere as `1b44075`, stops new splits and is a
 prerequisite for `init`'s project resolution. Phase 1 gives a person the reads and the one local
 write (`init`) that repairs bindings. Phase 2 adds every server write the CLI makes (invites, team
 create, rename, leave), so all mutating tools ship and are proven together. Phase 3 releases.
@@ -2020,14 +2035,14 @@ create, rename, leave), so all mutating tools ship and are proven together. Phas
 - `install.sh`'s duplicate check switches to `slugKey` normalization, mirrored to
   `code/frontend/static/install.sh`.
 
-**Coordination.** `server.go`, `sessions.go` and the skill are being changed by the `start_session`
-fix right now. Phase 0 starts `createteam.go` immediately. It touches `server.go`, the skill and
-`listteams.go`'s note only **after that work is committed**, and rebases onto it.
+**Coordination.** The `start_session` fix that changed `server.go`, `sessions.go` and the skill is
+committed (`1b44075`). Phase 0 starts `createteam.go` immediately, and its text changes to
+`server.go`, the skill and `listteams.go`'s note build on that commit.
 
 Agents with distinct files:
 - A · `createteam.go` and its tests;
 - B · text in `server.go`, `listteams.go`, the skill and its plugin copy, and `install.sh` (the
-  block and the check), after the fix lands.
+  block and the check), on top of the fix (`1b44075`).
 
 **Done when:**
 1. §4.8's guard tests are green through the real transport, output pasted, including the replay
@@ -2104,7 +2119,7 @@ C, D and E are written against B's interfaces; D and E wait for A's deploy for t
   - `list_invites`, `create_invite`, `revoke_invite`, and `METICHE_CREATE_INVITE_PER_HOUR`;
   - `rename_team`, `leave_team` (with the former-member `RequireTeam` message);
   - `create_team`'s identity defaults for an agent token (§4.8);
-  - the `team_renamed` and `member_left` event kinds, if §10 approves the nuzur model change.
+  - the `team_renamed` and `member_left` event kinds (nuzur model change approved, §10 Q10).
 - CLI: `invite list|create|revoke`; `teams create|rename|leave`.
 - Docs:
   - `docs/PLAN.md` tool table (19 tools);
@@ -2150,84 +2165,34 @@ C, D and E are written against B's interfaces; D and E wait for A's deploy for t
 - Self-update (§6.5).
 - Windows builds and paths.
 - Cosign keyless signing of the checksums, and an SBOM.
-- `retire_agent` and `metiche agents` (if §10 says so).
+- `retire_agent` and `metiche agents` (§10 Q4: later, not phase 2).
 - `metiche open` for private teams, once the board service has a viewer gate (browser login,
   `docs/BOARD_LOGIN.md`). Until then `open` declines private teams (§1.5).
 - After board login's deploy: `set_team_visibility`, `remove_member`, `set_member_role` (ownership
   transfer, which unblocks `teams leave` for a sole owner) and `archive_team`, as owner-only MCP
   tools with `metiche teams` subcommands (§1.4.5). The board stays read-only.
-- `merge_projects`, or a one-off migration, for repositories split before the fix, if §10 says so.
+- `merge_projects`, or a one-off migration, for repositories split before the fix, only if splits recur after the fix (§10 Q13).
 - Several projects per repository (monorepos), if the server ever supports it (§1.10.4).
 - Delivery evidence across several replicas, if the deployment splits.
 
 ---
 
-## 10. Open questions for the owner
+## 10. Decisions (owner-approved 2026-09-13)
 
-1. **Invites by plain members.** Should members create invites (capped at 25 uses and 7 days, and
-   revoking only their own), or only owners? The spec above allows capped member invites.
-2. **Tags.** May bare `v*` tags be reserved for CLI releases in this monorepo? GoReleaser OSS has no
-   tag prefix, and nothing uses tags today.
-3. **The board viewer gate on the roadmap.** Today a private team has no browser view at all: the
-   board runs without a board token, so `/t/<private-slug>` is a 404, and `metiche open` declines
-   private teams (§1.5). A viewer gate (browser login, e.g. GitHub OAuth) is a board-service backlog
-   item. It must exist before a board token is ever configured; without it, discovery would render
-   any team that token can read to anyone who knows the slug.
-
-   Should the gate join this roadmap as a phase after 3, so `open` can serve private teams? Or should
-   it stay a separate board-service project, with `metiche status` as the private-team view for now?
-
-   **Update:** the gate is now designed in `docs/BOARD_LOGIN.md`: sign-in links minted by
-   `open_board`, and no board token. It is for owner review, and nothing is implemented. Its §5.3
-   lists what changes here.
-4. **Stale server-side agents.** Old per-machine agents and agents holding account tokens linger in
-   team state (and on public teams' boards). Add `retire_agent` plus `metiche agents list|retire` in phase 2, or leave it for later?
-5. **`project` in `.metiche` versus the repository URL.** **Recommendation: the repository wins**
-   (§1.10.4). The server matches by normalized `repo_url`; a differing `project_key` is reported in
-   the note and by doctor, never obeyed. The file wins only when there is no remote. The alternative
-   (the file wins) lets one stale or copied file recreate tonight's split for every clone. This must
-   agree with the in-flight `start_session` fix; please confirm before it merges.
-6. **`project` in a parent-directory `.metiche`.** **Recommendation: ignored, with a doctor
-   warning**, and `init --parent` refuses to write one. A parent file covers several repositories,
-   and a project is one repository. `PLAN.md`'s example (`~/work/hackathon/.metiche` with
-   `project = orbital-freight`) should drop that line, and its comment "defaults to the repo
-   directory name" should become "defaults to the name the server derives from the repository's
-   remote" (owned in `PLAN.md`).
-7. **Should `init` suggest committing `.metiche`?** **Recommendation: yes, print-only, never run
-   git**, with the one-line caveat that a public repository publishes the slug, which grants no
-   access (`PLAN.md:284-285`). Committing is what makes every teammate's clone bind with no
-   question. The cost is a visible slug, and the private-by-default board makes that harmless.
-8. **Duplicate-name guard: refuse or warn?** **Recommendation: refuse, with
-   `allow_duplicate_name: true` as the explicit override** (§4.8). A warning inside a successful
-   response is exactly what a model skims past, and the second team is what then confuses every
-   later "which team?" question. Normalization is `slugKey` (the slug base), so the check fires
-   exactly when the slugs would have collided.
-9. **Leaving as the sole owner, or the last member.** **Recommendation: refuse both for now**
-   (§4.11). Ownership transfer and archiving come later as owner-only tools, after board login
-   (§1.4.5). Auto-promoting the
-   longest-standing member would silently make someone an owner who never asked. Allowing the last
-   member to leave orphans a team whose first invite never expires.
-10. **Event kinds for rename and leave.** **Recommendation: add `team_renamed` and `member_left` to
-    the nuzur model in phase 2**, both structural. Invites could skip events because they are not
-    board state; a team's name and its member lanes are.
-11. **Visibility, member removal and roles.** **Recommendation: owner-only MCP tools with CLI
-    subcommands after board login's deploy, not board controls** (§1.4.5). `docs/BOARD_LOGIN.md`
-    keeps the board read-only against the backend, so the board is not their home. Its F2 fix and
-    per-request membership checks are what make a visibility change or a removal take effect
-    everywhere a person can look. Each gets a structural event, so the change is visible on the
-    board.
-12. **Do agents write `.metiche` themselves?** **Recommendation: they may, but prefer
-    `metiche init --team <slug>` when `metiche` is on `PATH`** (§1.10.5), and always at the git
-    root. `PLAN.md` has agents write it; the CLI makes placement and format consistent, which is
-    precisely what went wrong from the parent folder.
-13. **Repositories already split** (`taqueria` / `taqueria_tracker`). **Recommendation: no merge
-    tool now.** Doctor reports the split. The owner ends the sessions in the stray project and lets
-    it go idle, and the fix's backfill keeps new sessions on one project. Revisit `merge_projects`
-    only if splits recur after the fix.
-14. **Should the installer run `metiche init`?** `IDENTITY.md` lists "the installer writing
-    `.metiche`" as open. **Recommendation: no.** The installer is machine-global and runs outside
-    any particular repository. It ends by printing "in each repository: `metiche init`", and the
-    agents' `list_teams` note covers repositories nobody bound.
+1. **Invites by plain members:** members may create invites, capped (`max_uses` ≤ 25, `expires_in_hours` ≤ 168, defaults 10 and 72) and revoking only their own; owners are unrestricted (§4.4). Adding a teammate need not wait on the owner, and the caps bound what a member's invite can admit.
+2. **Tags:** bare `v*` tags are reserved for CLI releases. The repo has no tags, images are tagged by short commit, and GoReleaser OSS has no monorepo tag prefix (§6.1).
+3. **The board viewer gate:** a separate board-service plan, `docs/BOARD_LOGIN.md` (sign-in links minted by `open_board`, no board token; owner-approved 2026-09-13, not implemented), not a phase here; until it ships `metiche status` is the private-team view and `open` declines private teams, and its §5.3 lists what then changes here. The gate must exist before any private board is served, and that design serves them without ever configuring a board token.
+4. **Stale server-side agents:** `retire_agent` and `metiche agents list|retire` are left for later, not phase 2 (§4.7, "Later"). Doctor already detects stale and collapsed identities from per-token `whoami`, and retiring is a destructive server write that needs its own design.
+5. **`project` in `.metiche` versus the repository URL:** the repository wins (§1.10.4): the server matches by normalized `repo_url`, a disagreeing `project_key` is reported, never used, and the key decides only without a remote. This agrees with commit `1b44075` on precedence and refusal; the report in the note is not implemented yet, the sent key still reaches the event summary, and the key also names the project when no project has the repository yet (§1.10.4, "Gap"). One stale or copied file must not recreate the split for every clone.
+6. **`project` in a parent-directory `.metiche`:** ignored with a doctor warning, `init --parent` refuses to write one, and `PLAN.md`'s example drops its `project` line and says "defaults to the name the server derives from the repository's remote" (owned in `PLAN.md`). A parent file covers several repositories; a project is one.
+7. **Should `init` suggest committing `.metiche`:** yes, print-only, never running git, with the caveat that a public repository publishes the slug, which grants no access (`PLAN.md:284-285`). Committing binds every teammate's clone with no question, and the private-by-default board makes a visible slug harmless.
+8. **Duplicate-name guard:** refuse, with `allow_duplicate_name: true` as the explicit override, normalized by `slugKey` (§4.8). A warning in a successful response is what a model skims past, and a second team confuses every later "which team?".
+9. **Leaving as the sole owner, or the last member:** refuse both for now (§4.11); ownership transfer and archiving come later as owner-only tools after board login (§1.4.5). Auto-promotion would make someone an owner who never asked, and a last-member leave orphans a team whose first invite never expires.
+10. **Event kinds for rename and leave:** add `team_renamed` and `member_left` to the nuzur model in phase 2, both structural. A team's name and its member lanes are board state; invites are not.
+11. **Visibility, member removal and roles:** owner-only MCP tools with CLI subcommands after board login's deploy, each with a structural event, not board controls (§1.4.5). The board stays read-only against the backend, and board login's F2 fix and per-request membership checks make the change take effect everywhere a person can look.
+12. **Do agents write `.metiche` themselves:** they may, but prefer `metiche init --team <slug>` when `metiche` is on `PATH`, always at the git root (§1.10.5). The CLI keeps placement and format consistent, which is exactly what went wrong from the parent folder.
+13. **Repositories already split** (`taqueria` / `taqueria_tracker`): no merge tool now; doctor reports the split, the owner ends the stray project's sessions and lets it go idle, and `merge_projects` is revisited only if splits recur. The fix's repository match and backfill keep new sessions on one project.
+14. **Should the installer run `metiche init`:** no; it ends by printing "in each repository: `metiche init`". The installer is machine-global and runs outside any repository, and `list_teams`'s note covers repositories nobody bound.
 
 Known unknowns that are not questions, verified during phase 1 on real installs:
 - Cursor's `list-tools` and IDE-log text on an HTTP 401;

@@ -1,7 +1,7 @@
 # Board login: a sign-in link from the terminal
 
-Status: **design for owner review. Nothing here is implemented.** The schema in §3 is a proposal to be
-modelled in nuzur, reviewed and approved by the owner **before** any codegen.
+Status: **design, owner-approved 2026-09-13 (decisions in §9). Nothing here is implemented.** The schema
+in §3 was approved and published in nuzur as `v5-browser-login` on 2026-09-13; codegen is pending.
 
 ## Why
 
@@ -21,13 +21,14 @@ leaves the owner with no way to see their own board:
 So the owner ran the installer, got a private team (`createteam.go` writes
 `enums.TEAM_VISIBILITY_PRIVATE`), and could not see it. The installer's final "Done" block
 (`install.sh` `main`) prints no board URL at all. `docs/CLI.md` §1.5 had to make `metiche open`
-decline private teams, and §10 Q3 names the missing viewer gate as the blocker.
+decline private teams, and §10 Q3 named the missing viewer gate as the blocker.
 
 **The direction:** a short-lived, single-use sign-in link, minted with the credential the machine
 already holds (a per-agent bearer token) and exchanged by the board for a browser session for that
 **account**. The browser then sees the private boards of every team that account is a live member
-of. There is no sign-up and no password. GitHub OAuth later adds a second way into the same browser
-session.
+of. There is no sign-up and no password. There is no GitHub login yet (owner-confirmed 2026-09-13):
+sign-in is based on the per-agent token the installer wrote. GitHub OAuth may later add a second way
+into the same browser session.
 
 ---
 
@@ -77,7 +78,8 @@ background.
 - No public REST surface. No backend route added here is routed by any ingress.
 - No multi-replica board session affinity. The board is `replicaCount: 1`, and sessions live in the
   database anyway.
-- No GitHub OAuth in this plan. Only the seams it needs (§3, `auth_method`).
+- No GitHub OAuth in this plan, and no GitHub login exists yet (owner-confirmed 2026-09-13): sign-in
+  is based on the per-agent token the installer wrote. Only the seams OAuth needs (§3, `auth_method`).
 
 ### Threat model
 
@@ -93,7 +95,7 @@ background.
 | **Link or session in agent transcripts** (MCP tool) | `open_board` returns a link that is dead after one use or 10 min. Its description forbids writing it to files, commits or chat channels. | A transcript on disk holds a dead link. |
 | **Stolen cookie** | `__Host-` cookie: `Secure`, `HttpOnly`, `SameSite=Lax`, host-only on `metiche.xyz`, never sent to `api.` or `mcp.`. Idle expiry 7 d, absolute 30 d. Revocation from `/account`, from the `sign_out_browsers` tool, and by retiring the originating agent. The account page lists user-agent hints. | A thief with the cookie reads that account's boards until the session is revoked or expires. No IP binding (it breaks on mobility). |
 | **CSRF** | `SameSite=Lax`, plus a synchronizer token derived from the session on every state-changing POST, plus an `Origin`/`Sec-Fetch-Site` check. `/signin` (pre-session) requires same-origin `Origin`. §6.3. | none known |
-| **Login CSRF** (attacker makes the victim sign in as the attacker) | The topbar always shows "signed in as <name>". The victim would see the attacker's boards, not the reverse. | Low impact, accepted. Open question 5 offers an interstitial. |
+| **Login CSRF** (attacker makes the victim sign in as the attacker) | The topbar always shows "signed in as <name>". The victim would see the attacker's boards, not the reverse. | Low impact, accepted. No interstitial (decision 5, §9). |
 | **Session fixation** | A new session is always minted at exchange. Any cookie already present is ignored, and its session is revoked best-effort. | none |
 | **Retired agent** | Its bearer is dead at the MCP edge (`IdentityByToken`), so it cannot mint. A link it minted earlier is refused at exchange. Sessions created from it stop validating (the session check joins `agent.status`). | none |
 | **Removed member / left team** | The membership check is per request and uncached (`Guard.isLiveMember`). An open stream is re-authorized every 60 s (§4.4). | Up to 60 s of events on an already-open stream. |
@@ -101,7 +103,7 @@ background.
 | **Enumeration via the new endpoints** | `/v1/teams/{slug}/access` uses `Guard` and the same `notFound`. The board renders one NotFound for all causes, for a given viewer. The link failure page is one message for unknown, used and expired. | none |
 | **Brute force of link or session secrets** | 256-bit `crypto/rand` secrets (as `MintToken`). Only sha256 is stored, checked with `VerifyToken`-style constant-time compare. Rate limits bound load, not guessing (§6.2). | none |
 | **DB outage** | Everything fails closed. The session check returns 503, never 401, so the board does not clear the cookie. Private pages show the existing 503 "unavailable" page, not a 404. Demo and already-registered public boards keep serving. The exchange is one transaction, so a failed exchange consumes nothing. | During an outage a member sees "unavailable" rather than their board. |
-| **A god credential on the board** (`docs/CLI.md` §10 Q3's warning) | Removed from the design. The board never holds a credential that can read a private team without a viewer: private boards are read with the viewer's own session (§4.2). `METICHE_BOARD_TOKEN` is retired (open question 7). | Board process compromise exposes the sessions of viewers active on it. |
+| **A god credential on the board** (`docs/CLI.md` §10 Q3's warning) | Removed from the design. The board never holds a credential that can read a private team without a viewer: private boards are read with the viewer's own session (§4.2). `METICHE_BOARD_TOKEN` is retired (decision 7, §9). | Board process compromise exposes the sessions of viewers active on it. |
 
 ---
 
@@ -167,7 +169,7 @@ sequenceDiagram
 - **Authentication:** `requireAccount`, then **an agent token is required**:
   `IdentityFromContext(ctx).Agent != nil`. A legacy account token is refused with
   `not_permitted: open_board needs this client's own token; re-run the metiche installer`
-  (open question 3). The agent is re-read and must be `AGENT_STATUS_ACTIVE`, as in `RequireAgent`.
+  (decision 3, §9). The agent is re-read and must be `AGENT_STATUS_ACTIVE`, as in `RequireAgent`.
 - **Team:**
   - `team_slug` given → `RequireTeam` (live member), `redirect_path = /t/<slug>`.
   - Empty and exactly one live membership → that team.
@@ -184,7 +186,7 @@ sequenceDiagram
   `https://`, except `http://localhost*` / `http://127.0.0.1*`). The server builds the URL, so the
   installer and CLI need no board configuration.
 - **TTL:** 10 minutes, fixed in code as `boardLinkTTL`. That is long enough to copy a link from an
-  SSH session to a laptop, and short enough that scrollback is mostly dead (open question 1).
+  SSH session to a laptop, and short enough that scrollback is mostly dead (decision 1, §9).
 - **Single use:** the conditional UPDATE in §2.4.
 - **Limits:**
   - `openBoardLimit`: a `RateLimiter` keyed by **account id**, `METICHE_OPEN_BOARD_PER_HOUR`,
@@ -297,10 +299,10 @@ Set-Cookie: __Host-metiche_session=<mbs_…>; Path=/; Secure; HttpOnly; SameSite
   - Absolute 30 days (`browser_session.expires_at`).
   - Idle 7 days: `last_seen_at`, written at most once per 10 minutes by the session check, so
     browsing does not write a row per request.
-  - Open question 2.
+  - Decision 2 (§9).
 - **Rotation:**
   - A new secret at every sign-in. Sessions are never extended by replacing the secret.
-  - Periodic in-place rotation is **deferred** (open question 12). With a 256-bit secret that never
+  - Periodic in-place rotation is **deferred** (decision 12, §9). With a 256-bit secret that never
     reaches a log or a URL, rotation buys little over idle and absolute expiry, and it costs a
     grace-window column and races between concurrent tabs and the SSE stream.
   - GitHub linking later rotates by minting a new session and revoking the old one.
@@ -345,11 +347,12 @@ pages, and at 60 s for a stream that is already open.
 
 ---
 
-## 3. Data model proposal — FOR OWNER REVIEW BEFORE CODEGEN
+## 3. Data model — approved and published in nuzur 2026-09-13, codegen pending
 
-**Nothing in this section may be generated until the owner approves it in nuzur.**
+**Approved.** The owner approved this model as nuzur version `v5-browser-login`, and it was published
+in nuzur on 2026-09-13. Codegen into `code/backend/metiche` is pending (Wave 0 step 3).
 
-The process mirrors `docs/IDENTITY.md` Step 1:
+The process mirrored `docs/IDENTITY.md` Step 1 (every step except codegen is done):
 - `searchProjectsByName("metiche")`;
 - find the latest **published** version (do not trust remembered names or uuids; it follows
   `v4-agent-tokens`);
@@ -397,7 +400,7 @@ Indexes:
 | `auth_method` | enum `browser_auth_method` | yes | `TERMINAL_LINK=1`, `GITHUB=2` (reserved for OAuth; unused in this plan) |
 | `created_from_agent_uuid` | uuid (1) | no | relationship → `agent` (ON DELETE CASCADE). Set for `TERMINAL_LINK`; the session is valid only while this agent is ACTIVE. NULL for `GITHUB`. |
 | `user_agent` | varchar (7) `max_size: 200` | no | truncated, printable-only hint captured at exchange |
-| `ip_hint` | varchar (7) `max_size: 64` | no | truncated prefix only (IPv4 /24, IPv6 /48), at exchange (open question 6) |
+| `ip_hint` | varchar (7) `max_size: 64` | no | truncated prefix only (IPv4 /24, IPv6 /48), at exchange (decision 6, §9) |
 | `expires_at` | datetime (26) | yes | `no_default_current_timestamp: true`; absolute, exchange + 30 d |
 | `last_seen_at` | datetime (26) | no | `no_default_current_timestamp: true`; written at most every 10 min; idle expiry = +7 d |
 | `revoked_at` | datetime (26) | no | `no_default_current_timestamp: true` |
@@ -440,7 +443,7 @@ A new file, `app/sweeper/logins.go`, runs as step 5 of `Sweeper.RunOnce`, after 
   same rules as `retention.go` rules 4 and 5.
 - **Not** gated on `Options.RetentionEnabled`. Retention rule 1 protects team *history*, and these
   rows are credentials whose only safe state after expiry is gone. Own switch
-  `Options.LoginSweepEnabled`, default **true** (open question 11).
+  `Options.LoginSweepEnabled`, default **true** (decision 11, §9).
 - `Report` gains `Logins.LinksDeleted`, `Logins.SessionsDeleted`.
 - The session check never relies on the sweeper. Expiry is enforced in the query, just as claim
   TTL is enforced lazily (PLAN.md: "lazy filter is authoritative").
@@ -546,7 +549,7 @@ Board changes (`code/frontend/internal/web/`):
   `Cache-Control: private, no-store` and `Vary: Cookie`.
 - **`METICHE_BOARD_TOKEN`:** with login enabled, the board **refuses to start** when a board token
   is configured (`registerTeams`). Two credentials with different reach are how a private team ends
-  up in the shared map. Open question 7 recommends deleting `-backend-token-env` outright.
+  up in the shared map. Decision 7 (§9) deletes `-backend-token-env` outright.
 
 Backend changes:
 
@@ -611,8 +614,7 @@ Before cookies exist:
 - live → `404` (the same NotFound) until these controls call real backend tools.
 
 Signed-in members do **not** get them either: an event that exists only in one board process is a
-lie on a live board (open question 8). If the owner prefers members-only, they need the CSRF token
-from §6.3.
+lie on a live board (decision 8, §9). Real backend-backed controls come later, as their own plan.
 
 ---
 
@@ -736,7 +738,7 @@ Mutation: drop the backup match → the first test refuses → fails.
 - §7 gains one named exception to "never write any file": the `0600` redirect file in a private
   temp dir, removed before exit.
 - The §7 tool allowlist gains `open_board` and `sign_out_browsers`.
-- §10 Q3 is answered.
+- §10 Q3 (decided 2026-09-13: the viewer gate is this plan) is marked shipped.
 - The phase 1 proof 8 premise changes. Anonymous private URLs still 404, and a 200 for an
   **anonymous** request is still stop-the-line.
 
@@ -826,7 +828,7 @@ Backend env: `METICHE_BOARD_BASE_URL` in `deploy/.helm/metiche/values.yaml` `env
    bucket. That is tolerable, because the ingress `limit-rpm` is the real per-IP layer.
 2. **The backend `clientIP`** is not needed by this design: minting keys on the account, and the
    exchange backstop is global. Its existing flaw is still worth fixing in the same deploy, as a
-   separate small change (owner question 9):
+   separate small change (decision 9, §9):
    - verify on the box how the microk8s ingress sets `X-Forwarded-For`
      (`kubectl -n ingress get cm -o yaml`; `use-forwarded-headers`, `compute-full-forwarded-for`)
      and whether a load balancer sits in front;
@@ -890,11 +892,10 @@ The execution rules of `docs/IDENTITY.md` apply:
 - commits are authored by the owner with no trailers;
 - no credential in any file, no hand edit of a `DO NOT EDIT` file, and the forbidden names rule.
 
-### Wave 0 — schema (gate: owner approval)
+### Wave 0 — schema (owner-approved and published 2026-09-13; codegen pending)
 
-1. The coordinator models §3 as the nuzur draft `v5-browser-login` and sends it for review.
-   **Stop.**
-2. Owner approves (or edits) in nuzur.
+1. Done: the coordinator modelled §3 as the nuzur draft `v5-browser-login` and sent it for review.
+2. Done: the owner approved it, and it was published in nuzur on 2026-09-13.
 3. One agent runs codegen and reports the generated diff: expected `entity/board_login_link`,
    `entity/browser_session`, three enums, `core/module/...`, and `create.sql`. It also writes
    `deploy/sql/2026-09-browser-login.sql` from the generated DDL.
@@ -1032,58 +1033,22 @@ locally built board (`-backend http://127.0.0.1:8080 -dev-insecure-cookie`, stdo
 
 ---
 
-## 9. Open questions for the owner (each with a recommendation)
+## 9. Decisions (owner-approved 2026-09-13)
 
-1. **Link TTL.**
-   *Recommend 10 minutes.* Five is tight for copying out of an SSH session. Thirty makes scrollback
-   and screenshots live much longer.
-2. **Session lifetime.**
-   *Recommend absolute 30 days, idle 7 days.* A board is checked daily during a hackathon and then
-   not for weeks. Re-signing in costs one command.
-3. **Legacy account tokens minting links.**
-   *Recommend agent tokens only.* The retired-agent revocation path needs an agent, and legacy
-   tokens are being converged away by re-running the installer. The refusal message says exactly
-   that.
-4. **Retiring the minting agent ends its browser sessions.**
-   *Recommend yes.* A lost laptop is handled by retiring its agents, and the browser on that laptop
-   is the likeliest thing to be stolen with it. The cost: a future stale-agent cleanup also signs
-   out the browsers those agents created, and the account page shows why.
-5. **Confirmation interstitial on `/signin`** ("Sign in as Mark? [Continue]").
-   *Recommend no.* The link is opened by the person's own terminal. The interstitial mainly defends
-   against login CSRF, which is low impact here and is visible through the signed-in indicator.
-   Revisit if links start being shared.
-6. **Storing IP hints.**
-   *Recommend a truncated prefix (IPv4 /24, IPv6 /48) plus the user agent, deleted with the row.*
-   It is enough for "is that browser mine?" without keeping precise addresses.
-7. **`METICHE_BOARD_TOKEN` / `-backend-token-env`.**
-   *Recommend deleting it* (keeping at most a local-dev flag that refuses to run with login
-   enabled). Viewer-scoped reads make it unnecessary, and it is exactly the credential `docs/CLI.md`
-   §10 Q3 warned about.
-8. **The board's local controls (`resolve`, `nudge`, `cadence`) on live boards.**
-   *Recommend 404 for live boards now* (demo unchanged), and real backend-backed controls later as
-   their own plan. Fabricated events on a real team's timeline are misinformation, signed in or
-   not.
-9. **Fix `clientIP` / `METICHE_TRUST_PROXY` in the same deploy.**
-   *Recommend yes, as a separate small change:* verify the ingress's `X-Forwarded-For` behaviour
-   (`preflight.sh`), take the rightmost trusted hop, and set the variable. Today `join_team` and
-   `create_team` share one internet-wide bucket.
-10. **Installer default when a TTY is present.**
-    *Recommend asking, default Yes, and never minting without a TTY or under `CI`.* The person
-    running an interactive install is standing right there; a CI log is the worst place for a
-    secret.
-11. **Login sweep independent of `RetentionEnabled`.**
-    *Recommend always on* (`LoginSweepEnabled` default true). Expired credentials are not history,
-    and the self-hosting promise in `retention.go` rule 1 is about history.
-12. **Periodic session-secret rotation.**
-    *Recommend deferring.* The secret never reaches a URL or a log. Idle and absolute expiry plus
-    revocation cover theft. Rotation brings multi-tab and SSE races and an extra column. Revisit
-    with GitHub linking.
-13. **Viewer-scoped hubs (B) vs a shared hub with a privileged board credential (A).**
-    *Recommend B* (§4.2). The extra upstream streams are small at this team size, and the backend
-    stays the only authority.
-14. **Entity names `board_login_link` / `browser_session`.**
-    *Recommend these.* `session` already means a piece of agent work, and `browser_session` stays
-    correct once GitHub creates the same rows.
-15. **Show "Your teams" on `/teams` for a signed-in viewer, or only on `/account`.**
-    *Recommend `/teams`.* It is where `open_board` sends a person on several teams, and it stays
-    `private, no-store` and invisible to anonymous visitors.
+Every recommendation was approved as written. The owner also confirmed there is no GitHub login yet: sign-in is based on the per-agent token the installer wrote.
+
+1. **Link TTL:** 10 minutes. Five is tight for copying out of an SSH session; thirty keeps scrollback and screenshots live much longer.
+2. **Session lifetime:** absolute 30 days, idle 7 days. A board is checked daily during a hackathon and then not for weeks, and re-signing in costs one command.
+3. **Legacy account tokens minting links:** agent tokens only. The retired-agent revocation path needs an agent, and legacy tokens are converged away by re-running the installer; the refusal message says exactly that.
+4. **Retiring the minting agent ends its browser sessions:** yes. A lost laptop is handled by retiring its agents, and its browser is the likeliest thing stolen with it; accepted cost: a stale-agent cleanup also signs out those browsers, and the account page shows why.
+5. **Confirmation interstitial on `/signin`:** no. The person's own terminal opens the link, and login CSRF is low impact and visible through the signed-in indicator; revisit if links start being shared.
+6. **IP hints:** a truncated prefix (IPv4 /24, IPv6 /48) plus the user agent, deleted with the row. Enough for "is that browser mine?" without keeping precise addresses.
+7. **`METICHE_BOARD_TOKEN` / `-backend-token-env`:** deleted, keeping at most a local-dev flag that refuses to run with login enabled. Viewer-scoped reads make it unnecessary, and it is exactly the credential `docs/CLI.md` §10 Q3 warned about.
+8. **The board's local controls (`resolve`, `nudge`, `cadence`) on live boards:** 404 now, demo unchanged; real backend-backed controls later as their own plan. Fabricated events on a real team's timeline are misinformation, signed in or not.
+9. **`clientIP` / `METICHE_TRUST_PROXY`:** fixed in the same deploy as a separate small change: verify the ingress's `X-Forwarded-For` behaviour (`preflight.sh`), take the rightmost trusted hop, set the variable. Today `join_team` and `create_team` share one internet-wide bucket.
+10. **Installer default when a TTY is present:** ask, default Yes, and never mint without a TTY or under `CI`. The person running an interactive install is right there, and a CI log is the worst place for a secret.
+11. **Login sweep independent of `RetentionEnabled`:** always on (`LoginSweepEnabled` default true). Expired credentials are not history, and `retention.go` rule 1's self-hosting promise is about history.
+12. **Periodic session-secret rotation:** deferred. The secret never reaches a URL or a log, idle and absolute expiry plus revocation cover theft, and rotation brings multi-tab and SSE races and an extra column; revisit with GitHub linking.
+13. **Viewer-scoped hubs (B) vs a shared hub with a privileged board credential (A):** B (§4.2). The extra upstream streams are small at this team size, and the backend stays the only authority.
+14. **Entity names:** `board_login_link` and `browser_session`. `session` already means a piece of agent work, and `browser_session` stays correct once GitHub creates the same rows.
+15. **"Your teams" for a signed-in viewer:** on `/teams`, not only `/account`. It is where `open_board` sends a person on several teams, and it stays `private, no-store` and invisible to anonymous visitors.
