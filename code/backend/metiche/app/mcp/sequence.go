@@ -36,6 +36,13 @@ type TxContext struct {
 	// Now is one timestamp for the whole transaction, so every row it writes
 	// agrees about when it happened.
 	Now time.Time
+
+	// Summary, when Apply sets it, replaces Mutation.Summary on the event.
+	// It is for a summary that names something only decided under the lock —
+	// start_session's project, which the repository picks, not the key sent.
+	// The summary is not part of the stored response, so this changes nothing
+	// a replay returns.
+	Summary string
 }
 
 // Key mints a short human-facing key for something created by this event.
@@ -241,6 +248,9 @@ func (h *Handler) commit(ctx context.Context, m Mutation) (json.RawMessage, erro
 	if m.Apply != nil {
 		if err := m.Apply(ctx, tc, &m.Envelope); err != nil {
 			return nil, err
+		}
+		if tc.Summary != "" {
+			m.Summary = tc.Summary
 		}
 	}
 

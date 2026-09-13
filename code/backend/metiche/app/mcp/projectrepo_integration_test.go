@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -40,6 +41,20 @@ func projectOf(t *testing.T, hs *harness, sessionKey string) (id, key string, re
 		t.Fatalf("reading the project of %s: %v", sessionKey, err)
 	}
 	return id, key, repoURL
+}
+
+// startedSummary is the summary on an agent's latest session_started event,
+// the line the board's timeline shows, and that agent's label.
+func startedSummary(t *testing.T, hs *harness, agentID string) (summary, label string) {
+	t.Helper()
+	var s sql.NullString
+	if err := hs.core.DB().QueryRow(
+		"SELECT e.`summary`, a.`label` FROM `team_event` e JOIN `agent` a ON a.`id` = e.`agent_uuid` "+
+			"WHERE e.`team_uuid` = ? AND e.`kind` = ? AND e.`agent_uuid` = ? ORDER BY e.`sequence` DESC LIMIT 1",
+		hs.teamID.String(), enums.EVENT_KIND_SESSION_STARTED, agentID).Scan(&s, &label); err != nil {
+		t.Fatalf("reading the session_started summary of agent %s: %v", agentID, err)
+	}
+	return s.String, label
 }
 
 // TestIntegrationSameRepoDifferentKeysSameProject is the production incident.
@@ -86,6 +101,28 @@ func TestIntegrationSameRepoDifferentKeysSameProject(t *testing.T) {
 	}
 	if strings.Contains(b.Note, "created") {
 		t.Errorf("the second agent was told a project was created: %s", b.Note)
+	}
+
+	// Both responses name the project the session is on, and the agent whose
+	// key was not used is told so, and told what to send instead.
+	if a.ProjectKey != keyA || b.ProjectKey != keyA {
+		t.Errorf("response project_key: claude %q, codex %q, want both %q", a.ProjectKey, b.ProjectKey, keyA)
+	}
+	if strings.Contains(a.Note, "you sent project_key") {
+		t.Errorf("the agent whose key was used was told it was overridden: %s", a.Note)
+	}
+	wantOverride := `you sent project_key "taqueria"; this repository is project "taqueria_tracker" — use that key (or send only repo_url); `
+	if !strings.HasPrefix(b.Note, wantOverride) {
+		t.Errorf("codex note does not start with the override:\n got: %s\nwant: %s...", b.Note, wantOverride)
+	}
+
+	// And the board's timeline names that project, not the key codex sent.
+	for _, c := range []*caller{claude, codex} {
+		summary, label := startedSummary(t, hs, c.agent.ID.String())
+		if want := label + " started work on taqueria_tracker"; summary != want {
+			t.Errorf("session_started summary = %q, want %q", summary, want)
+		}
+		t.Logf("timeline: %s", summary)
 	}
 
 	first := declare(t, hs, claude, DeclareIntentParams{
@@ -335,5 +372,125 @@ func TestIntegrationStartSessionRepoReplayIsByteIdentical(t *testing.T) {
 	}
 	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `session` WHERE `status` = ?", enums.SESSION_STATUS_LIVE); n != sessionsBefore {
 		t.Errorf("%d live sessions, want %d", n, sessionsBefore)
+	}
+}
+
+// TestIntegrationStartSessionKeyOverrideReplayIsByteIdentical: the resolved
+// project_key and the override note are part of the stored response, so a
+// retry repeats them exactly — even after the project was renamed — and the
+// retry neither writes an event nor touches the one already written.
+func TestIntegrationStartSessionKeyOverrideReplayIsByteIdentical(t *testing.T) {
+	hs := newHarness(t)
+	ana := hs.join(t, "Ana", "client-a")
+	bob := hs.join(t, "Bob", "client-b")
+	startOn(t, hs, ana, StartSessionParams{ProjectKey: "taqueria", RepoURL: "git@github.com:mklfarha/taqueria.git"})
+
+	args := StartSessionParams{
+		ProjectKey:     "taqueria_tracker",
+		RepoURL:        "https://github.com/mklfarha/taqueria.git",
+		IdempotencyKey: "override-replay-1",
+	}
+	firstEnv, firstBytes := startOn(t, hs, bob, args)
+	for _, want := range []string{
+		`"project_key":"taqueria"`,
+		`you sent project_key \"taqueria_tracker\"; this repository is project \"taqueria\" — use that key (or send only repo_url)`,
+	} {
+		if !strings.Contains(firstBytes, want) {
+			t.Errorf("the original response is missing %s:\n%s", want, firstBytes)
+		}
+	}
+	summaryBefore, _ := startedSummary(t, hs, bob.agent.ID.String())
+	if !strings.HasSuffix(summaryBefore, " started work on taqueria") {
+		t.Errorf("summary = %q, want it to name the resolved project taqueria", summaryBefore)
+	}
+
+	// Move the world: the project is renamed underneath the stored answer.
+	if _, err := hs.core.DB().Exec("UPDATE `project` SET `key` = ? WHERE `team_uuid` = ? AND `key` = ?",
+		"taqueria_renamed", hs.teamID.String(), "taqueria"); err != nil {
+		t.Fatal(err)
+	}
+	events := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `team_event`")
+	sessions := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `session`")
+
+	replayEnv, replayBytes := startOn(t, hs, bob, args)
+	t.Logf("first:  %s", firstBytes)
+	t.Logf("replay: %s", replayBytes)
+	if replayBytes != firstBytes {
+		t.Fatalf("the replay differs from the original:\nfirst:  %s\nreplay: %s", firstBytes, replayBytes)
+	}
+	if replayEnv.ProjectKey != "taqueria" || replayEnv.Key != firstEnv.Key {
+		t.Errorf("replay project_key=%q key=%q, want taqueria and %s", replayEnv.ProjectKey, replayEnv.Key, firstEnv.Key)
+	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `team_event`"); n != events {
+		t.Errorf("the replay wrote an event: %d -> %d", events, n)
+	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `session`"); n != sessions {
+		t.Errorf("the replay started a session: %d -> %d", sessions, n)
+	}
+	if after, _ := startedSummary(t, hs, bob.agent.ID.String()); after != summaryBefore {
+		t.Errorf("the replay changed the stored summary: %q -> %q", summaryBefore, after)
+	}
+}
+
+// TestIntegrationStartSessionReplaysEventStoredBeforeResolvedSummary: an event
+// written the way commit wrote every event before Apply could set the summary
+// — Mutation.Summary naming the key as sent, and a stored response with no
+// project_key — still replays byte-for-byte, keeps its summary, and writes
+// nothing. It also pins commit's fallback: an Apply that leaves tc.Summary
+// empty (every tool but start_session) stores Mutation.Summary unchanged.
+func TestIntegrationStartSessionReplaysEventStoredBeforeResolvedSummary(t *testing.T) {
+	hs := newHarness(t)
+	ana := hs.join(t, "Ana", "client-a")
+	bob := hs.join(t, "Bob", "client-b")
+	startOn(t, hs, ana, StartSessionParams{ProjectKey: "taqueria", RepoURL: "https://github.com/mklfarha/taqueria"})
+
+	legacySummary := bob.agent.Label + " started work on taqueria_tracker"
+	stored, err := hs.h.commit(bob.ctx, Mutation{
+		TeamUUID:       hs.teamID,
+		IdempotencyKey: "session_started:" + bob.agent.ID.String() + ":legacy-1",
+		Kind:           enums.EVENT_KIND_SESSION_STARTED,
+		Structural:     true,
+		AgentUUID:      uuidPtr(bob.agent.ID),
+		MemberUUID:     uuidPtr(bob.member.ID),
+		SubjectKind:    enums.SUBJECT_KIND_SESSION,
+		Summary:        legacySummary,
+		Apply: func(_ context.Context, tc *TxContext, env *Envelope) error {
+			env.Key = tc.Key("S")
+			env.Note = "heartbeat every ~60s with this session_key, or your claims lapse"
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("writing the legacy-shaped event: %v", err)
+	}
+	if strings.Contains(string(stored), "project_key") {
+		t.Fatalf("the legacy-shaped response already has project_key: %s", stored)
+	}
+	if got, _ := startedSummary(t, hs, bob.agent.ID.String()); got != legacySummary {
+		t.Fatalf("an Apply that set no tc.Summary stored %q, want Mutation.Summary %q", got, legacySummary)
+	}
+	events := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `team_event`")
+	sessions := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `session`")
+
+	// The retry resolves to a different project and would build a different
+	// answer and summary — but it is a replay, so it must build neither.
+	_, replayBytes := startOn(t, hs, bob, StartSessionParams{
+		ProjectKey:     "taqueria_tracker",
+		RepoURL:        "git@github.com:mklfarha/taqueria.git",
+		IdempotencyKey: "legacy-1",
+	})
+	t.Logf("stored: %s", stored)
+	t.Logf("replay: %s", replayBytes)
+	if replayBytes != string(stored) {
+		t.Fatalf("the replay of a stored event differs:\nstored: %s\nreplay: %s", stored, replayBytes)
+	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `team_event`"); n != events {
+		t.Errorf("the replay wrote an event: %d -> %d", events, n)
+	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `session`"); n != sessions {
+		t.Errorf("the replay started a session: %d -> %d", sessions, n)
+	}
+	if got, _ := startedSummary(t, hs, bob.agent.ID.String()); got != legacySummary {
+		t.Errorf("the replay rewrote the stored summary: %q -> %q", legacySummary, got)
 	}
 }

@@ -53,6 +53,9 @@ type projectInput struct {
 type projectResolution struct {
 	Project project_entity.Project
 	Created bool
+	// ByRepo is true when (a) found the project by its repository, which is
+	// the one step that can pick a project whose key the agent did not send.
+	ByRepo bool
 	// Others is the keys of the team's other active projects, oldest first,
 	// set only when Created.
 	Others []string
@@ -113,7 +116,7 @@ func (h *Handler) resolveProject(ctx context.Context, tc *TxContext, teamUUID uu
 			if err := h.canonicalizeRepoURL(ctx, tc, &proj, in.RepoURL); err != nil {
 				return projectResolution{}, err
 			}
-			return projectResolution{Project: proj}, nil
+			return projectResolution{Project: proj, ByRepo: true}, nil
 		}
 	}
 
@@ -250,6 +253,23 @@ func projectKeyTakenError(in projectInput, stored string) error {
 			"use the name of your git root folder (basename of git rev-parse --show-toplevel) as project_key, "+
 			"or omit project_key and send only repo_url; nothing was started",
 		in.Key, stored, mine)
+}
+
+// keyOverrideNote tells an agent that its repository already had a project
+// under a different key, so the key it sent was not used. Empty when there is
+// nothing to say: the key matched, the project was not found by repository,
+// or the agent sent no key at all (sending only repo_url is the right call,
+// and "you sent project_key" would be untrue).
+//
+// Without it the agent keeps sending its own name for the repository, and a
+// teammate reading its messages has no way to find that name on the board.
+// Built inside Apply, like every note, so a replay repeats it.
+func keyOverrideNote(in projectInput, res projectResolution) string {
+	if !res.ByRepo || in.KeyDerived || res.Project.Key == in.Key {
+		return ""
+	}
+	return fmt.Sprintf("you sent project_key %q; this repository is project %q — use that key (or send only repo_url)",
+		in.Key, res.Project.Key)
 }
 
 // newProjectNote is what start_session says when it created a project. On a

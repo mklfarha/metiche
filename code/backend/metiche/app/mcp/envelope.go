@@ -27,6 +27,12 @@ type Envelope struct {
 	// (A-4, S-17). Empty on calls that are about nothing in particular.
 	Key string `json:"key,omitempty"`
 
+	// ProjectKey is the project start_session actually put the session on,
+	// which is not always the project_key the agent sent: the repository
+	// decides. Empty, and so absent, on every other tool — which keeps their
+	// bytes, and every snapshot stored before this field existed, unchanged.
+	ProjectKey string `json:"project_key,omitempty"`
+
 	// Sequence is the team's event cursor. It advances on EVERY event.
 	// A client uses it to notice it missed something.
 	Sequence int64 `json:"sequence"`

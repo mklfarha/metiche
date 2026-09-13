@@ -98,8 +98,9 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 		AgentUUID:      uuidPtr(ag.ID),
 		MemberUUID:     uuidPtr(member.ID),
 		SubjectKind:    enums.SUBJECT_KIND_SESSION,
-		Summary:        fmt.Sprintf("%s started work on %s", ag.Label, projectKey),
-		Payload:        payload_entity.EventPayload{Message: nullString(truncate(args.Goal, 280))},
+		// No Summary here: it names the project, and which project is only
+		// decided inside Apply. Apply sets tc.Summary.
+		Payload: payload_entity.EventPayload{Message: nullString(truncate(args.Goal, 280))},
 		Apply: func(ctx context.Context, tc *TxContext, env *Envelope) error {
 			// Counted HERE, under the team lock, so the cap is exact: two
 			// terminals racing to open the ninth session serialize on the team
@@ -118,18 +119,22 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			// Resolved under the lock this Apply already holds, so two agents
 			// racing to open the first session in one repository cannot each
 			// create a project for it. See resolveProject for the order.
-			resolved, err := h.resolveProject(ctx, tc, team.ID, projectInput{
+			in := projectInput{
 				Key:        projectKey,
 				KeyDerived: keyDerived,
 				RepoURL:    repoURL,
 				Name:       args.ProjectName,
 				Branch:     args.Branch,
-			})
+			}
+			resolved, err := h.resolveProject(ctx, tc, team.ID, in)
 			if err != nil {
 				return err
 			}
 			proj := resolved.Project
 			projectID = proj.ID
+			// The board's timeline names the project the session is on, not
+			// the name the agent happened to send for it.
+			tc.Summary = fmt.Sprintf("%s started work on %s", ag.Label, proj.Key)
 
 			id, err := uuid.NewV4()
 			if err != nil {
@@ -169,12 +174,16 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			// the rows counted under the lock, so a replay repeats the world as
 			// it was when the session started rather than as it is now.
 			env.Key = sessionKey
+			env.ProjectKey = proj.Key
 			env.Note = "heartbeat every ~60s with this session_key, or your claims lapse"
 			if len(open) > 0 {
 				env.Note = otherSessionsNote(open, sessionKey, tc.Now) + "; " + env.Note
 			}
 			if resolved.Created {
 				env.Note = newProjectNote(proj.Key, resolved.Others, sessionKey) + "; " + env.Note
+			}
+			if override := keyOverrideNote(in, resolved); override != "" {
+				env.Note = override + "; " + env.Note
 			}
 			return nil
 		},
