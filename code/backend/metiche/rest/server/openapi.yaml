@@ -422,6 +422,422 @@ paths:
                         application/problem+json:
                             schema:
                                 $ref: '#/components/schemas/Problem'
+    /board-login-links:
+        get:
+            tags:
+                - BoardLoginLink
+            summary: List board-login-links
+            operationId: listBoardLoginLink
+            parameters:
+                - name: filter
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: order_by
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: page_size
+                  in: query
+                  required: false
+                  schema:
+                    type: integer
+                - name: page_token
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: include_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: exclude_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: skip_cache
+                  in: query
+                  required: false
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: List of board-login-links
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BoardLoginLinkList'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        post:
+            tags:
+                - BoardLoginLink
+            summary: Create BoardLoginLink
+            operationId: createBoardLoginLink
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/BoardLoginLink'
+                required: true
+            responses:
+                "201":
+                    description: Created BoardLoginLink
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BoardLoginLink'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /board-login-links/{id}:
+        get:
+            tags:
+                - BoardLoginLink
+            summary: Get BoardLoginLink by ID
+            operationId: getBoardLoginLink
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful operation
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BoardLoginLink'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        patch:
+            tags:
+                - BoardLoginLink
+            summary: Partially update BoardLoginLink
+            operationId: patchBoardLoginLink
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/BoardLoginLink'
+                required: true
+            responses:
+                "200":
+                    description: Successful update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BoardLoginLink'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Version conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        delete:
+            tags:
+                - BoardLoginLink
+            summary: Delete BoardLoginLink by ID
+            operationId: deleteBoardLoginLink
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "204":
+                    description: No Content
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /browser-sessions:
+        get:
+            tags:
+                - BrowserSession
+            summary: List browser-sessions
+            operationId: listBrowserSession
+            parameters:
+                - name: filter
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: order_by
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: page_size
+                  in: query
+                  required: false
+                  schema:
+                    type: integer
+                - name: page_token
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: include_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: exclude_fields
+                  in: query
+                  required: false
+                  schema:
+                    type: string
+                - name: skip_cache
+                  in: query
+                  required: false
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: List of browser-sessions
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BrowserSessionList'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        post:
+            tags:
+                - BrowserSession
+            summary: Create BrowserSession
+            operationId: createBrowserSession
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/BrowserSession'
+                required: true
+            responses:
+                "201":
+                    description: Created BrowserSession
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BrowserSession'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+    /browser-sessions/{id}:
+        get:
+            tags:
+                - BrowserSession
+            summary: Get BrowserSession by ID
+            operationId: getBrowserSession
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: Successful operation
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BrowserSession'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        patch:
+            tags:
+                - BrowserSession
+            summary: Partially update BrowserSession
+            operationId: patchBrowserSession
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/BrowserSession'
+                required: true
+            responses:
+                "200":
+                    description: Successful update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BrowserSession'
+                "400":
+                    description: Bad Request
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Version conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+        delete:
+            tags:
+                - BrowserSession
+            summary: Delete BrowserSession by ID
+            operationId: deleteBrowserSession
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "204":
+                    description: No Content
+                "404":
+                    description: Not Found
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "409":
+                    description: Conflict
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                "500":
+                    description: Internal Server Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
     /claim-paths:
         get:
             tags:
@@ -5336,6 +5752,141 @@ components:
                 - superseded
                 - withdrawn
             type: string
+        BoardLinkSource:
+            enum:
+                - invalid
+                - installer
+                - cli
+                - agent
+            type: string
+        BoardLoginLink:
+            properties:
+                account_uuid:
+                    format: uuid
+                    type: string
+                agent_uuid:
+                    format: uuid
+                    type: string
+                consumed_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                created_at:
+                    format: date-time
+                    type: string
+                expires_at:
+                    format: date-time
+                    type: string
+                id:
+                    format: uuid
+                    type: string
+                redirect_path:
+                    type: string
+                requested_via:
+                    $ref: '#/components/schemas/BoardLinkSource'
+                secret_hash:
+                    type: string
+                updated_at:
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - account_uuid
+                - agent_uuid
+                - secret_hash
+                - redirect_path
+                - requested_via
+                - expires_at
+                - created_at
+                - updated_at
+            type: object
+        BoardLoginLinkList:
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/BoardLoginLink'
+                    type: array
+                next_page_token:
+                    type: string
+            type: object
+        BrowserAuthMethod:
+            enum:
+                - invalid
+                - terminal_link
+                - github
+            type: string
+        BrowserSession:
+            properties:
+                account_uuid:
+                    format: uuid
+                    type: string
+                auth_method:
+                    $ref: '#/components/schemas/BrowserAuthMethod'
+                created_at:
+                    format: date-time
+                    type: string
+                created_from_agent_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
+                end_reason:
+                    $ref: '#/components/schemas/BrowserSessionEndReason'
+                    nullable: true
+                expires_at:
+                    format: date-time
+                    type: string
+                id:
+                    format: uuid
+                    type: string
+                ip_hint:
+                    nullable: true
+                    type: string
+                key:
+                    type: string
+                last_seen_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                revoked_at:
+                    format: date-time
+                    nullable: true
+                    type: string
+                secret_hash:
+                    type: string
+                updated_at:
+                    format: date-time
+                    type: string
+                user_agent:
+                    nullable: true
+                    type: string
+            required:
+                - id
+                - key
+                - account_uuid
+                - secret_hash
+                - auth_method
+                - expires_at
+                - created_at
+                - updated_at
+            type: object
+        BrowserSessionEndReason:
+            enum:
+                - invalid
+                - signed_out
+                - signed_out_everywhere
+                - revoked
+                - revoked_by_agent
+                - replaced
+            type: string
+        BrowserSessionList:
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/BrowserSession'
+                    type: array
+                next_page_token:
+                    type: string
+            type: object
         Claim:
             properties:
                 breadth_score:

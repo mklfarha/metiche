@@ -30,6 +30,26 @@ func (q *Queries) DeleteAgent(ctx context.Context, id string) (sql.Result, error
 	return q.db.ExecContext(ctx, deleteAgent, id)
 }
 
+const deleteBoardLoginLink = `-- name: DeleteBoardLoginLink :execresult
+DELETE FROM ` + "`" + `board_login_link` + "`" + `
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+func (q *Queries) DeleteBoardLoginLink(ctx context.Context, id string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, deleteBoardLoginLink, id)
+}
+
+const deleteBrowserSession = `-- name: DeleteBrowserSession :execresult
+DELETE FROM ` + "`" + `browser_session` + "`" + `
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+func (q *Queries) DeleteBrowserSession(ctx context.Context, id string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, deleteBrowserSession, id)
+}
+
 const deleteClaim = `-- name: DeleteClaim :execresult
 DELETE FROM ` + "`" + `claim` + "`" + `
 WHERE

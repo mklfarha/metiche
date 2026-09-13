@@ -399,6 +399,1106 @@ func (q *Queries) FetchAgentByTokenHash(ctx context.Context, arg FetchAgentByTok
 	return items, nil
 }
 
+const fetchBoardLoginLinkByAccountUUID = `-- name: FetchBoardLoginLinkByAccountUUID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+WHERE 
+    ` + "`" + `account_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchBoardLoginLinkByAccountUUIDParams struct {
+	AccountUUID string `json:"account_uuid"`
+	Offset      int32  `json:"offset"`
+	Limit       int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBoardLoginLinkByAccountUUID(ctx context.Context, arg FetchBoardLoginLinkByAccountUUIDParams) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLinkByAccountUUID, arg.AccountUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASC = `-- name: FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+WHERE 
+    ` + "`" + `account_uuid` + "`" + ` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?
+`
+
+type FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASCParams struct {
+	AccountUUID string `json:"account_uuid"`
+	Offset      int32  `json:"offset"`
+	Limit       int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASC(ctx context.Context, arg FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASCParams) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASC, arg.AccountUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESC = `-- name: FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+WHERE 
+    ` + "`" + `account_uuid` + "`" + ` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?
+`
+
+type FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESCParams struct {
+	AccountUUID string `json:"account_uuid"`
+	Offset      int32  `json:"offset"`
+	Limit       int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESC(ctx context.Context, arg FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESCParams) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESC, arg.AccountUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBoardLoginLinkByID = `-- name: FetchBoardLoginLinkByID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ?
+`
+
+// board_login_link selects:
+func (q *Queries) FetchBoardLoginLinkByID(ctx context.Context, id string) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLinkByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBoardLoginLinkByIDForUpdate = `-- name: FetchBoardLoginLinkByIDForUpdate :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ? 
+FOR UPDATE
+`
+
+func (q *Queries) FetchBoardLoginLinkByIDForUpdate(ctx context.Context, id string) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLinkByIDForUpdate, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBoardLoginLinkBySecretHash = `-- name: FetchBoardLoginLinkBySecretHash :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+WHERE 
+    ` + "`" + `secret_hash` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchBoardLoginLinkBySecretHashParams struct {
+	SecretHash string `json:"secret_hash"`
+	Offset     int32  `json:"offset"`
+	Limit      int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBoardLoginLinkBySecretHash(ctx context.Context, arg FetchBoardLoginLinkBySecretHashParams) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLinkBySecretHash, arg.SecretHash, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBoardLoginLinkBySecretHashOrderedByExpiresAtASC = `-- name: FetchBoardLoginLinkBySecretHashOrderedByExpiresAtASC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+WHERE 
+    ` + "`" + `secret_hash` + "`" + ` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?
+`
+
+type FetchBoardLoginLinkBySecretHashOrderedByExpiresAtASCParams struct {
+	SecretHash string `json:"secret_hash"`
+	Offset     int32  `json:"offset"`
+	Limit      int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBoardLoginLinkBySecretHashOrderedByExpiresAtASC(ctx context.Context, arg FetchBoardLoginLinkBySecretHashOrderedByExpiresAtASCParams) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLinkBySecretHashOrderedByExpiresAtASC, arg.SecretHash, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESC = `-- name: FetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+WHERE 
+    ` + "`" + `secret_hash` + "`" + ` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?
+`
+
+type FetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESCParams struct {
+	SecretHash string `json:"secret_hash"`
+	Offset     int32  `json:"offset"`
+	Limit      int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESC(ctx context.Context, arg FetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESCParams) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESC, arg.SecretHash, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByAccountUUID = `-- name: FetchBrowserSessionByAccountUUID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `account_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByAccountUUIDParams struct {
+	AccountUUID string `json:"account_uuid"`
+	Offset      int32  `json:"offset"`
+	Limit       int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByAccountUUID(ctx context.Context, arg FetchBrowserSessionByAccountUUIDParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByAccountUUID, arg.AccountUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByAccountUUIDOrderedByExpiresAtASC = `-- name: FetchBrowserSessionByAccountUUIDOrderedByExpiresAtASC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `account_uuid` + "`" + ` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByAccountUUIDOrderedByExpiresAtASCParams struct {
+	AccountUUID string `json:"account_uuid"`
+	Offset      int32  `json:"offset"`
+	Limit       int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByAccountUUIDOrderedByExpiresAtASC(ctx context.Context, arg FetchBrowserSessionByAccountUUIDOrderedByExpiresAtASCParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByAccountUUIDOrderedByExpiresAtASC, arg.AccountUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESC = `-- name: FetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `account_uuid` + "`" + ` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESCParams struct {
+	AccountUUID string `json:"account_uuid"`
+	Offset      int32  `json:"offset"`
+	Limit       int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESC(ctx context.Context, arg FetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESCParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESC, arg.AccountUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByCreatedFromAgentUUID = `-- name: FetchBrowserSessionByCreatedFromAgentUUID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `created_from_agent_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByCreatedFromAgentUUIDParams struct {
+	CreatedFromAgentUUID null.String `json:"created_from_agent_uuid"`
+	Offset               int32       `json:"offset"`
+	Limit                int32       `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByCreatedFromAgentUUID(ctx context.Context, arg FetchBrowserSessionByCreatedFromAgentUUIDParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByCreatedFromAgentUUID, arg.CreatedFromAgentUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASC = `-- name: FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `created_from_agent_uuid` + "`" + ` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASCParams struct {
+	CreatedFromAgentUUID null.String `json:"created_from_agent_uuid"`
+	Offset               int32       `json:"offset"`
+	Limit                int32       `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASC(ctx context.Context, arg FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASCParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASC, arg.CreatedFromAgentUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESC = `-- name: FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `created_from_agent_uuid` + "`" + ` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESCParams struct {
+	CreatedFromAgentUUID null.String `json:"created_from_agent_uuid"`
+	Offset               int32       `json:"offset"`
+	Limit                int32       `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESC(ctx context.Context, arg FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESCParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESC, arg.CreatedFromAgentUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByID = `-- name: FetchBrowserSessionByID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ?
+`
+
+// browser_session selects:
+func (q *Queries) FetchBrowserSessionByID(ctx context.Context, id string) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByIDForUpdate = `-- name: FetchBrowserSessionByIDForUpdate :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `id` + "`" + ` = ? 
+FOR UPDATE
+`
+
+func (q *Queries) FetchBrowserSessionByIDForUpdate(ctx context.Context, id string) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByIDForUpdate, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByKey = `-- name: FetchBrowserSessionByKey :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `key` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByKeyParams struct {
+	Key    string `json:"key"`
+	Offset int32  `json:"offset"`
+	Limit  int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByKey(ctx context.Context, arg FetchBrowserSessionByKeyParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByKey, arg.Key, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByKeyOrderedByExpiresAtASC = `-- name: FetchBrowserSessionByKeyOrderedByExpiresAtASC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `key` + "`" + ` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByKeyOrderedByExpiresAtASCParams struct {
+	Key    string `json:"key"`
+	Offset int32  `json:"offset"`
+	Limit  int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByKeyOrderedByExpiresAtASC(ctx context.Context, arg FetchBrowserSessionByKeyOrderedByExpiresAtASCParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByKeyOrderedByExpiresAtASC, arg.Key, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionByKeyOrderedByExpiresAtDESC = `-- name: FetchBrowserSessionByKeyOrderedByExpiresAtDESC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `key` + "`" + ` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionByKeyOrderedByExpiresAtDESCParams struct {
+	Key    string `json:"key"`
+	Offset int32  `json:"offset"`
+	Limit  int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionByKeyOrderedByExpiresAtDESC(ctx context.Context, arg FetchBrowserSessionByKeyOrderedByExpiresAtDESCParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionByKeyOrderedByExpiresAtDESC, arg.Key, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionBySecretHash = `-- name: FetchBrowserSessionBySecretHash :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `secret_hash` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionBySecretHashParams struct {
+	SecretHash string `json:"secret_hash"`
+	Offset     int32  `json:"offset"`
+	Limit      int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionBySecretHash(ctx context.Context, arg FetchBrowserSessionBySecretHashParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionBySecretHash, arg.SecretHash, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionBySecretHashOrderedByExpiresAtASC = `-- name: FetchBrowserSessionBySecretHashOrderedByExpiresAtASC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `secret_hash` + "`" + ` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionBySecretHashOrderedByExpiresAtASCParams struct {
+	SecretHash string `json:"secret_hash"`
+	Offset     int32  `json:"offset"`
+	Limit      int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionBySecretHashOrderedByExpiresAtASC(ctx context.Context, arg FetchBrowserSessionBySecretHashOrderedByExpiresAtASCParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionBySecretHashOrderedByExpiresAtASC, arg.SecretHash, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSessionBySecretHashOrderedByExpiresAtDESC = `-- name: FetchBrowserSessionBySecretHashOrderedByExpiresAtDESC :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+WHERE 
+    ` + "`" + `secret_hash` + "`" + ` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?
+`
+
+type FetchBrowserSessionBySecretHashOrderedByExpiresAtDESCParams struct {
+	SecretHash string `json:"secret_hash"`
+	Offset     int32  `json:"offset"`
+	Limit      int32  `json:"limit"`
+}
+
+func (q *Queries) FetchBrowserSessionBySecretHashOrderedByExpiresAtDESC(ctx context.Context, arg FetchBrowserSessionBySecretHashOrderedByExpiresAtDESCParams) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSessionBySecretHashOrderedByExpiresAtDESC, arg.SecretHash, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchClaimByID = `-- name: FetchClaimByID :many
 SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `intent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `mode` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `ttl_seconds` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `hard_expires_at` + "`" + `,` + "`" + `breadth_score` + "`" + `,` + "`" + `released_at` + "`" + `,` + "`" + `release_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
 FROM ` + "`" + `claim` + "`" + `

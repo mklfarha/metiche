@@ -95,6 +95,88 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) error 
 	return err
 }
 
+const updateBoardLoginLink = `-- name: UpdateBoardLoginLink :exec
+UPDATE ` + "`" + `board_login_link` + "`" + `
+SET
+` + "`" + `account_uuid` + "`" + ` = ?, ` + "`" + `agent_uuid` + "`" + ` = ?, ` + "`" + `secret_hash` + "`" + ` = ?, ` + "`" + `redirect_path` + "`" + ` = ?, ` + "`" + `requested_via` + "`" + ` = ?, ` + "`" + `expires_at` + "`" + ` = ?, ` + "`" + `consumed_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+type UpdateBoardLoginLinkParams struct {
+	AccountUUID  string    `json:"account_uuid"`
+	AgentUUID    string    `json:"agent_uuid"`
+	SecretHash   string    `json:"secret_hash"`
+	RedirectPath string    `json:"redirect_path"`
+	RequestedVia int64     `json:"requested_via"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	ConsumedAt   null.Time `json:"consumed_at"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+}
+
+func (q *Queries) UpdateBoardLoginLink(ctx context.Context, arg UpdateBoardLoginLinkParams) error {
+	_, err := q.db.ExecContext(ctx, updateBoardLoginLink,
+		arg.AccountUUID,
+		arg.AgentUUID,
+		arg.SecretHash,
+		arg.RedirectPath,
+		arg.RequestedVia,
+		arg.ExpiresAt,
+		arg.ConsumedAt,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const updateBrowserSession = `-- name: UpdateBrowserSession :exec
+UPDATE ` + "`" + `browser_session` + "`" + `
+SET
+` + "`" + `key` + "`" + ` = ?, ` + "`" + `account_uuid` + "`" + ` = ?, ` + "`" + `secret_hash` + "`" + ` = ?, ` + "`" + `auth_method` + "`" + ` = ?, ` + "`" + `created_from_agent_uuid` + "`" + ` = ?, ` + "`" + `user_agent` + "`" + ` = ?, ` + "`" + `ip_hint` + "`" + ` = ?, ` + "`" + `expires_at` + "`" + ` = ?, ` + "`" + `last_seen_at` + "`" + ` = ?, ` + "`" + `revoked_at` + "`" + ` = ?, ` + "`" + `end_reason` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+WHERE
+` + "`" + `id` + "`" + ` = ?
+`
+
+type UpdateBrowserSessionParams struct {
+	Key                  string      `json:"key"`
+	AccountUUID          string      `json:"account_uuid"`
+	SecretHash           string      `json:"secret_hash"`
+	AuthMethod           int64       `json:"auth_method"`
+	CreatedFromAgentUUID null.String `json:"created_from_agent_uuid"`
+	UserAgent            null.String `json:"user_agent"`
+	IpHint               null.String `json:"ip_hint"`
+	ExpiresAt            time.Time   `json:"expires_at"`
+	LastSeenAt           null.Time   `json:"last_seen_at"`
+	RevokedAt            null.Time   `json:"revoked_at"`
+	EndReason            null.Int    `json:"end_reason"`
+	CreatedAt            time.Time   `json:"created_at"`
+	UpdatedAt            time.Time   `json:"updated_at"`
+	ID                   string      `json:"id"`
+}
+
+func (q *Queries) UpdateBrowserSession(ctx context.Context, arg UpdateBrowserSessionParams) error {
+	_, err := q.db.ExecContext(ctx, updateBrowserSession,
+		arg.Key,
+		arg.AccountUUID,
+		arg.SecretHash,
+		arg.AuthMethod,
+		arg.CreatedFromAgentUUID,
+		arg.UserAgent,
+		arg.IpHint,
+		arg.ExpiresAt,
+		arg.LastSeenAt,
+		arg.RevokedAt,
+		arg.EndReason,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
 const updateClaim = `-- name: UpdateClaim :exec
 UPDATE ` + "`" + `claim` + "`" + `
 SET

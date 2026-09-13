@@ -12,6 +12,8 @@ import (
 type Querier interface {
 	DeleteAccount(ctx context.Context, id string) (sql.Result, error)
 	DeleteAgent(ctx context.Context, id string) (sql.Result, error)
+	DeleteBoardLoginLink(ctx context.Context, id string) (sql.Result, error)
+	DeleteBrowserSession(ctx context.Context, id string) (sql.Result, error)
 	DeleteClaim(ctx context.Context, id string) (sql.Result, error)
 	DeleteClaimPath(ctx context.Context, id string) (sql.Result, error)
 	DeleteConflict(ctx context.Context, id string) (sql.Result, error)
@@ -48,6 +50,32 @@ type Querier interface {
 	FetchAgentByID(ctx context.Context, id string) ([]Agent, error)
 	FetchAgentByIDForUpdate(ctx context.Context, id string) ([]Agent, error)
 	FetchAgentByTokenHash(ctx context.Context, arg FetchAgentByTokenHashParams) ([]Agent, error)
+	FetchBoardLoginLink(ctx context.Context) ([]BoardLoginLink, error)
+	FetchBoardLoginLinkByAccountUUID(ctx context.Context, arg FetchBoardLoginLinkByAccountUUIDParams) ([]BoardLoginLink, error)
+	FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASC(ctx context.Context, arg FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASCParams) ([]BoardLoginLink, error)
+	FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESC(ctx context.Context, arg FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESCParams) ([]BoardLoginLink, error)
+	// board_login_link selects:
+	FetchBoardLoginLinkByID(ctx context.Context, id string) ([]BoardLoginLink, error)
+	FetchBoardLoginLinkByIDForUpdate(ctx context.Context, id string) ([]BoardLoginLink, error)
+	FetchBoardLoginLinkBySecretHash(ctx context.Context, arg FetchBoardLoginLinkBySecretHashParams) ([]BoardLoginLink, error)
+	FetchBoardLoginLinkBySecretHashOrderedByExpiresAtASC(ctx context.Context, arg FetchBoardLoginLinkBySecretHashOrderedByExpiresAtASCParams) ([]BoardLoginLink, error)
+	FetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESC(ctx context.Context, arg FetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESCParams) ([]BoardLoginLink, error)
+	FetchBrowserSession(ctx context.Context) ([]BrowserSession, error)
+	FetchBrowserSessionByAccountUUID(ctx context.Context, arg FetchBrowserSessionByAccountUUIDParams) ([]BrowserSession, error)
+	FetchBrowserSessionByAccountUUIDOrderedByExpiresAtASC(ctx context.Context, arg FetchBrowserSessionByAccountUUIDOrderedByExpiresAtASCParams) ([]BrowserSession, error)
+	FetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESC(ctx context.Context, arg FetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESCParams) ([]BrowserSession, error)
+	FetchBrowserSessionByCreatedFromAgentUUID(ctx context.Context, arg FetchBrowserSessionByCreatedFromAgentUUIDParams) ([]BrowserSession, error)
+	FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASC(ctx context.Context, arg FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASCParams) ([]BrowserSession, error)
+	FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESC(ctx context.Context, arg FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESCParams) ([]BrowserSession, error)
+	// browser_session selects:
+	FetchBrowserSessionByID(ctx context.Context, id string) ([]BrowserSession, error)
+	FetchBrowserSessionByIDForUpdate(ctx context.Context, id string) ([]BrowserSession, error)
+	FetchBrowserSessionByKey(ctx context.Context, arg FetchBrowserSessionByKeyParams) ([]BrowserSession, error)
+	FetchBrowserSessionByKeyOrderedByExpiresAtASC(ctx context.Context, arg FetchBrowserSessionByKeyOrderedByExpiresAtASCParams) ([]BrowserSession, error)
+	FetchBrowserSessionByKeyOrderedByExpiresAtDESC(ctx context.Context, arg FetchBrowserSessionByKeyOrderedByExpiresAtDESCParams) ([]BrowserSession, error)
+	FetchBrowserSessionBySecretHash(ctx context.Context, arg FetchBrowserSessionBySecretHashParams) ([]BrowserSession, error)
+	FetchBrowserSessionBySecretHashOrderedByExpiresAtASC(ctx context.Context, arg FetchBrowserSessionBySecretHashOrderedByExpiresAtASCParams) ([]BrowserSession, error)
+	FetchBrowserSessionBySecretHashOrderedByExpiresAtDESC(ctx context.Context, arg FetchBrowserSessionBySecretHashOrderedByExpiresAtDESCParams) ([]BrowserSession, error)
 	FetchClaim(ctx context.Context) ([]Claim, error)
 	// claim selects:
 	FetchClaimByID(ctx context.Context, id string) ([]Claim, error)
@@ -189,6 +217,8 @@ type Querier interface {
 	FetchTeamEventByTeamUUIDAndSequence(ctx context.Context, arg FetchTeamEventByTeamUUIDAndSequenceParams) ([]TeamEvent, error)
 	InsertAccount(ctx context.Context, arg InsertAccountParams) (sql.Result, error)
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (sql.Result, error)
+	InsertBoardLoginLink(ctx context.Context, arg InsertBoardLoginLinkParams) (sql.Result, error)
+	InsertBrowserSession(ctx context.Context, arg InsertBrowserSessionParams) (sql.Result, error)
 	InsertClaim(ctx context.Context, arg InsertClaimParams) (sql.Result, error)
 	InsertClaimPath(ctx context.Context, arg InsertClaimPathParams) (sql.Result, error)
 	InsertConflict(ctx context.Context, arg InsertConflictParams) (sql.Result, error)
@@ -215,6 +245,8 @@ type Querier interface {
 	InsertTeamEvent(ctx context.Context, arg InsertTeamEventParams) (sql.Result, error)
 	UpdateAccount(ctx context.Context, arg UpdateAccountParams) error
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) error
+	UpdateBoardLoginLink(ctx context.Context, arg UpdateBoardLoginLinkParams) error
+	UpdateBrowserSession(ctx context.Context, arg UpdateBrowserSessionParams) error
 	UpdateClaim(ctx context.Context, arg UpdateClaimParams) error
 	UpdateClaimPath(ctx context.Context, arg UpdateClaimPathParams) error
 	UpdateConflict(ctx context.Context, arg UpdateConflictParams) error

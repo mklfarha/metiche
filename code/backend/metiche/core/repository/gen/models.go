@@ -41,6 +41,36 @@ type Agent struct {
 	TokenHash   null.String `json:"token_hash"`
 }
 
+type BoardLoginLink struct {
+	ID           string    `json:"id"`
+	AccountUUID  string    `json:"account_uuid"`
+	AgentUUID    string    `json:"agent_uuid"`
+	SecretHash   string    `json:"secret_hash"`
+	RedirectPath string    `json:"redirect_path"`
+	RequestedVia int64     `json:"requested_via"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	ConsumedAt   null.Time `json:"consumed_at"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type BrowserSession struct {
+	ID                   string      `json:"id"`
+	Key                  string      `json:"key"`
+	AccountUUID          string      `json:"account_uuid"`
+	SecretHash           string      `json:"secret_hash"`
+	AuthMethod           int64       `json:"auth_method"`
+	CreatedFromAgentUUID null.String `json:"created_from_agent_uuid"`
+	UserAgent            null.String `json:"user_agent"`
+	IpHint               null.String `json:"ip_hint"`
+	ExpiresAt            time.Time   `json:"expires_at"`
+	LastSeenAt           null.Time   `json:"last_seen_at"`
+	RevokedAt            null.Time   `json:"revoked_at"`
+	EndReason            null.Int    `json:"end_reason"`
+	CreatedAt            time.Time   `json:"created_at"`
+	UpdatedAt            time.Time   `json:"updated_at"`
+}
+
 type Claim struct {
 	ID            string      `json:"id"`
 	TeamUUID      string      `json:"team_uuid"`

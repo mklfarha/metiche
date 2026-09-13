@@ -131,6 +131,62 @@ CREATE TABLE IF NOT EXISTS `project` (
         ON DELETE CASCADE
 ) ENGINE = InnoDB;
 
+CREATE TABLE IF NOT EXISTS `board_login_link` (
+    `id` CHAR(36) NOT NULL,
+    `account_uuid` CHAR(36) NOT NULL,
+    `agent_uuid` CHAR(36) NOT NULL,
+    `secret_hash` VARCHAR(64) NOT NULL,
+    `redirect_path` VARCHAR(120) NOT NULL,
+    `requested_via` INT NOT NULL,
+    `expires_at` DATETIME NOT NULL,
+    `consumed_at` DATETIME,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_board_login_link_account` (`account_uuid`, `consumed_at`, `expires_at`),
+    INDEX `idx_board_login_link_expires` (`expires_at`),
+    UNIQUE INDEX `uq_board_login_link_secret_hash` (`secret_hash`),
+    CONSTRAINT `board_login_link_account`
+        FOREIGN KEY (`account_uuid`)
+        REFERENCES `account` (`id`)
+        ON DELETE CASCADE,
+    CONSTRAINT `board_login_link_agent`
+        FOREIGN KEY (`agent_uuid`)
+        REFERENCES `agent` (`id`)
+        ON DELETE CASCADE
+) ENGINE = InnoDB;
+
+CREATE TABLE IF NOT EXISTS `browser_session` (
+    `id` CHAR(36) NOT NULL,
+    `key` VARCHAR(32) NOT NULL,
+    `account_uuid` CHAR(36) NOT NULL,
+    `secret_hash` VARCHAR(64) NOT NULL,
+    `auth_method` INT NOT NULL,
+    `created_from_agent_uuid` CHAR(36),
+    `user_agent` VARCHAR(200),
+    `ip_hint` VARCHAR(64),
+    `expires_at` DATETIME NOT NULL,
+    `last_seen_at` DATETIME,
+    `revoked_at` DATETIME,
+    `end_reason` INT,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_browser_session_account` (`account_uuid`, `revoked_at`, `expires_at`),
+    INDEX `idx_browser_session_agent` (`created_from_agent_uuid`),
+    INDEX `idx_browser_session_expires` (`expires_at`),
+    UNIQUE INDEX `uq_browser_session_secret_hash` (`secret_hash`),
+    UNIQUE INDEX `uq_browser_session_key` (`key`),
+    CONSTRAINT `browser_session_account`
+        FOREIGN KEY (`account_uuid`)
+        REFERENCES `account` (`id`)
+        ON DELETE CASCADE,
+    CONSTRAINT `browser_session_created_from_agent`
+        FOREIGN KEY (`created_from_agent_uuid`)
+        REFERENCES `agent` (`id`)
+        ON DELETE CASCADE
+) ENGINE = InnoDB;
+
 CREATE TABLE IF NOT EXISTS `invite` (
     `id` CHAR(36) NOT NULL,
     `team_uuid` CHAR(36) NOT NULL,

@@ -23,6 +23,14 @@ FROM `member`;
 SELECT `id`,`team_uuid`,`key`,`name`,`repo_url`,`default_branch`,`ignore_patterns`,`hotspot_patterns`,`case_insensitive_paths`,`status`,`created_at`,`updated_at`,`cadence`
 FROM `project`;
 
+-- name: FetchBoardLoginLink :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`;
+
+-- name: FetchBrowserSession :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`;
+
 -- name: FetchInvite :many
 SELECT `id`,`team_uuid`,`code`,`label`,`created_by_member_uuid`,`max_uses`,`uses`,`expires_at`,`revoked_at`,`revoked_by_member_uuid`,`status`,`last_used_at`,`created_at`,`updated_at`
 FROM `invite`;

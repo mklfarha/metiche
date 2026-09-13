@@ -35,6 +35,18 @@ INSERT INTO `project`
 VALUES
 (?,?,?,?,?,?,?,?,?,?,?,?,?);
 
+-- name: InsertBoardLoginLink :execresult
+INSERT INTO `board_login_link`
+(`id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`)
+VALUES
+(?,?,?,?,?,?,?,?,?,?);
+
+-- name: InsertBrowserSession :execresult
+INSERT INTO `browser_session`
+(`id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`)
+VALUES
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+
 -- name: InsertInvite :execresult
 INSERT INTO `invite`
 (`id`,`team_uuid`,`code`,`label`,`created_by_member_uuid`,`max_uses`,`uses`,`expires_at`,`revoked_at`,`revoked_by_member_uuid`,`status`,`last_used_at`,`created_at`,`updated_at`)

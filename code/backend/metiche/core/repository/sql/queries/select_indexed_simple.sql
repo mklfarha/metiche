@@ -185,6 +185,188 @@ FOR UPDATE;
 
 
 
+-- board_login_link selects:
+-- name: FetchBoardLoginLinkByID :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`
+WHERE 
+    `id` = ? ;
+
+        
+-- name: FetchBoardLoginLinkBySecretHash :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`
+WHERE 
+    `secret_hash` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchBoardLoginLinkByAccountUUID :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`
+WHERE 
+    `account_uuid` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchBoardLoginLinkByIDForUpdate :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`
+WHERE 
+    `id` = ? 
+FOR UPDATE;
+        
+-- name: FetchBoardLoginLinkBySecretHashOrderedByExpiresAtASC :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`
+WHERE 
+    `secret_hash` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?;
+
+-- name: FetchBoardLoginLinkBySecretHashOrderedByExpiresAtDESC :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`
+WHERE 
+    `secret_hash` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?;
+
+            
+-- name: FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtASC :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`
+WHERE 
+    `account_uuid` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?;
+
+-- name: FetchBoardLoginLinkByAccountUUIDOrderedByExpiresAtDESC :many
+SELECT `id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`,`created_at`,`updated_at`
+FROM `board_login_link`
+WHERE 
+    `account_uuid` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?;
+
+            
+
+
+
+
+-- browser_session selects:
+-- name: FetchBrowserSessionByID :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `id` = ? ;
+
+        
+-- name: FetchBrowserSessionBySecretHash :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `secret_hash` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchBrowserSessionByKey :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `key` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchBrowserSessionByAccountUUID :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `account_uuid` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchBrowserSessionByCreatedFromAgentUUID :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `created_from_agent_uuid` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchBrowserSessionByIDForUpdate :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `id` = ? 
+FOR UPDATE;
+        
+-- name: FetchBrowserSessionBySecretHashOrderedByExpiresAtASC :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `secret_hash` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?;
+
+-- name: FetchBrowserSessionBySecretHashOrderedByExpiresAtDESC :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `secret_hash` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?;
+
+            
+-- name: FetchBrowserSessionByKeyOrderedByExpiresAtASC :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `key` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?;
+
+-- name: FetchBrowserSessionByKeyOrderedByExpiresAtDESC :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `key` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?;
+
+            
+-- name: FetchBrowserSessionByAccountUUIDOrderedByExpiresAtASC :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `account_uuid` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?;
+
+-- name: FetchBrowserSessionByAccountUUIDOrderedByExpiresAtDESC :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `account_uuid` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?;
+
+            
+-- name: FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtASC :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `created_from_agent_uuid` = ?  
+ORDER BY expires_at ASC
+LIMIT ?, ?;
+
+-- name: FetchBrowserSessionByCreatedFromAgentUUIDOrderedByExpiresAtDESC :many
+SELECT `id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`user_agent`,`ip_hint`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`,`created_at`,`updated_at`
+FROM `browser_session`
+WHERE 
+    `created_from_agent_uuid` = ?  
+ORDER BY expires_at DESC
+LIMIT ?, ?;
+
+            
+
+
+
+
 -- invite selects:
 -- name: FetchInviteByID :many
 SELECT `id`,`team_uuid`,`code`,`label`,`created_by_member_uuid`,`max_uses`,`uses`,`expires_at`,`revoked_at`,`revoked_by_member_uuid`,`status`,`last_used_at`,`created_at`,`updated_at`

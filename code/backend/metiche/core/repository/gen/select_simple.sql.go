@@ -91,6 +91,88 @@ func (q *Queries) FetchAgent(ctx context.Context) ([]Agent, error) {
 	return items, nil
 }
 
+const fetchBoardLoginLink = `-- name: FetchBoardLoginLink :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `redirect_path` + "`" + `,` + "`" + `requested_via` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `consumed_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `board_login_link` + "`" + `
+`
+
+func (q *Queries) FetchBoardLoginLink(ctx context.Context) ([]BoardLoginLink, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBoardLoginLink)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BoardLoginLink
+	for rows.Next() {
+		var i BoardLoginLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountUUID,
+			&i.AgentUUID,
+			&i.SecretHash,
+			&i.RedirectPath,
+			&i.RequestedVia,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchBrowserSession = `-- name: FetchBrowserSession :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `secret_hash` + "`" + `,` + "`" + `auth_method` + "`" + `,` + "`" + `created_from_agent_uuid` + "`" + `,` + "`" + `user_agent` + "`" + `,` + "`" + `ip_hint` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `revoked_at` + "`" + `,` + "`" + `end_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+FROM ` + "`" + `browser_session` + "`" + `
+`
+
+func (q *Queries) FetchBrowserSession(ctx context.Context) ([]BrowserSession, error) {
+	rows, err := q.db.QueryContext(ctx, fetchBrowserSession)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BrowserSession
+	for rows.Next() {
+		var i BrowserSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.AccountUUID,
+			&i.SecretHash,
+			&i.AuthMethod,
+			&i.CreatedFromAgentUUID,
+			&i.UserAgent,
+			&i.IpHint,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const fetchClaim = `-- name: FetchClaim :many
 SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `intent_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `mode` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `ttl_seconds` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `hard_expires_at` + "`" + `,` + "`" + `breadth_score` + "`" + `,` + "`" + `released_at` + "`" + `,` + "`" + `release_reason` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
 FROM ` + "`" + `claim` + "`" + `

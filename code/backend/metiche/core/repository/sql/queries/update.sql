@@ -41,6 +41,20 @@ SET
 WHERE
 `id` = ?;
 
+-- name: UpdateBoardLoginLink :exec
+UPDATE `board_login_link`
+SET
+`account_uuid` = ?, `agent_uuid` = ?, `secret_hash` = ?, `redirect_path` = ?, `requested_via` = ?, `expires_at` = ?, `consumed_at` = ?, `created_at` = ?, `updated_at` = ?
+WHERE
+`id` = ?;
+
+-- name: UpdateBrowserSession :exec
+UPDATE `browser_session`
+SET
+`key` = ?, `account_uuid` = ?, `secret_hash` = ?, `auth_method` = ?, `created_from_agent_uuid` = ?, `user_agent` = ?, `ip_hint` = ?, `expires_at` = ?, `last_seen_at` = ?, `revoked_at` = ?, `end_reason` = ?, `created_at` = ?, `updated_at` = ?
+WHERE
+`id` = ?;
+
 -- name: UpdateInvite :exec
 UPDATE `invite`
 SET

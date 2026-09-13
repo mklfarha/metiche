@@ -67,6 +67,10 @@ import (
 
 	"github.com/mklfarha/metiche/backend/core/module/invite"
 
+	"github.com/mklfarha/metiche/backend/core/module/board_login_link"
+
+	"github.com/mklfarha/metiche/backend/core/module/browser_session"
+
 	"github.com/mklfarha/metiche/backend/core/repository"
 )
 
@@ -124,6 +128,10 @@ type Implementation struct {
 	account account.Module
 
 	invite invite.Module
+
+	board_login_link board_login_link.Module
+
+	browser_session browser_session.Module
 }
 
 type Params struct {
@@ -320,6 +328,16 @@ func New(params Params) (*Implementation, error) {
 	})
 
 	impl.invite = invite.New(coretypes.ModuleParams{
+		Repository: repository,
+		Logger:     logger,
+	})
+
+	impl.board_login_link = board_login_link.New(coretypes.ModuleParams{
+		Repository: repository,
+		Logger:     logger,
+	})
+
+	impl.browser_session = browser_session.New(coretypes.ModuleParams{
 		Repository: repository,
 		Logger:     logger,
 	})
@@ -533,4 +551,20 @@ func (i *Implementation) Account() account.Module {
 // came to be discarded.
 func (i *Implementation) Invite() invite.Module {
 	return i.invite
+}
+
+// BoardLoginLink returns the process-wide board_login_link module built in New.
+// The receiver is a POINTER, like Destroy/DB above: a value receiver here would
+// copy the struct on every call, which is how the previous lazy initialization
+// came to be discarded.
+func (i *Implementation) BoardLoginLink() board_login_link.Module {
+	return i.board_login_link
+}
+
+// BrowserSession returns the process-wide browser_session module built in New.
+// The receiver is a POINTER, like Destroy/DB above: a value receiver here would
+// copy the struct on every call, which is how the previous lazy initialization
+// came to be discarded.
+func (i *Implementation) BrowserSession() browser_session.Module {
+	return i.browser_session
 }

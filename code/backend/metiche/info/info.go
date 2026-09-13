@@ -86,6 +86,8 @@ const infoHTML = `<!doctype html>
     <li><code>limit_event</code> → <code>/v1/limit-events</code></li>
     <li><code>account</code> → <code>/v1/accounts</code></li>
     <li><code>invite</code> → <code>/v1/invites</code></li>
+    <li><code>board_login_link</code> → <code>/v1/board-login-links</code></li>
+    <li><code>browser_session</code> → <code>/v1/browser-sessions</code></li>
   </ul>
 </div>
 

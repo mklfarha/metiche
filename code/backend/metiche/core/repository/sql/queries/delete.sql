@@ -29,6 +29,16 @@ DELETE FROM `project`
 WHERE
 `id` = ?;
 
+-- name: DeleteBoardLoginLink :execresult
+DELETE FROM `board_login_link`
+WHERE
+`id` = ?;
+
+-- name: DeleteBrowserSession :execresult
+DELETE FROM `browser_session`
+WHERE
+`id` = ?;
+
 -- name: DeleteInvite :execresult
 DELETE FROM `invite`
 WHERE

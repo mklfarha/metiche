@@ -27,6 +27,7 @@ sql:
           always_show: AlwaysShow
           asserted_at: AssertedAt
           assertion_uuid: AssertionUUID
+          auth_method: AuthMethod
           b_label: BLabel
           b_pattern: BPattern
           b_summary: BSummary
@@ -46,9 +47,11 @@ sql:
           confidence: Confidence
           conflict_uuid: ConflictUUID
           consecutive_failures: ConsecutiveFailures
+          consumed_at: ConsumedAt
           contract_uuid: ContractUUID
           created_at: CreatedAt
           created_by_member_uuid: CreatedByMemberUUID
+          created_from_agent_uuid: CreatedFromAgentUUID
           current_intent_uuid: CurrentIntentUUID
           decided_at: DecidedAt
           decided_by_member_uuid: DecidedByMemberUUID
@@ -69,6 +72,7 @@ sql:
           dismiss_reason: DismissReason
           display_name: DisplayName
           email: Email
+          end_reason: EndReason
           ended_at: EndedAt
           evidence: Evidence
           expires_at: ExpiresAt
@@ -89,6 +93,7 @@ sql:
           ignore_patterns: IgnorePatterns
           instruction_uuid: InstructionUUID
           intent_uuid: IntentUUID
+          ip_hint: IpHint
           is_instance_default: IsInstanceDefault
           judge_session_uuid: JudgeSessionUUID
           judge_window_seconds: JudgeWindowSeconds
@@ -146,11 +151,13 @@ sql:
           project_uuid: ProjectUUID
           raised_by_member_uuid: RaisedByMemberUUID
           rationale: Rationale
+          redirect_path: RedirectPath
           ref_kind: RefKind
           ref_uuid: RefUUID
           release_reason: ReleaseReason
           released_at: ReleasedAt
           repo_url: RepoURL
+          requested_via: RequestedVia
           required: Required
           requires_claimed_accounts: RequiresClaimedAccounts
           requires_report: RequiresReport
@@ -167,6 +174,7 @@ sql:
           revoked_at: RevokedAt
           revoked_by_member_uuid: RevokedByMemberUUID
           role: Role
+          secret_hash: SecretHash
           sequence: Sequence
           session_abandoned_seconds: SessionAbandonedSeconds
           session_stale_seconds: SessionStaleSeconds
@@ -211,6 +219,7 @@ sql:
           ttl_seconds: TtlSeconds
           type: Type
           updated_at: UpdatedAt
+          user_agent: UserAgent
           uses: Uses
           verdict: Verdict
           visibility: Visibility
@@ -398,6 +407,8 @@ overrides:
     rename:
       account: Account
       agent: Agent
+      board_login_link: BoardLoginLink
+      browser_session: BrowserSession
       claim: Claim
       claim_path: ClaimPath
       conflict: Conflict

@@ -321,6 +321,30 @@ func mountRoutes(r chi.Router, h *handlers) {
 
 		})
 
+		r.Route("/board-login-links", func(r chi.Router) {
+			r.Get("/", h.ListBoardLoginLink)
+			r.Post("/", h.CreateBoardLoginLink)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", h.GetBoardLoginLink)
+				r.Patch("/", h.UpdateBoardLoginLink)
+				r.Delete("/", h.DeleteBoardLoginLink)
+			})
+
+		})
+
+		r.Route("/browser-sessions", func(r chi.Router) {
+			r.Get("/", h.ListBrowserSession)
+			r.Post("/", h.CreateBrowserSession)
+
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", h.GetBrowserSession)
+				r.Patch("/", h.UpdateBrowserSession)
+				r.Delete("/", h.DeleteBrowserSession)
+			})
+
+		})
+
 	})
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
