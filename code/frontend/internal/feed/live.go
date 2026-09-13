@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/mklfarha/metiche/frontend/internal/model"
@@ -84,6 +86,40 @@ type Live struct {
 	RequestTimeout time.Duration
 
 	Logger *slog.Logger
+
+	// onNotFound is called whenever the backend answers 404 for this team, on
+	// any read. See OnNotFound.
+	onNotFound atomic.Pointer[func()]
+}
+
+// ErrNotFound is wrapped by every error a Live returns because the backend
+// answered 404 for the team: it does not exist, or it is private and this
+// board may not read it (app/authz answers both the same way).
+var ErrNotFound = errors.New("team not found on the backend")
+
+// NotFoundReporter is implemented by a feed that can say the backend stopped
+// recognising its team. A caller that registered the team on the strength of
+// an earlier 200 uses it to take the board down again.
+type NotFoundReporter interface {
+	// OnNotFound installs fn, called (possibly repeatedly, from the feed's own
+	// goroutines) every time a read of the team answers 404. fn must not block.
+	OnNotFound(fn func())
+}
+
+// OnNotFound implements NotFoundReporter.
+//
+// It does not change what the feed does on a 404: the stream still backs off
+// and reconnects, as it always has, because a pre-registered team is the
+// operator's to take down. Stopping a feed is its owner's decision, made by
+// cancelling the context.
+func (l *Live) OnNotFound(fn func()) { l.onNotFound.Store(&fn) }
+
+// notFound reports a 404 and returns the error that describes it.
+func (l *Live) notFound(path string) error {
+	if fn := l.onNotFound.Load(); fn != nil && *fn != nil {
+		(*fn)()
+	}
+	return fmt.Errorf("GET %s: %w", path, ErrNotFound)
 }
 
 // Name implements Feed. It must never grow the token: it is logged, and it is
@@ -151,6 +187,9 @@ func (l *Live) getJSON(ctx context.Context, url string, v any) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return l.notFound(req.URL.Path)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET %s: %s", req.URL.Path, resp.Status)
 	}
@@ -240,6 +279,9 @@ func (l *Live) pump(ctx context.Context, after int64, out chan<- model.Event) (i
 		return after, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return after, l.notFound(req.URL.Path)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return after, fmt.Errorf("GET %s: %s", req.URL.Path, resp.Status)
 	}

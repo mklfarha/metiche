@@ -2,7 +2,6 @@ package view
 
 import (
 	"fmt"
-	"github.com/mklfarha/metiche/frontend/internal/model"
 	"github.com/mklfarha/metiche/frontend/internal/state"
 )
 
@@ -77,7 +76,7 @@ templ topbar(s state.Snapshot, tab Tab) {
 			@tab_(tab, TabRuns, "Runs", fmt.Sprintf("/t/%s/runs", s.Team.Slug), "nav-n-runs", len(s.Sessions), false, false)
 		</nav>
 		<div class="spacer"></div>
-		@cadencePicker(s)
+		@cadenceLabel(s)
 		<div class="cursors">
 			<span class="cursor seq" title="sequence — advances on every event, appends to the timeline">
 				<span class="k">seq</span>
@@ -92,24 +91,21 @@ templ topbar(s state.Snapshot, tab Tab) {
 	</header>
 }
 
-// cadencePicker is visible on every page on purpose. Cadence silently changes
+// cadenceLabel is visible on every page on purpose. Cadence silently changes
 // what the board tells people to do, and a setting like that left wrong is
 // invisible until its advice is wrong — so it states itself, in the header,
 // next to the thing it governs.
-templ cadencePicker(s state.Snapshot) {
-	<label class="cadence" title={ cadenceHint(s.Project.Cadence) }>
+//
+// It is READ-ONLY. The board is a public, unauthenticated page, and it has no
+// way to change anything: pace is set by the team through the backend, and
+// arrives here like every other fact. It used to be a <select> that posted
+// to this service, which applied a made-up event and broadcast it to every
+// viewer of the board.
+templ cadenceLabel(s state.Snapshot) {
+	<span class="cadence" style="cursor:default" title={ cadenceHint(s.Project.Cadence) }>
 		<span class="k">pace</span>
-		<select
-			name="cadence"
-			hx-post={ fmt.Sprintf("/t/%s/cadence", s.Team.Slug) }
-			hx-trigger="change"
-			hx-swap="none"
-		>
-			for _, c := range model.Cadences() {
-				<option value={ string(c) } selected?={ c == s.Project.Cadence }>{ c.Label() }</option>
-			}
-		</select>
-	</label>
+		<span style="font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--ink)">{ s.Project.Cadence.Label() }</span>
+	</span>
 }
 
 templ tab_(active Tab, self Tab, label string, href string, id string, count int, hot bool, oob bool) {

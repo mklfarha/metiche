@@ -2,8 +2,10 @@ package web
 
 import (
 	"context"
+	"math/rand/v2"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mklfarha/metiche/frontend/internal/feed"
@@ -32,6 +34,14 @@ import (
 //     probed at all;
 //   - nothing — no feed, no goroutine — exists for a slug the backend has not
 //     confirmed.
+//
+// And a confirmation is not forever. A team can be made private or deleted
+// while its board is open, so a discovered team is TAKEN DOWN — feed stopped,
+// open streams closed, slot freed, the 404 remembered — as soon as either its
+// feed reads a 404 or the periodic re-probe (RecheckInterval) gets one. The
+// re-probe is not optional: the backend authorizes its stream once, when it
+// is opened, so a stream that stays healthy never reports the change.
+// Demo and pre-registered teams are never taken down.
 type Discovery struct {
 	// Probe asks the backend about one slug. Required.
 	Probe func(ctx context.Context, slug string) (feed.ProbeResult, error)
@@ -53,7 +63,14 @@ type Discovery struct {
 	// MaxRemembered bounds the negative cache itself, since every distinct
 	// junk slug is an entry. Default 10000.
 	MaxRemembered int
-	// Now is the clock, for tests. Default time.Now.
+	// RecheckInterval is how often a discovered team's visibility is asked
+	// again while its board is up. A team made private stops being served
+	// within about one interval even if its feed stays healthy. Each wait is
+	// shortened by a random up to a fifth of it, so teams discovered together
+	// do not re-probe together, and the bound stays one interval. Default 60s.
+	RecheckInterval time.Duration
+	// Now is the clock, for tests. Default time.Now. It governs the negative
+	// cache only; RecheckInterval runs on real timers.
 	Now func() time.Time
 }
 
@@ -72,6 +89,9 @@ func (s *Server) EnableDiscovery(ctx context.Context, cfg Discovery) {
 	}
 	if cfg.MaxRemembered <= 0 {
 		cfg.MaxRemembered = 10000
+	}
+	if cfg.RecheckInterval <= 0 {
+		cfg.RecheckInterval = 60 * time.Second
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -124,8 +144,10 @@ type discovery struct {
 }
 
 // resolveTeam finds the team for a request, registering it on demand if
-// discovery is on. A registered slug — demo or live — always wins and is never
-// looked up on the backend, which is what reserves demo slugs.
+// discovery is on. A registered slug — demo or live — always wins and is not
+// looked up on the backend per request, which is what reserves demo slugs.
+// A DISCOVERED team stays registered only while the backend keeps confirming
+// it: see unregister.
 func (s *Server) resolveTeam(ctx context.Context, slug string) (*Team, resolveResult) {
 	if t, ok := s.Lookup(slug); ok {
 		return t, resolveFound
@@ -202,7 +224,22 @@ func (d *discovery) register(s *Server, slug string) (*Team, resolveResult) {
 	if res != feed.ProbeFound {
 		return nil, resolveNotFound
 	}
-	t, err := s.addTeam(d.ctx, slug, slug, "", false, true, d.cfg.NewFeed(slug))
+	f := d.cfg.NewFeed(slug)
+	// The feed reports a 404 on any of its reads. It can fire before addTeam
+	// returns (the first snapshot read) or after the team is long gone (a
+	// straggling reconnect); registered is empty in the first case, and
+	// unregister's identity check makes the second a no-op. A 404 missed
+	// because it landed before registered was set is not lost: the stream
+	// reconnects and 404s again, and the re-probe catches it regardless.
+	var registered atomic.Pointer[Team]
+	if r, ok := f.(feed.NotFoundReporter); ok {
+		r.OnNotFound(func() {
+			if t := registered.Load(); t != nil {
+				d.unregister(s, t, "feed read a 404")
+			}
+		})
+	}
+	t, err := s.addTeam(d.ctx, slug, slug, "", false, true, f)
 	if err != nil {
 		// The probe said yes and the feed's own snapshot read then failed —
 		// a race with a visibility change, or the backend going away. Either
@@ -210,8 +247,87 @@ func (d *discovery) register(s *Server, slug string) (*Team, resolveResult) {
 		s.log.Warn("discovered team failed to start", "err", err)
 		return nil, resolveUnavailable
 	}
+	registered.Store(t)
+	go d.recheck(s, t)
 	s.log.Info("team discovered", "slug", slug, "feed", t.Feed.Name())
 	return t, resolveFound
+}
+
+// recheck re-probes a discovered team until it is taken down or the server
+// stops. It exists because the feed alone cannot see a visibility change: the
+// backend authorizes GET /stream once, before the first byte, and never again
+// on that connection, so a private team's healthy stream stays open until
+// something else drops it.
+//
+// A probe that ERRORS is not a verdict — an outage must not take a board down
+// — so only a clean 404 unregisters.
+func (d *discovery) recheck(s *Server, t *Team) {
+	interval := d.cfg.RecheckInterval
+	for {
+		wait := interval - time.Duration(rand.Int64N(int64(interval)/5+1))
+		timer := time.NewTimer(wait)
+		select {
+		case <-t.ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		res, err := d.cfg.Probe(t.ctx, t.Slug)
+		if t.ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			s.log.Warn("re-probing a discovered team failed; keeping it", "err", err)
+			continue
+		}
+		if res != feed.ProbeFound {
+			d.unregister(s, t, "re-probe answered 404")
+			return
+		}
+	}
+}
+
+// unregister takes a discovered team down: it leaves the registry, its slot is
+// freed, its 404 is remembered like any other, its feed and re-probe stop
+// (cancel), and every open SSE stream on it ends (Hub.Close). The next request
+// for the slug is an ordinary not-found.
+//
+// It refuses — and reports false — for a demo, for a pre-registered live team,
+// and for a team that is no longer the one registered under its slug (already
+// taken down, or replaced by a later discovery). That identity check is what
+// makes it safe to call from several places at once, and exactly once
+// effective: the slot count moves only when the registry entry is removed.
+//
+// Lock order is d.mu then s.mu, the same as discover's.
+func (d *discovery) unregister(s *Server, t *Team, why string) bool {
+	if t == nil || t.Demo || !t.Discovered {
+		return false
+	}
+	d.mu.Lock()
+	s.mu.Lock()
+	if s.teams[t.Slug] != t {
+		s.mu.Unlock()
+		d.mu.Unlock()
+		return false
+	}
+	delete(s.teams, t.Slug)
+	for i, slug := range s.order {
+		if slug == t.Slug {
+			s.order = append(s.order[:i], s.order[i+1:]...)
+			break
+		}
+	}
+	s.mu.Unlock()
+	d.discovered--
+	d.remember(t.Slug, resolveNotFound, d.cfg.NotFoundTTL)
+	d.mu.Unlock()
+
+	t.cancel()
+	t.Hub.Close()
+	// The slug is not logged, for the reason the public pages never show a
+	// live team: logs travel further than the board does.
+	s.log.Info("discovered team taken down", "reason", why)
+	return true
 }
 
 // remember records a negative answer. Called with d.mu held.

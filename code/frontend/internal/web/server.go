@@ -1,6 +1,10 @@
-// Package web is the HTTP surface: five pages, one SSE stream, two controls,
+// Package web is the HTTP surface: five pages, one SSE stream, no controls,
 // and — against a real backend — on-demand registration of the teams people
 // ask for (discovery.go).
+//
+// Every board is READ-ONLY. There is no authentication on this service, so
+// nothing it serves may change what any viewer sees: a board shows its feed
+// and nothing else.
 package web
 
 import (
@@ -21,7 +25,6 @@ import (
 
 	"github.com/mklfarha/metiche/frontend/internal/feed"
 	"github.com/mklfarha/metiche/frontend/internal/hub"
-	"github.com/mklfarha/metiche/frontend/internal/model"
 	"github.com/mklfarha/metiche/frontend/internal/state"
 	"github.com/mklfarha/metiche/frontend/internal/view"
 )
@@ -47,6 +50,9 @@ type Team struct {
 	Hub        *hub.Hub
 	Feed       feed.Feed
 
+	// ctx is the team's own lifetime: cancel ends it, which stops the feed and
+	// anything else discovery runs for this team.
+	ctx    context.Context
 	cancel context.CancelFunc
 }
 
@@ -109,7 +115,7 @@ func (s *Server) addTeam(ctx context.Context, slug, name, joinCode string, demo,
 		name = loaded
 	}
 	t := &Team{Slug: slug, Name: name, JoinCode: joinCode, Demo: demo, Discovered: discovered,
-		Hub: h, Feed: f, cancel: cancel}
+		Hub: h, Feed: f, ctx: ctx, cancel: cancel}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -201,9 +207,16 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/decisions", s.decisions)
 		r.Get("/runs", s.runs)
 		r.Get("/runs/{session}", s.run)
-		r.Post("/conflicts/{key}/resolve", s.resolve)
-		r.Post("/sessions/{session}/nudge", s.nudge)
-		r.Post("/cadence", s.cadence)
+		// These three paths were board controls. They had no authentication,
+		// and each applied a made-up event to the board and broadcast it to
+		// every viewer — of a real team, or of the shared demo. They now answer
+		// exactly what an unknown slug answers, for every team, without looking
+		// the team up: nothing about the response says whether the slug exists.
+		// They are spelled out, rather than left to the router's default 404,
+		// only so the page is the same NotFound page a board URL gets.
+		r.Post("/conflicts/{key}/resolve", s.noControls)
+		r.Post("/sessions/{session}/nudge", s.noControls)
+		r.Post("/cadence", s.noControls)
 	})
 	return r
 }
@@ -326,74 +339,21 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 
 // ---------------------------------------------------------------- controls
 
-func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
-	t, _, ok := s.team(w, r)
-	if !ok {
-		return
-	}
-	key := chi.URLParam(r, "key")
-	status := firstNonEmpty(r.FormValue("status"), "resolved")
-
-	payload, _ := json.Marshal(map[string]string{
-		"conflict_key": key, "status": status, "resolution": status + " from the board",
-	})
-	t.Hub.Inject(model.Event{
-		Kind:       "conflict_resolved",
-		Summary:    fmt.Sprintf("%s marked %s from the board", key, status),
-		OccurredAt: time.Now(),
-		Structural: true,
-		Payload:    payload,
-	})
-	// The page repaints from the board frame the injection just broadcast, so
-	// the response body has nothing to say.
-	w.Header().Set("HX-Refresh", "true")
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// cadence changes the project's pace from the board. It is structural: every
-// suggested action on the page is written in that register, so the board has
-// to repaint.
-func (s *Server) cadence(w http.ResponseWriter, r *http.Request) {
-	t, _, ok := s.team(w, r)
-	if !ok {
-		return
-	}
-	next := model.Cadence(strings.TrimSpace(r.FormValue("cadence")))
-	if !next.Valid() {
-		http.Error(w, "unknown cadence", http.StatusBadRequest)
-		return
-	}
-	payload, _ := json.Marshal(map[string]string{"cadence": string(next)})
-	t.Hub.Inject(model.Event{
-		Kind:       "project_cadence_changed",
-		Summary:    fmt.Sprintf("project pace set to %s from the board", next.Label()),
-		OccurredAt: time.Now(),
-		Structural: true,
-		Payload:    payload,
-	})
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) nudge(w http.ResponseWriter, r *http.Request) {
-	t, snap, ok := s.team(w, r)
-	if !ok {
-		return
-	}
-	sessionKey := chi.URLParam(r, "session")
-	kind := firstNonEmpty(r.FormValue("nudge"), "ask")
-	payload, _ := json.Marshal(map[string]string{"session_key": sessionKey, "kind": kind})
-	// A nudge is deliberately NOT structural: it belongs in the log, and
-	// repainting everybody's board because one human poked one agent is
-	// exactly the noise the two-cursor split exists to avoid.
-	t.Hub.Inject(model.Event{
-		Kind:       "instruction_delivered",
-		Summary:    fmt.Sprintf("nudge (%s) queued for %s — delivered on its next call", kind, snap.SessionLabel(sessionKey)),
-		SessionKey: sessionKey,
-		OccurredAt: time.Now(),
-		Structural: false,
-		Payload:    payload,
-	})
-	w.WriteHeader(http.StatusNoContent)
+// noControls answers the old control paths — for a live team, a demo, or a
+// slug nobody has heard of — with the same 404 page an unknown board gets.
+//
+// Demo boards get no special case. A demo is ONE shared hub per recording,
+// so anything applied server-side is seen by every visitor watching it;
+// keeping a per-viewer copy would need per-viewer state that the next shared
+// board frame repaints over, and a CSRF defence for a POST that has nothing
+// real behind it. The recording already resolves its own conflicts on screen,
+// which is what the demo is there to show.
+//
+// It never resolves the team, so it never registers one through discovery,
+// never asks the backend, and never touches a hub.
+func (s *Server) noControls(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
+	s.render(w, r, view.NotFound(chi.URLParam(r, "slug")))
 }
 
 // ---------------------------------------------------------------- stream
@@ -436,6 +396,16 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Subscribe before the status is spent. A team taken down between
+	// resolveTeam and here has a closed hub, and its browsers get the same 404
+	// as the next page load rather than one last replay of the board.
+	sub := t.Hub.Subscribe()
+	defer t.Hub.Unsubscribe(sub)
+	if t.Hub.Closed() {
+		http.NotFound(w, r)
+		return
+	}
+
 	after := int64(0)
 	if v := r.URL.Query().Get("after"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
@@ -454,9 +424,6 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	h.Set("Connection", "keep-alive")
 	h.Set("X-Accel-Buffering", "no") // nginx would otherwise buffer this to death
 	w.WriteHeader(http.StatusOK)
-
-	sub := t.Hub.Subscribe()
-	defer t.Hub.Unsubscribe(sub)
 
 	// Tell the client how long to wait before reconnecting, then replay.
 	fmt.Fprint(w, "retry: 1000\n\n")

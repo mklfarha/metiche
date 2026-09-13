@@ -1,7 +1,6 @@
 package view
 
 import (
-	"fmt"
 	"github.com/mklfarha/metiche/frontend/internal/model"
 	"github.com/mklfarha/metiche/frontend/internal/state"
 )
@@ -99,30 +98,10 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 				</span>
 			}
 		</div>
-		if open {
-			// The backend that serves these does not exist yet, so the controls
-			// post to this service's own stub endpoint and say so plainly
-			// rather than pretending to work.
-			<div class="actions">
-				<button
-					class="btn primary"
-					hx-post={ fmt.Sprintf("/t/%s/conflicts/%s/resolve", s.Team.Slug, c.Key) }
-					hx-vals={ `{"status":"resolved"}` }
-					hx-swap="none"
-				>Mark resolved</button>
-				<button
-					class="btn"
-					hx-post={ fmt.Sprintf("/t/%s/conflicts/%s/resolve", s.Team.Slug, c.Key) }
-					hx-vals={ `{"status":"acknowledged"}` }
-					hx-swap="none"
-				>Acknowledge</button>
-				<button
-					class="btn ghost"
-					hx-post={ fmt.Sprintf("/t/%s/conflicts/%s/resolve", s.Team.Slug, c.Key) }
-					hx-vals={ `{"status":"dismissed"}` }
-					hx-swap="none"
-				>Dismiss as false positive</button>
-			</div>
-		}
+		// No resolve / acknowledge / dismiss buttons. The board is a read-only
+		// public page: a conflict is resolved by the agents through the
+		// backend, and the resolution arrives here on the stream. The buttons
+		// that used to be here posted to this service, which applied a made-up
+		// event and broadcast it to every viewer.
 	</div>
 }

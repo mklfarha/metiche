@@ -69,13 +69,9 @@ type Hub struct {
 	// ways a board can be correct — see Run.
 	snapshots feed.Snapshotter
 
-	// A human acting from the board injects an event locally, which consumes a
-	// sequence number the feed does not know about. drift keeps the feed's own
-	// numbering monotonic on top of that, so an injected event never makes the
-	// store start rejecting real ones.
-	seqMu    sync.Mutex
-	drift    int64
-	lastFeed int64
+	// closed is set by Close, under mu. A closed hub has no subscribers and
+	// accepts none: Subscribe hands back an already-closed channel.
+	closed bool
 
 	started bool
 	done    chan struct{}
@@ -187,11 +183,6 @@ func (h *Hub) Done() <-chan struct{} { return h.done }
 func (h *Hub) Started() bool { return h.started }
 
 func (h *Hub) ingest(ev model.Event) bool {
-	h.seqMu.Lock()
-	h.lastFeed = ev.Sequence
-	ev.Sequence += h.drift
-	h.seqMu.Unlock()
-
 	applied, ok := h.store.Apply(ev)
 	if !ok {
 		return false
@@ -240,26 +231,34 @@ func (h *Hub) broadcastBoard() {
 	})
 }
 
-// Inject applies an event raised by a human on this board rather than by the
-// feed — resolving a conflict, nudging an agent. Once the backend exists these
-// become POSTs to it and arrive back through the feed like everything else;
-// until then they are applied locally so the controls are real and not mimed.
-func (h *Hub) Inject(ev model.Event) model.Event {
-	ev.Sequence = 0 // let the store assign the next one
-	applied, ok := h.store.Apply(ev)
-	if !ok {
-		return applied
-	}
-	h.seqMu.Lock()
-	h.drift = applied.Sequence - h.lastFeed
-	h.seqMu.Unlock()
+// There is deliberately no way to apply an event that did not come from the
+// feed. The hub used to have one (Inject), for board controls that resolved
+// conflicts, nudged agents and changed pace; they had no authentication, and
+// what they applied was broadcast to every viewer of the board as if the team
+// had done it. Everything a board shows now comes from its feed.
 
-	snap := h.store.Snapshot()
-	h.broadcast(Frame{Name: "timeline", ID: applied.Sequence, HTML: render(h.renderer.TimelineItem(snap, applied))})
-	if applied.Structural {
-		h.broadcastBoard()
+// Closed reports whether Close has been called.
+func (h *Hub) Closed() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.closed
+}
+
+// Close ends every open subscription and refuses new ones. It is how a team
+// that is no longer allowed to be shown gets its open browsers off it: each
+// stream handler sees its channel close and ends the response. It does not
+// stop the feed — that is the context's job — and it is safe to call twice.
+func (h *Hub) Close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closed = true
+	for sub := range h.subs {
+		delete(h.subs, sub)
+		if !sub.closed {
+			sub.closed = true
+			close(sub.C)
+		}
 	}
-	return applied
 }
 
 // Replay returns the frames a client reconnecting at `after` has missed: every
@@ -292,8 +291,13 @@ func (h *Hub) Replay(after int64) []Frame {
 func (h *Hub) Subscribe() *Subscriber {
 	sub := &Subscriber{C: make(chan Frame, 256)}
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		sub.closed = true
+		close(sub.C)
+		return sub
+	}
 	h.subs[sub] = struct{}{}
-	h.mu.Unlock()
 	return sub
 }
 

@@ -26,14 +26,41 @@ type stubBackend struct {
 	public  map[string]string // slug -> team name
 	failing map[string]bool
 	hits    map[string]int // GET /v1/teams/{slug}, per slug
+	streams map[string]int // GET /v1/teams/{slug}/stream answered 200, per slug
 	total   int            // every request of any kind
 
 	// gate, when non-nil, holds the FIRST snapshot read until it is closed.
 	gate chan struct{}
+
+	// sessions and conflicts, when non-nil, are what every snapshot carries.
+	sessions  []any
+	conflicts []any
 }
 
 func newStubBackend() *stubBackend {
-	return &stubBackend{public: map[string]string{}, failing: map[string]bool{}, hits: map[string]int{}}
+	return &stubBackend{public: map[string]string{}, failing: map[string]bool{},
+		hits: map[string]int{}, streams: map[string]int{}}
+}
+
+func (b *stubBackend) setPublic(slug, name string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.public[slug] = name
+}
+
+// makePrivate is the visibility flip: from now on every read of slug is the
+// backend's 404. Connections already open are left alone, as the real
+// backend leaves them.
+func (b *stubBackend) makePrivate(slug string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.public, slug)
+}
+
+func (b *stubBackend) streamsFor(slug string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.streams[slug]
 }
 
 func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +79,17 @@ func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if sub == "" {
 		b.hits[slug]++
 	}
+	if sub == "stream" && public && !failing {
+		b.streams[slug]++
+	}
+	sessions, conflicts := b.sessions, b.conflicts
 	b.mu.Unlock()
+	if sessions == nil {
+		sessions = []any{}
+	}
+	if conflicts == nil {
+		conflicts = []any{}
+	}
 
 	if failing {
 		http.Error(w, "boom", http.StatusInternalServerError)
@@ -70,7 +107,7 @@ func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
 			"sequence": 3, "board_revision": 1,
 			"team":     map[string]any{"key": slug, "name": name, "sequence": 3, "board_revision": 1},
-			"sessions": []any{}, "conflicts": []any{},
+			"sessions": sessions, "conflicts": conflicts,
 		})
 	case "contracts":
 		writeJSON(w, map[string]any{"contracts": []any{}})

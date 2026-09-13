@@ -161,18 +161,9 @@ templ agentCard(s state.Snapshot, l state.AgentLane) {
 				>
 					{ l.Session.Key } · { state.Ago(s.Now, l.Session.LastHeartbeatAt) }
 				</a>
-				if !l.Idle() {
-					// A nudge is a timeline event, never a board repaint. It is
-					// also advisory: the agent learns about it on its next call,
-					// because MCP cannot be pushed to.
-					<button
-						class="badge plain"
-						hx-post={ fmt.Sprintf("/t/%s/sessions/%s/nudge", s.Team.Slug, l.Session.Key) }
-						hx-vals={ `{"nudge":"ask"}` }
-						hx-swap="none"
-						title="queue a nudge — delivered on this agent's next call"
-					>nudge</button>
-				}
+				// No nudge button: the board is a read-only public page. A nudge
+				// posted here was applied as a made-up event and broadcast to
+				// every viewer, and never reached the agent.
 			}
 		</div>
 	</article>
