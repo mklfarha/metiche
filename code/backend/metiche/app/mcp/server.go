@@ -156,6 +156,8 @@ changed.
 Responses are small on purpose. metiche will never hand you the whole board or everybody's claims;
 ask for what you need with get_team_state.
 
+If the person asks to see the board, call open_board.
+
 Retries are safe: pass the same idempotency_key and you get the same answer back, applied once.
 `)
 }
@@ -254,6 +256,28 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 			"Takes no arguments and needs only your bearer token: it is the one call you can make before you have a team or a session. Returns each team's slug (what you pass as team_slug), its name, your role, how many members it has, and whether you already have a session running there.",
 		Annotations: readOnly,
 	}, h.ListTeams)
+
+	addTool(server, h, logger, &mcp.Tool{
+		Name: "open_board",
+		Description: "Open the metiche board for the person. Returns login_url, a sign-in link that signs ONE browser in as this person, works once and expires in 10 minutes. " +
+			"If the person asked you to open the board and you can run a command, write it into a private temporary file and open that file with the OS opener — never put the link itself on a command line. " +
+			"Otherwise show it to them once. Never write it into the repository, a commit, an issue, a PR or a chat channel. board_url is the plain address to share.",
+		// Additive: every call stores a new single-use link. No idempotency
+		// key, on purpose: a replay would have to hand back the same secret,
+		// and the only way to do that is to store it.
+		Annotations: additive,
+	}, h.OpenBoard)
+
+	addTool(server, h, logger, &mcp.Tool{
+		Name: "sign_out_browsers",
+		Description: "List or sign out the browsers signed in to the person's metiche board. With no arguments it only lists them (key, when created and last seen, user agent) and changes nothing. " +
+			"session_key signs out that one browser; all=true signs out every browser on this account. Only ever this account's own browsers. " +
+			"Never sign anything out unless the person asked you to.",
+		// The one destructive tool on this surface: it ends a person's
+		// signed-in browsers. Idempotent: signing out a browser that is
+		// already signed out changes nothing.
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), IdempotentHint: true, OpenWorldHint: boolPtr(false)},
+	}, h.SignOutBrowsers)
 
 	addTool(server, h, logger, &mcp.Tool{
 		Name:        "health",

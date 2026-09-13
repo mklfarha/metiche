@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -103,7 +104,7 @@ func readSSE(t *testing.T, body io.Reader, n int, within time.Duration) ([]sseEv
 // end-to-end cases (private team, no token / wrong account / member) in
 // app/webapi's mysql test, which mounts both halves on one router. What this
 // file does own is TestStreamRefusesBeforeTheFirstByte below.
-var allowPublic = authz.AuthorizerFunc(func(_ context.Context, teamRef, _ string) (authz.Team, error) {
+var allowPublic = authz.AuthorizerFunc(func(_ context.Context, teamRef string, _ authz.Credential) (authz.Team, error) {
 	if teamRef == "" {
 		return authz.Team{}, authz.ErrDenied
 	}
@@ -112,7 +113,7 @@ var allowPublic = authz.AuthorizerFunc(func(_ context.Context, teamRef, _ string
 
 // denyAll refuses everything, the way the real guard refuses a private team to
 // a stranger.
-var denyAll = authz.AuthorizerFunc(func(context.Context, string, string) (authz.Team, error) {
+var denyAll = authz.AuthorizerFunc(func(context.Context, string, authz.Credential) (authz.Team, error) {
 	return authz.Team{}, authz.ErrDenied
 })
 
@@ -130,6 +131,11 @@ func newStreamServerKeepalive(t *testing.T, src Source, team uuid.UUID, keepaliv
 
 func newStreamServerAuth(t *testing.T, src Source, team uuid.UUID, keepalive time.Duration, a authz.Authorizer) (*httptest.Server, *Hub) {
 	t.Helper()
+	return newStreamServerReauth(t, src, team, keepalive, reauthInterval, a)
+}
+
+func newStreamServerReauth(t *testing.T, src Source, team uuid.UUID, keepalive, reauth time.Duration, a authz.Authorizer) (*httptest.Server, *Hub) {
+	t.Helper()
 
 	hub := NewHub(src, nil)
 	lookup := func(_ context.Context, slug string) (TeamRef, error) {
@@ -142,6 +148,7 @@ func newStreamServerAuth(t *testing.T, src Source, team uuid.UUID, keepalive tim
 	r := chi.NewRouter()
 	srvHandler := NewServer(hub, lookup, a, nil)
 	srvHandler.keepalive = keepalive
+	srvHandler.SetReauthInterval(reauth)
 	srvHandler.RegisterOn(r)
 
 	srv := httptest.NewServer(r)
@@ -503,5 +510,206 @@ func TestStreamWithANilAuthorizerRefusesEverything(t *testing.T) {
 	_ = resp.Body.Close()
 	if code != http.StatusNotFound {
 		t.Fatalf("nil authorizer: status = %d, want 404", code)
+	}
+}
+
+// ─────────────────────────────────────────────
+// Re-authorization of an OPEN stream (docs/BOARD_LOGIN.md §4.4)
+// ─────────────────────────────────────────────
+
+// testReauth is the re-authorization interval these tests run with; 60s in
+// production.
+const testReauth = 50 * time.Millisecond
+
+// switchable is an authorizer whose answer a test can change while a stream is
+// open, and which records every credential it was asked about.
+type switchable struct {
+	mode  atomic.Int32 // 0 grant, 1 refuse, 2 outage
+	calls atomic.Int32
+
+	mu    sync.Mutex
+	creds []authz.Credential
+}
+
+func (s *switchable) Authorize(_ context.Context, teamRef string, cred authz.Credential) (authz.Team, error) {
+	s.calls.Add(1)
+	s.mu.Lock()
+	s.creds = append(s.creds, cred)
+	s.mu.Unlock()
+	switch s.mode.Load() {
+	case 1:
+		return authz.Team{}, authz.ErrDenied
+	case 2:
+		return authz.Team{}, fmt.Errorf("the database fell over")
+	}
+	return authz.Team{Slug: teamRef}, nil
+}
+
+// endWatch reads a response body to EOF on ONE goroutine and reports when it
+// got there. A single reader per body matters: two goroutines reading the same
+// body corrupt the client connection. On an open stream it never ends.
+type endWatch struct{ done chan struct{} }
+
+func watchEnd(body io.Reader) *endWatch {
+	e := &endWatch{done: make(chan struct{})}
+	go func() {
+		_, _ = io.Copy(io.Discard, body)
+		close(e.done)
+	}()
+	return e
+}
+
+// within reports whether the stream has ended, waiting at most d.
+func (e *endWatch) within(d time.Duration) bool {
+	select {
+	case <-e.done:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
+
+// TestAnOpenStreamEndsWhenItsViewerLosesAccess is the gap §4.4 closes: the
+// gate decides once, before the first byte, and a stream lives for hours. A
+// member removed from a private team (or an anonymous viewer of a team just
+// made private) must stop receiving events within the re-auth interval, not
+// whenever they happen to reconnect.
+func TestAnOpenStreamEndsWhenItsViewerLosesAccess(t *testing.T) {
+	team := testTeam(t)
+	src := &fakeSource{}
+	src.append(1, 2)
+	auth := &switchable{}
+	srv, hub := newStreamServerReauth(t, src, team, keepaliveInterval, testReauth, auth)
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/teams/demo/stream?after=0", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Header.Set(authz.HeaderBrowserSession, "session-under-test")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	events, _ := readSSE(t, resp.Body, 2, 5*time.Second)
+	assertSequences(t, events, []int64{1, 2}, "before revocation")
+	end := watchEnd(resp.Body)
+
+	// Still allowed: several re-auth ticks pass and the stream stays open.
+	if end.within(6 * testReauth) {
+		t.Fatal("a stream whose viewer still has access was ended by re-authorization")
+	}
+	if n := auth.calls.Load(); n < 3 {
+		t.Fatalf("the open stream re-authorized %d times in %v; want it on every %v tick", n, 6*testReauth, testReauth)
+	}
+
+	// Access is lost. The stream must end within a few intervals.
+	auth.mode.Store(1)
+	if !end.within(20 * testReauth) {
+		t.Fatalf("a stream whose viewer lost access was still open after %v (re-auth every %v)", 20*testReauth, testReauth)
+	}
+	waitForNoWatchers(t, hub, team)
+
+	// Every decision, the gate's and every tick's, was made with the credential
+	// the request came with.
+	auth.mu.Lock()
+	creds := append([]authz.Credential(nil), auth.creds...)
+	auth.mu.Unlock()
+	for i, c := range creds {
+		if c != (authz.Credential{BrowserSession: "session-under-test"}) {
+			t.Fatalf("decision %d was made with a different credential than the request carried", i)
+		}
+	}
+
+	// And the reconnect meets the gate: a status, not a stream.
+	resp2, err := http.DefaultClient.Do(req.Clone(context.Background()))
+	if err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Fatalf("reconnect after revocation: status = %d, want 404", resp2.StatusCode)
+	}
+}
+
+// TestAnOutageDuringReauthEndsTheStream: an open stream that can no longer be
+// vouched for fails closed. The reconnect is exact (?after=), so ending it
+// costs a client nothing but a round trip.
+func TestAnOutageDuringReauthEndsTheStream(t *testing.T) {
+	team := testTeam(t)
+	auth := &switchable{}
+	srv, hub := newStreamServerReauth(t, &fakeSource{}, team, keepaliveInterval, testReauth, auth)
+
+	resp, err := http.Get(srv.URL + "/v1/teams/demo/stream")
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	waitFor(t, time.Second, func() bool { return watcherCount(hub, team) == 1 })
+	end := watchEnd(resp.Body)
+
+	auth.mode.Store(2)
+	if !end.within(20 * testReauth) {
+		t.Fatal("a stream stayed open although its re-authorization could not be decided")
+	}
+
+	// And at the gate an outage is 503, never the 404 of a refusal.
+	resp2, err := http.Get(srv.URL + "/v1/teams/demo/stream")
+	if err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("gate during an outage: status = %d, want 503", resp2.StatusCode)
+	}
+}
+
+// TestAStreamEndsWhenItsSlugNowNamesAnotherTeam: a team deleted and re-created
+// under the same slug is not the stream the client was admitted to.
+func TestAStreamEndsWhenItsSlugNowNamesAnotherTeam(t *testing.T) {
+	team := testTeam(t)
+	var other atomic.Bool
+	auth := authz.AuthorizerFunc(func(_ context.Context, teamRef string, _ authz.Credential) (authz.Team, error) {
+		if other.Load() {
+			return authz.Team{UUID: uuid.Must(uuid.NewV4()), Slug: teamRef, Public: true}, nil
+		}
+		return authz.Team{UUID: team, Slug: teamRef, Public: true}, nil
+	})
+	srv, hub := newStreamServerReauth(t, &fakeSource{}, team, keepaliveInterval, testReauth, auth)
+
+	resp, err := http.Get(srv.URL + "/v1/teams/demo/stream")
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	waitFor(t, time.Second, func() bool { return watcherCount(hub, team) == 1 })
+	end := watchEnd(resp.Body)
+	if end.within(4 * testReauth) {
+		t.Fatal("a stream for the same team was ended")
+	}
+	other.Store(true)
+	if !end.within(20 * testReauth) {
+		t.Fatal("a stream stayed open after its slug came to name a different team")
+	}
+}
+
+// TestTheDefaultReauthIntervalIsAMinute pins decision §9 / §4.4 and that a
+// non-positive override restores it.
+func TestTheDefaultReauthIntervalIsAMinute(t *testing.T) {
+	s := NewServer(NewHub(&fakeSource{}, nil), nil, allowPublic, nil)
+	defer s.hub.Close()
+	if s.reauth != time.Minute || reauthInterval != time.Minute {
+		t.Fatalf("reauth = %v, want 1m", s.reauth)
+	}
+	s.SetReauthInterval(testReauth)
+	if s.reauth != testReauth {
+		t.Fatalf("SetReauthInterval did not take: %v", s.reauth)
+	}
+	s.SetReauthInterval(0)
+	if s.reauth != reauthInterval {
+		t.Fatalf("SetReauthInterval(0) = %v, want the default", s.reauth)
 	}
 }

@@ -24,6 +24,17 @@ import (
 // count it as traffic.
 const keepaliveInterval = 20 * time.Second
 
+// reauthInterval is how often an OPEN stream re-runs the authorization
+// decision it was admitted with (docs/BOARD_LOGIN.md §4.4, decision §9).
+//
+// The gate in front of the handler decides once, before the first byte. A
+// stream lives for hours, and without this a member removed from a private
+// team — or every anonymous viewer of a team that was just made private —
+// would keep receiving its events until they happened to reconnect. With it,
+// that exposure is bounded by this interval. The cost is one indexed read per
+// stream per interval for a public team, and three for a private one.
+const reauthInterval = 60 * time.Second
+
 // StreamPath is the route this package serves. Exported so whoever mounts it
 // does not have to retype it, and so a test can assert it has not drifted.
 const StreamPath = "/v1/teams/{slug}/stream"
@@ -41,6 +52,20 @@ type Server struct {
 	// keepalive is a field rather than a constant only so a test can observe a
 	// comment frame without waiting twenty seconds for one.
 	keepalive time.Duration
+
+	// reauth is how often an open stream re-authorizes. See reauthInterval.
+	reauth time.Duration
+}
+
+// SetReauthInterval changes how often an open stream re-runs its
+// authorization decision. d <= 0 restores the default (reauthInterval). It
+// must be called before RegisterOn serves any request; it exists for tests
+// and for a deployment that wants a tighter bound.
+func (s *Server) SetReauthInterval(d time.Duration) {
+	if d <= 0 {
+		d = reauthInterval
+	}
+	s.reauth = d
 }
 
 // NewServer builds the SSE handler over a hub, a team lookup and the
@@ -55,7 +80,7 @@ func NewServer(hub *Hub, lookup TeamLookup, authorizer authz.Authorizer, logger 
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	s := &Server{hub: hub, lookup: lookup, logger: logger, keepalive: keepaliveInterval}
+	s := &Server{hub: hub, lookup: lookup, logger: logger, keepalive: keepaliveInterval, reauth: reauthInterval}
 	s.guard = authz.Middleware{
 		Authorizer: authorizer,
 		// Byte-identical to the "no such team" this handler already writes for
@@ -65,6 +90,10 @@ func NewServer(hub *Hub, lookup TeamLookup, authorizer authz.Authorizer, logger 
 		// endpoint into a slug oracle.
 		NotFound: func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "no such team", http.StatusNotFound)
+		},
+		// A decision that could not be made is 503, not a refusal.
+		Unavailable: func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		},
 		Logger: logger,
 	}
@@ -171,6 +200,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(s.keepalive)
 	defer ticker.Stop()
 
+	reauth := time.NewTicker(s.reauth)
+	defer reauth.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
@@ -200,8 +232,40 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			flusher.Flush()
+
+		case <-reauth.C:
+			if !s.stillAuthorized(r, team.UUID) {
+				// Returning ends the response. The client's reconnect then
+				// meets the gate in front of this handler and gets a STATUS:
+				// the byte-identical 404, or 503 during an outage.
+				return
+			}
 		}
 	}
+}
+
+// stillAuthorized re-runs, for an open stream, the decision the gate made
+// before its first byte: same authorizer, same slug, same credential
+// (authz.CredentialFromContext). Anything but a grant for the same team ends
+// the stream — a refusal (membership revoked, session revoked or expired, team
+// made private) and also an outage, because an open stream that can no longer
+// be vouched for fails closed. A resumed reconnect loses nothing: ?after= is
+// exact.
+func (s *Server) stillAuthorized(r *http.Request, teamUUID uuid.UUID) bool {
+	ctx := r.Context()
+	granted, err := s.guard.Authorizer.Authorize(ctx, chi.URLParam(r, "slug"), authz.CredentialFromContext(ctx))
+	if err != nil {
+		if !errors.Is(err, authz.ErrDenied) && ctx.Err() == nil {
+			s.logger.Warn("re-authorizing an open stream failed; ending it", zap.Error(err))
+		}
+		return false
+	}
+	// A slug that now names a DIFFERENT team (deleted and re-created) is not
+	// the stream this client was admitted to.
+	if granted.UUID != uuid.Nil && granted.UUID != teamUUID {
+		return false
+	}
+	return true
 }
 
 // replay writes every event after the client's cursor and returns the highest

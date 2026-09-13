@@ -57,6 +57,10 @@ type API struct {
 	// caller passes in because there must be no way to mount these endpoints
 	// unguarded: RegisterOn is the only way in, and it wraps every route.
 	guard authz.Middleware
+
+	// roles answers GET /v1/teams/{slug}/access's "role" for a public team,
+	// whose grant never looked at the credential. See access.go.
+	roles *authz.Guard
 }
 
 // NewAPI builds the read API over a database handle.
@@ -71,9 +75,10 @@ func NewAPI(db *sql.DB, logger *zap.Logger) *API {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	a := &API{db: db, logger: logger}
+	guard := authz.NewGuard(db)
+	a := &API{db: db, logger: logger, roles: guard}
 	a.guard = authz.Middleware{
-		Authorizer: authz.NewGuard(db),
+		Authorizer: guard,
 		// The refusal is notFound, which is the SAME call writeProblem makes
 		// for errTeamNotFound below. Byte-identical on purpose: a private
 		// team must be indistinguishable from one that does not exist, and a
@@ -81,7 +86,11 @@ func NewAPI(db *sql.DB, logger *zap.Logger) *API {
 		// deliberately does not send. 404, never 403 — a 403 confirms the
 		// team exists and hands out a free oracle for the slug namespace.
 		NotFound: a.notFound,
-		Logger:   logger,
+		// A decision that could not be made (the database is unreachable) is
+		// 503, never the 404 above: the board must show "unavailable" to a
+		// signed-in member, not "no such team", and must keep their cookie.
+		Unavailable: a.unavailable,
+		Logger:      logger,
 	}
 	return a
 }
@@ -92,6 +101,11 @@ func (a *API) notFound(w http.ResponseWriter, _ *http.Request) {
 	writeProblem(w, http.StatusNotFound, "not found", "no such team")
 }
 
+// unavailable is this package's one "could not decide right now" response.
+func (a *API) unavailable(w http.ResponseWriter, _ *http.Request) {
+	writeProblem(w, http.StatusServiceUnavailable, "unavailable", "the board is unavailable right now")
+}
+
 // Route paths, exported so whoever mounts them does not retype them.
 const (
 	PathSnapshot  = "/v1/teams/{slug}"
@@ -99,6 +113,11 @@ const (
 	PathContracts = "/v1/teams/{slug}/contracts"
 	PathDecisions = "/v1/teams/{slug}/decisions"
 	PathSession   = "/v1/teams/{slug}/sessions/{key}"
+
+	// PathAccess answers "may this viewer read this team, and as what?" for
+	// the board (docs/BOARD_LOGIN.md §4.2). Board only; NOT routed by any
+	// ingress.
+	PathAccess = "/v1/teams/{slug}/access"
 )
 
 // RegisterOn mounts the read API on r, with every route gated.
@@ -122,6 +141,7 @@ func (a *API) RegisterOn(r chi.Router) {
 	r.Get(PathContracts, a.guard.Wrap(a.handleContracts))
 	r.Get(PathDecisions, a.guard.Wrap(a.handleDecisions))
 	r.Get(PathSession, a.guard.Wrap(a.handleSession))
+	r.Get(PathAccess, a.guard.Wrap(a.handleAccess))
 }
 
 // Register wires the read API into the REST server.

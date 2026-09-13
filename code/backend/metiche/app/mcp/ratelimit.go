@@ -40,6 +40,46 @@ const (
 	defaultJoinTeamPerHour = 60
 )
 
+// ─────────────────────────────────────────────
+// Account-keyed budgets: open_board and sign_out_browsers
+// ─────────────────────────────────────────────
+//
+// docs/BOARD_LOGIN.md §6.2. Both tools need a token, so they are keyed by the
+// ACCOUNT id, never by client address — which also keeps them clear of the
+// clientIP problem (F4) entirely.
+
+const (
+	// defaultOpenBoardPerHour: a person opens their board a few times a day.
+	// Thirty an hour is a runaway agent, and the 5-outstanding cap in
+	// app/browser bounds the live links long before this does.
+	defaultOpenBoardPerHour = 30
+
+	// defaultSignOutBrowsersPerHour bounds a loop, not a person.
+	defaultSignOutBrowsersPerHour = 60
+)
+
+type accountLimiterSet struct {
+	openBoard       *RateLimiter
+	signOutBrowsers *RateLimiter
+}
+
+// accountLimitersByHandler holds one budget set per Handler, created on first
+// use from METICHE_OPEN_BOARD_PER_HOUR and METICHE_SIGN_OUT_BROWSERS_PER_HOUR.
+// Keyed by Handler (one per process in production, one per test server) so a
+// budget is never shared between two servers in one test binary.
+var accountLimitersByHandler sync.Map
+
+func (h *Handler) accountLimiters() *accountLimiterSet {
+	if v, ok := accountLimitersByHandler.Load(h); ok {
+		return v.(*accountLimiterSet)
+	}
+	v, _ := accountLimitersByHandler.LoadOrStore(h, &accountLimiterSet{
+		openBoard:       NewRateLimiter(envInt("METICHE_OPEN_BOARD_PER_HOUR", defaultOpenBoardPerHour), rateWindow),
+		signOutBrowsers: NewRateLimiter(envInt("METICHE_SIGN_OUT_BROWSERS_PER_HOUR", defaultSignOutBrowsersPerHour), rateWindow),
+	})
+	return v.(*accountLimiterSet)
+}
+
 // RateLimiter is a fixed-window per-key counter.
 type RateLimiter struct {
 	mu      sync.Mutex

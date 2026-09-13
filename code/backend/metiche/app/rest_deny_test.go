@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,6 +16,8 @@ import (
 	"go.uber.org/fx/fxtest"
 	"go.uber.org/zap"
 
+	"github.com/mklfarha/metiche/backend/app/browser"
+	"github.com/mklfarha/metiche/backend/app/webapi"
 	"github.com/mklfarha/metiche/backend/core"
 	restserver "github.com/mklfarha/metiche/backend/rest/server"
 )
@@ -327,6 +331,132 @@ func TestFutureCodegenIsDeniedByDefault(t *testing.T) {
 		for _, method := range allMethods {
 			if rec := do(real, method, path); !denied(rec) {
 				t.Errorf("real server: %s %s = %d; want 404 from the deny layer", method, path, rec.Code)
+			}
+		}
+	}
+}
+
+// boardOnlyRoutes are the in-cluster board routes added for sign-in
+// (docs/BOARD_LOGIN.md §6.1), with the only methods each may answer.
+var boardOnlyRoutes = map[string][]string{
+	webapi.PathAccess:      {http.MethodGet},
+	browser.PathSessions:   {http.MethodPost, http.MethodGet, http.MethodDelete},
+	browser.PathSession:    {http.MethodGet, http.MethodDelete},
+	browser.PathSessionKey: {http.MethodDelete},
+	browser.PathTeams:      {http.MethodGet},
+}
+
+// TestBrowserRoutesAnswerOnlyRegisteredMethods: each new board route is on the
+// allowlist, is served by its own handler for exactly its registered methods,
+// and every other method is the deny layer's 404.
+func TestBrowserRoutesAnswerOnlyRegisteredMethods(t *testing.T) {
+	markDenials(t)
+	r := buildServer(t, true)
+
+	registered := map[string]map[string]bool{}
+	for _, rt := range walk(t, r) {
+		if _, ok := boardOnlyRoutes[rt.pattern]; ok {
+			if registered[rt.pattern] == nil {
+				registered[rt.pattern] = map[string]bool{}
+			}
+			registered[rt.pattern][rt.method] = true
+		}
+	}
+	for pattern, methods := range boardOnlyRoutes {
+		if _, ok := AllowedRoutes[pattern]; !ok {
+			t.Errorf("%s is not in AllowedRoutes", pattern)
+		}
+		want := map[string]bool{}
+		for _, m := range methods {
+			want[m] = true
+			if !registered[pattern][m] {
+				t.Errorf("%s %s is not registered", m, pattern)
+			}
+		}
+		for m := range registered[pattern] {
+			if !want[m] {
+				t.Errorf("%s %s is registered but not expected", m, pattern)
+			}
+		}
+		for _, path := range concrete(pattern) {
+			for _, method := range allMethods {
+				rec := do(r, method, path)
+				switch {
+				case want[method] && path == concrete(pattern)[0] && denied(rec):
+					t.Errorf("%s %s was denied; its own handler must answer", method, path)
+				case !want[method] && !denied(rec):
+					t.Errorf("%s %s = %d, not the deny layer's 404", method, path, rec.Code)
+				}
+				if want[method] && path == concrete(pattern)[0] {
+					t.Logf("own handler: %-6s %-40s -> %d", method, path, rec.Code)
+				}
+			}
+		}
+	}
+	// No credential, no database behind this server: the handlers refuse
+	// before anything else, with their own opaque answers.
+	if rec := do(r, http.MethodGet, browser.PathSession); rec.Code != http.StatusUnauthorized || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("GET %s without a session = %d (%q), want 401 no-store", browser.PathSession, rec.Code, rec.Header().Get("Cache-Control"))
+	}
+	if rec := do(r, http.MethodPost, browser.PathSessions); rec.Code != http.StatusNotFound || denied(rec) {
+		t.Errorf("POST %s with no link = %d (denied=%v), want the handler's own 404", browser.PathSessions, rec.Code, denied(rec))
+	}
+}
+
+// ingressPathRE finds `- path: X` entries; the next pathType line belongs to it.
+var ingressPathRE = regexp.MustCompile(`^\s*-\s*path:\s*"?([^"\s]+)"?\s*$`)
+var ingressTypeRE = regexp.MustCompile(`^\s*pathType:\s*"?(\w+)"?\s*$`)
+
+// TestBrowserRoutesAreNotRoutedByAnyIngress: being on AllowedRoutes is safe
+// only because no ingress routes these paths (§6.1, F7). This reads the
+// backend chart's values files and asserts no listed ingress path (Exact, or
+// Prefix matched per path element as networking.k8s.io/v1 does) reaches a
+// board-only route. The deploy agent's `helm template` check is the rendered
+// proof; this one fails in `go test` the moment someone adds such a path.
+func TestBrowserRoutesAreNotRoutedByAnyIngress(t *testing.T) {
+	files, _ := filepath.Glob(filepath.Join("..", "..", "..", "..", "deploy", ".helm", "metiche", "values*.yaml"))
+	if len(files) == 0 {
+		t.Skip("deploy/.helm/metiche not present in this checkout")
+	}
+	type ingressPath struct{ file, path, kind string }
+	var paths []ingressPath
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(b), "\n")
+		for i, line := range lines {
+			m := ingressPathRE.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			kind := ""
+			if i+1 < len(lines) {
+				if tm := ingressTypeRE.FindStringSubmatch(lines[i+1]); tm != nil {
+					kind = tm[1]
+				}
+			}
+			paths = append(paths, ingressPath{filepath.Base(f), m[1], kind})
+		}
+	}
+	if len(paths) == 0 {
+		t.Fatal("found no ingress paths in the chart values; the scan is broken, not the chart")
+	}
+	routes := func(ip ingressPath, reqPath string) bool {
+		if ip.kind == "Exact" {
+			return reqPath == ip.path
+		}
+		base := strings.TrimSuffix(ip.path, "/")
+		return base == "" || reqPath == base || strings.HasPrefix(reqPath, base+"/")
+	}
+	for _, ip := range paths {
+		t.Logf("ingress path in %s: %s (%s)", ip.file, ip.path, ip.kind)
+		for pattern := range boardOnlyRoutes {
+			for _, p := range concrete(pattern) {
+				if routes(ip, p) {
+					t.Errorf("%s: ingress path %s (%s) routes board-only %s", ip.file, ip.path, ip.kind, p)
+				}
 			}
 		}
 	}

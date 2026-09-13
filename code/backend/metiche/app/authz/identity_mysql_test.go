@@ -46,7 +46,7 @@ func TestRetiredAgentTokenIsDeadAtTheBoardGate(t *testing.T) {
 		}
 	}
 	exec("SET FOREIGN_KEY_CHECKS = 0")
-	for _, tbl := range []string{"session", "invite", "agent", "member", "team", "account"} {
+	for _, tbl := range []string{"browser_session", "board_login_link", "session", "invite", "agent", "member", "team", "account"} {
 		exec("TRUNCATE TABLE `" + tbl + "`")
 	}
 	exec("SET FOREIGN_KEY_CHECKS = 1")
@@ -78,13 +78,13 @@ func TestRetiredAgentTokenIsDeadAtTheBoardGate(t *testing.T) {
 		agentID.String(), "A-1", "claude", "laptop-claude", enums.AGENT_STATUS_ACTIVE, accountID.String(), agentHash)
 
 	guard := NewGuard(db)
-	if _, err := guard.Authorize(ctx, slug, token); err != nil {
+	if _, err := guard.Authorize(ctx, slug, Credential{Bearer: token}); err != nil {
 		t.Fatalf("an ACTIVE agent's token on its own private team was denied: %v", err)
 	}
 
 	exec("UPDATE `agent` SET `status` = ? WHERE `id` = ?", enums.AGENT_STATUS_RETIRED, agentID.String())
 
-	if _, err := guard.Authorize(ctx, slug, token); !errors.Is(err, ErrDenied) {
+	if _, err := guard.Authorize(ctx, slug, Credential{Bearer: token}); !errors.Is(err, ErrDenied) {
 		t.Fatalf("a RETIRED agent's token on its private team: %v, want ErrDenied", err)
 	}
 }

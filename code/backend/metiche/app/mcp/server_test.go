@@ -112,7 +112,25 @@ func TestToolSurface(t *testing.T) {
 		// the same report twice replays rather than appending a second event.
 		"get_instructions": {false, false},
 		"report_back":      {false, true},
+
+		// Board login (docs/BOARD_LOGIN.md §5.4). open_board is additive: every
+		// call stores a new single-use link. sign_out_browsers is idempotent:
+		// signing out a browser that is already signed out changes nothing.
+		"open_board":        {false, false},
+		"sign_out_browsers": {false, true},
 	}
+
+	// destructiveByDesign is the complete list of tools allowed to declare
+	// destructiveHint=true. Exactly one, named, and every other tool must still
+	// declare false explicitly.
+	//
+	// sign_out_browsers ends a person's signed-in browser sessions: a signed-out
+	// browser loses the board until someone mints a new link, and that cannot
+	// be undone from the tool. That is what destructiveHint means, and §5.4
+	// declares it true on purpose, so a well-behaved client asks the person
+	// before an agent signs their browsers out. Adding a name here is a design
+	// decision, not a test fix.
+	destructiveByDesign := map[string]bool{"sign_out_browsers": true}
 
 	if len(registered) != len(want) {
 		names := make([]string, 0, len(registered))
@@ -140,8 +158,14 @@ func TestToolSurface(t *testing.T) {
 			t.Errorf("%s has no annotations, so it advertises itself as destructive", tool.Name)
 			continue
 		}
-		if d := tool.Annotations.DestructiveHint; d == nil || *d {
-			t.Errorf("%s does not explicitly declare destructiveHint=false", tool.Name)
+		d := tool.Annotations.DestructiveHint
+		switch {
+		case d == nil:
+			t.Errorf("%s does not declare destructiveHint at all, and MCP defaults it to true", tool.Name)
+		case destructiveByDesign[tool.Name] && !*d:
+			t.Errorf("%s must declare destructiveHint=true: it ends a person's browser sessions (§5.4)", tool.Name)
+		case !destructiveByDesign[tool.Name] && *d:
+			t.Errorf("%s declares destructiveHint=true; only sign_out_browsers may", tool.Name)
 		}
 		if o := tool.Annotations.OpenWorldHint; o == nil || *o {
 			t.Errorf("%s does not declare openWorldHint=false; metiche talks to nothing but its own database", tool.Name)

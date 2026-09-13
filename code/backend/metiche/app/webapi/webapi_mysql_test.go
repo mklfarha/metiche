@@ -18,6 +18,7 @@ import (
 	"github.com/gofrs/uuid"
 
 	"github.com/mklfarha/metiche/backend/app/authz"
+	"github.com/mklfarha/metiche/backend/app/browser"
 	metichemcp "github.com/mklfarha/metiche/backend/app/mcp"
 	"github.com/mklfarha/metiche/backend/app/stream"
 	"github.com/mklfarha/metiche/backend/enums"
@@ -100,6 +101,15 @@ type seeded struct {
 	memberToken     string
 	memberTokenHash string
 	outsiderToken   string
+
+	// Browser sessions (docs/BOARD_LOGIN.md §4.1), minted at run time by
+	// browser.MintSessionSecret and stored as their hash only:
+	// ownerSession is Ana (OWNER), memberSession is Beto (MEMBER), and
+	// outsiderSession is a valid session for the account that is a member of
+	// nothing.
+	ownerSession    string
+	memberSession   string
+	outsiderSession string
 }
 
 // seedBoard seeds the fixture as a PUBLIC team.
@@ -174,6 +184,15 @@ func seedBoardVisibility(t *testing.T, db *sql.DB, visibility enums.TeamVisibili
 		agentA, acctA, "A-1", "claude-1", "claude-code", "client-a", 1)
 	mustExec(t, db, "INSERT INTO `agent` (`id`,`account_uuid`,`key`,`label`,`client_kind`,`client_key`,`status`) VALUES (?,?,?,?,?,?,?)",
 		agentB, acctB, "A-2", "claude-2", "claude-code", "client-b", 1)
+
+	// A third agent, for the outsider, so each session names the ACTIVE agent
+	// it was created from, as a TERMINAL_LINK session does.
+	agentOutsider := newUUID(t)
+	mustExec(t, db, "INSERT INTO `agent` (`id`,`account_uuid`,`key`,`label`,`client_kind`,`client_key`,`status`) VALUES (?,?,?,?,?,?,?)",
+		agentOutsider, acctOutsider, "A-3", "claude-3", "claude-code", "client-o", 1)
+	ownerSession := seedBrowserSession(t, db, acctA, agentA)
+	memberSession := seedBrowserSession(t, db, acctB, agentB)
+	outsiderSession := seedBrowserSession(t, db, acctOutsider, agentOutsider)
 
 	project := newUUID(t)
 	mustExec(t, db, "INSERT INTO `project` (`id`,`team_uuid`,`key`,`name`,`status`) VALUES (?,?,?,?,?)",
@@ -295,7 +314,24 @@ func seedBoardVisibility(t *testing.T, db *sql.DB, visibility enums.TeamVisibili
 		memberToken:     memberToken,
 		memberTokenHash: memberHash,
 		outsiderToken:   outsiderToken,
+		ownerSession:    ownerSession,
+		memberSession:   memberSession,
+		outsiderSession: outsiderSession,
 	}
+}
+
+// seedBrowserSession inserts a live browser_session for an account and returns
+// its secret. Only the hash is stored, exactly as the exchange stores it.
+func seedBrowserSession(t *testing.T, db *sql.DB, account, agent string) string {
+	t.Helper()
+	secret, hash, err := browser.MintSessionSecret()
+	if err != nil {
+		t.Fatalf("mint session: %v", err)
+	}
+	mustExec(t, db, "INSERT INTO `browser_session` (`id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`expires_at`,`last_seen_at`) "+
+		"VALUES (?,?,?,?,?,?,DATE_ADD(UTC_TIMESTAMP(), INTERVAL 30 DAY),UTC_TIMESTAMP())",
+		newUUID(t), "BS-"+strings.ToUpper(hash[:10]), account, hash, enums.BROWSER_AUTH_METHOD_TERMINAL_LINK, agent)
+	return secret
 }
 
 func newBoardServer(t *testing.T, db *sql.DB) *httptest.Server {
@@ -1113,5 +1149,387 @@ func TestTheLeakTestHasARealSecretToHuntFor(t *testing.T) {
 	// Belt and braces: the needle finder actually finds.
 	if !strings.Contains("prefix "+fakeJoinCode+" suffix", fakeJoinCode) {
 		t.Fatal("unreachable")
+	}
+}
+
+// ─────────────────────────────────────────────
+// Browser sessions, /access, and the open stream (docs/BOARD_LOGIN.md §4)
+// ─────────────────────────────────────────────
+
+// response is one observed HTTP answer, everything a probe could compare.
+type response struct {
+	code        int
+	contentType string
+	body        string
+}
+
+// fetch issues a GET with the given headers and reads a bounded body (the
+// first frame of an allowed stream).
+func fetch(t *testing.T, url string, headers map[string]string) response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("request %s: %v", url, err)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("get %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out := response{code: resp.StatusCode, contentType: resp.Header.Get("Content-Type")}
+	if strings.HasPrefix(out.contentType, "text/event-stream") {
+		out.body = readOneSSEFrame(t, resp.Body, 5*time.Second)
+		return out
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	out.body = string(b)
+	return out
+}
+
+func session(secret string) map[string]string {
+	return map[string]string{authz.HeaderBrowserSession: secret}
+}
+
+// gatedPaths is boardPaths plus the new /access endpoint.
+func gatedPaths() []string { return append(boardPaths(), "/access") }
+
+// TestPrivateTeamWithAMemberSessionIs200AndStreams: a live member's valid
+// browser session reads every route of a private team, the stream included.
+func TestPrivateTeamWithAMemberSessionIs200AndStreams(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	for _, secret := range []string{fx.ownerSession, fx.memberSession} {
+		for _, p := range gatedPaths() {
+			got := fetch(t, srv.URL+"/v1/teams/"+fx.slug+p, session(secret))
+			if got.code != http.StatusOK {
+				t.Fatalf("%q on a PRIVATE team with a MEMBER's session: got %d, want 200 (body %s)", p, got.code, got.body)
+			}
+			if p == "/stream?after=41" && !strings.Contains(got.body, "id: 42") {
+				t.Fatalf("the member's session stream did not deliver; got:\n%s", got.body)
+			}
+			assertNoSecrets(t, got.body, fx.ownerSession, fx.memberSession, fx.outsiderSession,
+				browser.Hash(fx.ownerSession), fx.memberToken)
+		}
+	}
+}
+
+// TestPrivateTeamSessionRefusalsAreByteIdenticalToAnUnknownTeam is §4.3 and the
+// §8 B proof: a non-member's session, a garbage session, a bearer and a session
+// together, and no credential at all, on a private team that EXISTS, all get
+// the same status, Content-Type and body as a slug that does not exist, on
+// every route including /access and the stream. Also compared for the same
+// viewer: the non-member's session on the unknown slug.
+func TestPrivateTeamSessionRefusalsAreByteIdenticalToAnUnknownTeam(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	const unknown = "no-such-team-7q"
+	cases := []struct {
+		name    string
+		slug    string
+		headers map[string]string
+	}{
+		{"non-member session", fx.slug, session(fx.outsiderSession)},
+		{"garbage session", fx.slug, session("mbs_" + strings.Repeat("A", 43))},
+		{"bearer + session together (both the member's own)", fx.slug, map[string]string{
+			"Authorization": "Bearer " + fx.memberToken, authz.HeaderBrowserSession: fx.ownerSession}},
+		{"no credential", fx.slug, nil},
+		{"non-member session, unknown slug", unknown, session(fx.outsiderSession)},
+	}
+
+	for _, p := range gatedPaths() {
+		want := fetch(t, srv.URL+"/v1/teams/"+unknown+p, nil)
+		if want.code != http.StatusNotFound {
+			t.Fatalf("%q unknown slug, anonymous: got %d, want 404", p, want.code)
+		}
+		t.Logf("%-18s unknown slug, anonymous -> %d %q %q", p, want.code, want.contentType, want.body)
+		for _, c := range cases {
+			got := fetch(t, srv.URL+"/v1/teams/"+c.slug+p, c.headers)
+			if got != want {
+				t.Fatalf("%q %s distinguishes itself from an unknown slug:\n got  %d %q %q\n want %d %q %q",
+					p, c.name, got.code, got.contentType, got.body, want.code, want.contentType, want.body)
+			}
+			t.Logf("%-18s %-50s -> %d %q %q  identical=%v", p, c.name, got.code, got.contentType, got.body, got == want)
+		}
+	}
+}
+
+// TestPublicTeamIgnoresAGarbageSession: the public short-circuit never looks at
+// a credential, so a stale or garbage session (or two credentials) must not
+// make a public board disappear.
+func TestPublicTeamIgnoresAGarbageSession(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PUBLIC)
+	srv := newGuardedServer(t, db)
+
+	for name, h := range map[string]map[string]string{
+		"garbage session":    session("mbs_garbage"),
+		"bearer and session": {"Authorization": "Bearer mtk_garbage", authz.HeaderBrowserSession: "mbs_garbage"},
+	} {
+		for _, p := range gatedPaths() {
+			if got := fetch(t, srv.URL+"/v1/teams/"+fx.slug+p, h); got.code != http.StatusOK {
+				t.Fatalf("%q on a PUBLIC team with a %s: got %d, want 200 (body %s)", p, name, got.code, got.body)
+			}
+		}
+	}
+}
+
+// TestAccessEndpointAnswersPerViewer pins GET /v1/teams/{slug}/access, exact
+// bytes, for every viewer in the §4.5 matrix that gets a 200.
+func TestAccessEndpointAnswersPerViewer(t *testing.T) {
+	db := testDB(t)
+	// One fixture (its invite code is a unique constant): the private cases
+	// run first, then the same team is made public for the public cases.
+	priv := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	pub := priv
+	srv := newGuardedServer(t, db)
+
+	type accessCase struct {
+		name    string
+		slug    string
+		headers map[string]string
+		want    string
+	}
+	check := func(c accessCase) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/v1/teams/"+c.slug+"/access", nil)
+		for k, v := range c.headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != c.want {
+			t.Fatalf("%s: %d %s, want 200 %s", c.name, resp.StatusCode, body, c.want)
+		}
+		if ct, cc := resp.Header.Get("Content-Type"), resp.Header.Get("Cache-Control"); ct != "application/json" || cc != "no-store" {
+			t.Fatalf("%s: Content-Type %q Cache-Control %q", c.name, ct, cc)
+		}
+		t.Logf("%-32s -> %d %s", c.name, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	for _, c := range []accessCase{
+		{"private, owner session", priv.slug, session(priv.ownerSession), `{"visibility":"private","role":"owner"}`},
+		{"private, member session", priv.slug, session(priv.memberSession), `{"visibility":"private","role":"member"}`},
+		{"private, owner bearer", priv.slug, map[string]string{"Authorization": "Bearer " + priv.memberToken}, `{"visibility":"private","role":"owner"}`},
+		{"private by uuid, owner session", priv.teamID, session(priv.ownerSession), `{"visibility":"private","role":"owner"}`},
+	} {
+		check(c)
+	}
+
+	mustExec(t, db, "UPDATE `team` SET `visibility` = ? WHERE `id` = ?", int64(enums.TEAM_VISIBILITY_PUBLIC), pub.teamID)
+	for _, c := range []accessCase{
+		{"public, anonymous", pub.slug, nil, `{"visibility":"public","role":null}`},
+		{"public, garbage session", pub.slug, session("mbs_garbage"), `{"visibility":"public","role":null}`},
+		{"public, non-member session", pub.slug, session(pub.outsiderSession), `{"visibility":"public","role":null}`},
+		{"public, owner session", pub.slug, session(pub.ownerSession), `{"visibility":"public","role":"owner"}`},
+		{"public, member session", pub.slug, session(pub.memberSession), `{"visibility":"public","role":"member"}`},
+		{"public, bearer and session", pub.slug, map[string]string{
+			"Authorization": "Bearer " + pub.memberToken, authz.HeaderBrowserSession: pub.ownerSession}, `{"visibility":"public","role":null}`},
+	} {
+		check(c)
+	}
+}
+
+// TestMemberSessionLosesTheBoardOnTheNextRequest: membership is read on every
+// request, uncached, and a revoked session is refused the same way.
+func TestMemberSessionLosesTheBoardOnTheNextRequest(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	if got := fetch(t, srv.URL+"/v1/teams/"+fx.slug+"/access", session(fx.ownerSession)); got.code != http.StatusOK {
+		t.Fatalf("the owner should start with access: %d", got.code)
+	}
+	mustExec(t, db, "UPDATE `member` SET `revoked_at` = NOW() WHERE `team_uuid` = ? AND `key` = ?", fx.teamID, "M-1")
+	for _, p := range gatedPaths() {
+		if got := fetch(t, srv.URL+"/v1/teams/"+fx.slug+p, session(fx.ownerSession)); got.code != http.StatusNotFound {
+			t.Fatalf("%q the request after the membership was revoked: got %d, want 404", p, got.code)
+		}
+	}
+
+	if got := fetch(t, srv.URL+"/v1/teams/"+fx.slug, session(fx.memberSession)); got.code != http.StatusOK {
+		t.Fatalf("Beto should still have access: %d", got.code)
+	}
+	mustExec(t, db, "UPDATE `browser_session` SET `revoked_at` = UTC_TIMESTAMP(), `end_reason` = ? WHERE `secret_hash` = ?",
+		enums.BROWSER_SESSION_END_REASON_SIGNED_OUT, browser.Hash(fx.memberSession))
+	if got := fetch(t, srv.URL+"/v1/teams/"+fx.slug, session(fx.memberSession)); got.code != http.StatusNotFound {
+		t.Fatalf("a signed-out session: got %d, want 404", got.code)
+	}
+}
+
+// newReauthServer is newGuardedServer with the stream's re-authorization
+// interval shortened to reauth.
+func newReauthServer(t *testing.T, db *sql.DB, reauth time.Duration) *httptest.Server {
+	t.Helper()
+	r := chi.NewRouter()
+	NewAPI(db, nil).RegisterOn(r)
+	hub := stream.NewHub(stream.NewDBSource(db), nil)
+	s := stream.NewServer(hub, stream.NewDBTeamLookup(db), authz.NewGuard(db), nil)
+	s.SetReauthInterval(reauth)
+	s.RegisterOn(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(func() {
+		srv.CloseClientConnections()
+		srv.Close()
+		hub.Close()
+	})
+	return srv
+}
+
+// openStream connects, reads the seeded frame after 41, and then drains the
+// body on ONE goroutine (two readers on one body corrupt the connection). The
+// returned channel closes when the stream ends.
+func openStream(t *testing.T, url string, headers map[string]string) <-chan struct{} {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url+"/stream?after=41", nil)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stream: got %d, want 200", resp.StatusCode)
+	}
+	if frame := readOneSSEFrame(t, resp.Body, 5*time.Second); !strings.Contains(frame, "id: 42") {
+		t.Fatalf("stream did not deliver: %s", frame)
+	}
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		close(done)
+	}()
+	return done
+}
+
+// ends reports whether the stream has ended, waiting at most d, and how long
+// it waited.
+func ends(done <-chan struct{}, d time.Duration) (bool, time.Duration) {
+	start := time.Now()
+	select {
+	case <-done:
+		return true, time.Since(start)
+	case <-time.After(d):
+		return false, d
+	}
+}
+
+// TestARevokedMembersOpenStreamEndsWithinTheReauthInterval is §4.4 on a real
+// database: the gate admitted the member's session once; the membership is
+// then revoked while the stream is open, and the stream must end within the
+// re-auth interval (50 ms here, 60 s in production) instead of streaming on.
+func TestARevokedMembersOpenStreamEndsWithinTheReauthInterval(t *testing.T) {
+	const reauth = 50 * time.Millisecond
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newReauthServer(t, db, reauth)
+	base := srv.URL + "/v1/teams/" + fx.slug
+
+	body := openStream(t, base, session(fx.ownerSession))
+	if done, _ := ends(body, 6*reauth); done {
+		t.Fatal("a live member's stream was ended by re-authorization")
+	}
+
+	mustExec(t, db, "UPDATE `member` SET `revoked_at` = NOW() WHERE `team_uuid` = ? AND `key` = ?", fx.teamID, "M-1")
+	done, took := ends(body, 40*reauth)
+	if !done {
+		t.Fatalf("a revoked member's open stream was still open after %v (re-auth every %v)", 40*reauth, reauth)
+	}
+	t.Logf("the revoked member's stream ended %v after the revocation (reauthInterval %v)", took.Round(time.Millisecond), reauth)
+
+	if got := fetch(t, base+"/stream?after=41", session(fx.ownerSession)); got.code != http.StatusNotFound {
+		t.Fatalf("the reconnect: got %d, want 404", got.code)
+	}
+}
+
+// TestAnAnonymousStreamEndsWhenTheTeamGoesPrivate: F2's backend half. An
+// anonymous stream on a public team must not keep streaming after the team is
+// made private.
+func TestAnAnonymousStreamEndsWhenTheTeamGoesPrivate(t *testing.T) {
+	const reauth = 50 * time.Millisecond
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PUBLIC)
+	srv := newReauthServer(t, db, reauth)
+	base := srv.URL + "/v1/teams/" + fx.slug
+
+	body := openStream(t, base, nil)
+	mustExec(t, db, "UPDATE `team` SET `visibility` = ? WHERE `id` = ?", int64(enums.TEAM_VISIBILITY_PRIVATE), fx.teamID)
+	if done, _ := ends(body, 40*reauth); !done {
+		t.Fatal("an anonymous stream kept streaming after its team was made private")
+	}
+}
+
+// TestASessionLookupOutageIs503NeverA404 is the DB-outage row of the threat
+// model at the gate: when the session cannot be checked, a signed-in member
+// gets 503 — not the 404 that would make the board forget the team, and not a
+// 401 that would clear the cookie. A public team is unaffected.
+func TestASessionLookupOutageIs503NeverA404(t *testing.T) {
+	db := testDB(t)
+	priv := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+	srv := newGuardedServer(t, db)
+
+	mustExec(t, db, "RENAME TABLE `browser_session` TO `browser_session_outage_test`")
+	t.Cleanup(func() { mustExec(t, db, "RENAME TABLE `browser_session_outage_test` TO `browser_session`") })
+
+	for _, p := range gatedPaths() {
+		got := fetch(t, srv.URL+"/v1/teams/"+priv.slug+p, session(priv.ownerSession))
+		if got.code != http.StatusServiceUnavailable {
+			t.Fatalf("%q private team, member session, session table unreachable: got %d, want 503 (body %s)", p, got.code, got.body)
+		}
+		if strings.Contains(got.body, "browser_session") || strings.Contains(got.body, "Error ") {
+			t.Fatalf("%q the 503 echoed driver text: %s", p, got.body)
+		}
+	}
+
+	// The same team made public never looks at the session, so the outage of
+	// the session table does not touch it.
+	mustExec(t, db, "UPDATE `team` SET `visibility` = ? WHERE `id` = ?", int64(enums.TEAM_VISIBILITY_PUBLIC), priv.teamID)
+	for _, p := range gatedPaths() {
+		if got := fetch(t, srv.URL+"/v1/teams/"+priv.slug+p, session(priv.ownerSession)); got.code != http.StatusOK {
+			t.Fatalf("%q public team during a session-table outage: got %d, want 200", p, got.code)
+		}
+	}
+}
+
+// TestADatabaseOutageIs503ForEverySlug: with the database gone entirely the
+// gate answers 503 for a private team AND for an unknown slug, byte-identical —
+// the team row is read first, so an outage is not an oracle either.
+func TestADatabaseOutageIs503ForEverySlug(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
+
+	dead, err := sql.Open("mysql", os.Getenv(dsnEnv))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	_ = dead.Close()
+	srv := newGuardedServer(t, dead)
+
+	for _, p := range gatedPaths() {
+		want := fetch(t, srv.URL+"/v1/teams/no-such-team-7q"+p, session(fx.ownerSession))
+		if want.code != http.StatusServiceUnavailable {
+			t.Fatalf("%q unknown slug with the database down: got %d, want 503", p, want.code)
+		}
+		for name, h := range map[string]map[string]string{
+			"member session": session(fx.ownerSession),
+			"anonymous":      nil,
+		} {
+			if got := fetch(t, srv.URL+"/v1/teams/"+fx.slug+p, h); got != want {
+				t.Fatalf("%q %s with the database down: %d %q, want %d %q", p, name, got.code, got.body, want.code, want.body)
+			}
+		}
 	}
 }

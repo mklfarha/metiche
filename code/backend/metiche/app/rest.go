@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/mklfarha/metiche/backend/app/browser"
 	metichemcp "github.com/mklfarha/metiche/backend/app/mcp"
 	"github.com/mklfarha/metiche/backend/app/stream"
 	"github.com/mklfarha/metiche/backend/app/webapi"
@@ -141,6 +142,10 @@ func ProvideCustomRoutes(coreImpl *core.Implementation, logger *zap.Logger) rest
 		if metichemcp.RoleFromEnv(logger).ServesAPI() {
 			webapi.Register(r, coreImpl, logger) // GET /v1/teams/{slug}, /conflicts, /contracts, /decisions, /sessions/{key}
 			stream.Register(r, coreImpl, logger) // GET /v1/teams/{slug}/stream (SSE)
+			// Board sign-in (docs/BOARD_LOGIN.md §2.4, §2.7, §2.8): the
+			// exchange, the session check, sign out and the "your teams"
+			// list. In-cluster only, like the two above; see AllowedRoutes.
+			browser.Register(r, coreImpl, logger) // /v1/browser/sessions, /session, /sessions/{key}, /teams
 		}
 
 		// MUST STAY LAST: it only allows what is already registered, and it
@@ -173,6 +178,23 @@ var AllowedRoutes = map[string]string{
 	webapi.PathContracts: "board contracts",
 	webapi.PathDecisions: "board decisions",
 	webapi.PathSession:   "board session",
+
+	// Board sign-in (docs/BOARD_LOGIN.md §6.1). BOARD ONLY; NOT ROUTED BY ANY
+	// INGRESS. They must be listed here or this layer would 404 the board's
+	// own in-cluster calls; being listed does not make them public, because
+	// exposure is decided by the ingress, and deploy/.helm/metiche routes
+	// only /v1/metrics/mcp (Exact) and /v1/mcp (Prefix) —
+	// TestBrowserRoutesAreNotRoutedByAnyIngress in rest_deny_test.go pins
+	// that. They are also safe if that ever regressed: every one of them
+	// needs a 256-bit secret (a link in the POST body, or a session in
+	// X-Metiche-Browser-Session), refuses with one opaque body, and never
+	// reads a credential from the URL. Only the methods each registers
+	// answer; every other method falls through to the deny layer.
+	webapi.PathAccess:      "board: may this viewer read this team (GET)",
+	browser.PathSessions:   "board: sign-in exchange (POST), session list (GET), sign out everywhere (DELETE)",
+	browser.PathSession:    "board: current browser session (GET), sign out (DELETE)",
+	browser.PathSessionKey: "board: revoke one browser session of the caller's account (DELETE)",
+	browser.PathTeams:      "board: the signed-in viewer's teams (GET)",
 
 	// app/stream.Register — role api, behind app/authz.
 	stream.StreamPath: "board SSE stream",
