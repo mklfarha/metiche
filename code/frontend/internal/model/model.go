@@ -280,7 +280,11 @@ type Conflict struct {
 	RaisedAt        time.Time     `json:"raised_at"`
 	ResolvedAt      time.Time     `json:"resolved_at"`
 	Resolution      string        `json:"resolution"`
-	Occurrences     int           `json:"occurrences"`
+	// ResolutionNote is how it was settled, in a sentence the backend wrote
+	// from what actually happened: who released what, when, and what the
+	// agents said. Empty for a conflict that is still open.
+	ResolutionNote string `json:"resolution_note"`
+	Occurrences    int    `json:"occurrences"`
 }
 
 // Open reports whether the conflict still wants a human's attention.

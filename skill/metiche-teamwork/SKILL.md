@@ -239,16 +239,20 @@ different person.
 
 Every conflict carries `with` (who), `paths` (where), `severity` and a `suggested_action`, because
 *"you and Ana both hold auth.go"* is noise and *"Ana (backend) holds internal/auth/auth.go (write,
-4m, feat/auth). You are both editing it: take a different file, or agree who goes first before you
-start."* is signal.
+4m, feat/auth). You are both editing it: settle it between you — split the file or sequence the
+work; ask your human only if you can't."* is signal.
 
 Your obligation on receiving one is to **make a visible decision**:
 
-- **Change course** — pick different files, take the other half of the work, or wait for the
-  other agent. `update_intent(drop_paths: [...], add_paths: [...])` so your claims match, and say
-  so in the status line so the board shows it.
-- **Coordinate** — tell your human who you collided with and on what, so they can settle it with
-  the other person. Put what was agreed in your status line.
+- **Settle it between you** — the default, whether the other agent is a teammate's or your own
+  human's second agent. Two agents can almost always do this in one exchange. **Split the file**:
+  one of you moves its part into a new file, so the shared file keeps only a line or two. Or
+  **sequence the work**: one goes first, the other waits for the release. Then
+  `update_intent(drop_paths: [...], add_paths: [...])` so your claims match what you agreed, and
+  say so in the status line so the board shows it.
+- **Ask your human** — only when you genuinely can't settle it: you both have to rewrite the same
+  code, or choosing between the two changes is a product decision. Tell them who you collided with
+  and on what.
 - **Proceed anyway, deliberately** — sometimes that is right. Keep the claim, and say why in
   `update_intent(status_line: ...)`: "same file, different function, I'll take the merge" is a
   perfectly good reason.
@@ -257,6 +261,14 @@ When the conflict reached you as an instruction, close it with
 `report_back(instruction_key, outcome, note)`: `done` when you acted, `acknowledged` when you have
 taken it on but are not finished, `refused` or `blocked` with a reason, `not_applicable` when it
 does not concern you. That report is how the person who raised it sees your answer.
+
+**When you settle it, `report_back` on the notice with a one-line note of what you agreed**, for
+example *"Different feature, same file: I am moving my handler into internal/auth/refresh.go and
+releasing auth.go in a few minutes; add your route after that."* That note becomes the explanation
+on the board. Once the overlap is really gone — one of you drops the path, finishes the intent or
+ends the session — metiche closes the conflict by itself and shows it as settled: who released
+what, when, and what you said. While you both still hold overlapping paths it stays open, whatever
+the note says.
 
 What you must not do is read a conflict and change nothing and say nothing. The human watching
 the board sees an agent that was told and carried on regardless, and from then on the whole system
@@ -362,8 +374,8 @@ B → declare_intent(session_key: "S-22",
           "key": "CF-14", "kind": "path_overlap", "severity": "critical",
           "with": "Ana (backend)", "paths": ["internal/auth/auth.go"],
           "suggested_action": "Ana (backend) holds internal/auth/auth.go (write, 4m, feat/auth).
-                               You are both editing it: take a different file, or agree who
-                               goes first before you start."}],
+                               You are both editing it: settle it between you — split the file
+                               or sequence the work; ask your human only if you can't."}],
        "pending": {"instructions": 0, "conflicts": 1, "reviews": 0}}
 ```
 
@@ -378,7 +390,9 @@ B → update_intent(session_key: "S-22", intent_key: "INT-91",
       status_line: "building the login form against Ana's POST /api/login, not my own handler")
 ```
 
-The collision cost B one tool response and no code. That is the whole product.
+The collision cost B one tool response and no code. That is the whole product. And because B no
+longer holds `auth.go`, the overlap is gone: metiche closes CF-14 by itself as settled, and the
+board shows who released what and when.
 
 **4. A finds out on a bare heartbeat, having never polled.**
 
@@ -389,8 +403,9 @@ A → heartbeat(session_key: "S-17", status_line: "wiring the cookie into the lo
 A → get_instructions(session_key: "S-17")
     ← {"instructions": [{"key": "IN-7", "kind": "conflict_notice", "with": "Beto (ui)",
         "paths": ["internal/auth/auth.go"], "severity": "critical",
-        "suggested_action": "Beto (ui) holds internal/auth/auth.go ... they declared after you,
-                             so they are expecting an answer — say whether you are nearly done.",
+        "suggested_action": "Beto (ui) holds internal/auth/auth.go ... Both editing it, they
+                             arrived second: settle it between you — split the file or sequence
+                             the work; ask your human only if you can't.",
         "report_back": true}]}
 A → check_paths(session_key: "S-17", paths: ["internal/auth/auth.go"])
     ← {"holders": [], "note": "... nobody else is holding them right now ..."}
@@ -426,6 +441,8 @@ happen live.
 - Drop paths as soon as you are done with them.
 - Read `pending` on every response. Act when non-zero, do nothing when zero.
 - Answer every instruction with `report_back`, including a refusal.
+- Settle a collision with the other agent yourselves — split the file or sequence the work — and
+  `report_back` a one-line note of what you agreed. Ask your human only if you can't.
 - Tell your human what metiche told you.
 
 **Don't**

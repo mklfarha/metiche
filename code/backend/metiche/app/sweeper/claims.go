@@ -112,6 +112,10 @@ func (s *Sweeper) expireClaims(ctx context.Context, now time.Time, rep *Report, 
 			})
 		}
 
+		// A lapsed claim may have been the last thing keeping a collision
+		// open. Re-evaluated after the rows are right, like the events.
+		s.settleAfterExpiry(ctx, batch, rep)
+
 		if len(batch) < limit {
 			return nil
 		}
@@ -283,6 +287,11 @@ func (s *Sweeper) sweepSessions(ctx context.Context, t teamRow, now time.Time, r
 				payload:     payload.ToJSON(),
 			})
 		}
+
+		// Their claims are gone, so a collision they were the last holders
+		// of has cleared. After the abandonment events, so the timeline
+		// reads cause first.
+		s.settleAfterAbandon(ctx, t.uuid, toAbandon, rep)
 	}
 	return nil
 }

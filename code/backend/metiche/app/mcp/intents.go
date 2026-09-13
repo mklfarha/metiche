@@ -536,6 +536,30 @@ func (h *Handler) UpdateIntent(ctx context.Context, _ *mcp.CallToolRequest, args
 				}
 			}
 
+			// Last, after every path this call adds or drops has been
+			// written: a release may have settled a collision, and the check
+			// has to see what the caller holds when the call is over, or a
+			// drop-and-re-add of the same file would close a live overlap.
+			if len(dropped) > 0 || terminal {
+				rel := Release{
+					TeamUUID:    who.Team.ID,
+					SessionUUID: sess.ID,
+					Kind:        ReleaseDropped,
+					Paths:       patternList(dropped),
+					At:          tc.Now,
+				}
+				if terminal {
+					rel.Kind = ReleaseIntentEnded
+					rel.IntentKey = intent.Key
+					rel.IntentStatus = intentStatusName(hasStatus, status, intent.Status)
+				}
+				if err := h.settleAfterRelease(ctx, tc, rel, eventActor{
+					ProjectUUID: sess.ProjectUUID, SessionUUID: sess.ID, AgentUUID: ag.ID, MemberUUID: who.Member.ID,
+				}); err != nil {
+					return err
+				}
+			}
+
 			env.Key = intent.Key
 			env.Note = updateNote(intent.Key, hasStatus, status, len(added), releasedPaths, releasedClaims, ignored, terminal)
 			return nil

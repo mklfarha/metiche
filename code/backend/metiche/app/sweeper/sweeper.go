@@ -308,6 +308,10 @@ type Report struct {
 	EventsEmitted        int `json:"events_emitted"`
 	EventsSkippedForDupe int `json:"events_skipped_for_dupe"`
 
+	// ConflictsResolved counts path_overlap conflicts closed because a lapsed
+	// claim or an abandoned session cleared the overlap.
+	ConflictsResolved int `json:"conflicts_resolved"`
+
 	Retention RetentionReport `json:"retention"`
 
 	// Logins is step 5: expired sign-in links and browser sessions deleted.

@@ -191,6 +191,15 @@ func (d *pathDetector) detect(ctx context.Context, tc *TxContext, m *Mutation) (
 		if !found[i].Verdict.NotifyInitiator || len(notices) >= detectMaxNotices {
 			continue
 		}
+		// The caller is told right now, in this response, so this is the
+		// moment its participant row was notified. COALESCE keeps the first
+		// time: a re-detection is not a new notification.
+		if _, err := tc.Tx.ExecContext(ctx,
+			"UPDATE `conflict_participant` SET `notified_at` = COALESCE(`notified_at`, ?), `updated_at` = ? "+
+				"WHERE `conflict_uuid` = ? AND `session_uuid` = ?",
+			tc.Now, tc.Now, row.ID.String(), req.SessionUUID.String()); err != nil {
+			return nil, retryable(err, "marking the caller notified of the conflict")
+		}
 		notices = append(notices, ConflictNotice{
 			Key:             row.Key,
 			Kind:            "path_overlap",
@@ -726,11 +735,17 @@ func suggestPathAction(subject, other claimSide, overlap string, hotspot, broad,
 		b.WriteString("They are renaming, moving or deleting it, which breaks your copy silently — ask before you edit, or work somewhere else until they land.")
 	case subject.Mode == coordination.ModeStructural:
 		b.WriteString("Your rename or delete will break them without any merge conflict to warn them — tell them before you land it.")
-	case subject.Mode == coordination.ModeWrite && other.Mode == coordination.ModeWrite:
+	case bothWriting(subject, other):
+		// Two agents in one file settle it between them. The human is the
+		// fallback, not the first call: splitting the file or sequencing the
+		// work is something two agents can agree in one exchange, and once
+		// the overlap clears the conflict closes itself (conflictresolve.go).
 		if initiator {
-			b.WriteString("You are both editing it: take a different file, or agree who goes first before you start.")
+			b.WriteString("You are both editing it: settle it between you — split the file or sequence the work; ask your human only if you can't.")
 		} else {
-			b.WriteString("You are both editing it: they declared after you, so they are expecting an answer — say whether you are nearly done.")
+			// Kept short: the incumbent reads this through get_instructions,
+			// which cuts an action at instructionTextChars.
+			b.WriteString("Both editing it, they arrived second: settle it between you — split the file or sequence the work; ask your human only if you can't.")
 		}
 	case subject.Mode == coordination.ModeWrite:
 		b.WriteString("They are only reading it — carry on, and tell them in your status line when the change lands.")
@@ -739,7 +754,11 @@ func suggestPathAction(subject, other claimSide, overlap string, hotspot, broad,
 	}
 
 	if subject.MemberUUID != "" && subject.MemberUUID == other.MemberUUID {
-		b.WriteString(" (Both agents are yours, so this is yours to sequence.)")
+		if bothWriting(subject, other) {
+			b.WriteString(" (Both agents belong to the same person.)")
+		} else {
+			b.WriteString(" (Both agents belong to the same person: settle it between you, and ask your human only if you can't.)")
+		}
 	}
 	return truncate(b.String(), 400)
 }

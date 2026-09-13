@@ -255,6 +255,7 @@ func (c conflictJSON) conflict(memberBySession map[string]string) *model.Conflic
 		RaisedAt:        parseTime(c.FirstDetectedAt),
 		ResolvedAt:      parseTime(c.ResolvedAt),
 		Resolution:      firstNonEmpty(c.Resolution, c.DismissReason),
+		ResolutionNote:  c.ResolutionNote,
 		Occurrences:     int(c.OccurrenceCount),
 	}
 	if out.RaisedAt.IsZero() {

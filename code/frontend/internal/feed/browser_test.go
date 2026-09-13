@@ -285,8 +285,15 @@ func TestLiveSendsTheBrowserSessionAndNeverABearerWithIt(t *testing.T) {
 	defer b.mu.Unlock()
 	mu.Lock()
 	defer mu.Unlock()
-	if len(sessions) != 4 {
-		t.Fatalf("requests = %d, want 4", len(sessions))
+	// snapshot, contracts, decisions, the best-effort settled conflicts read
+	// (which this fake answers 404) and the stream: five reads, one principal.
+	if len(sessions) != 5 {
+		t.Fatalf("requests = %d, want 5", len(sessions))
+	}
+	for i, got := range sessions {
+		if got != fakeSession {
+			t.Fatalf("request %d carried session %q", i, got)
+		}
 	}
 	for i, got := range b.authSeen {
 		if got != "" {

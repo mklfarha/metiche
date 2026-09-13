@@ -242,6 +242,8 @@ func (l *Live) Snapshot(ctx context.Context) (model.TeamState, error) {
 	if err := l.getJSON(ctx, base+"/decisions", &decisions); err != nil {
 		return model.TeamState{}, err
 	}
+	// Last, and best-effort: see withSettled.
+	snap.Conflicts = append(snap.Conflicts, l.settledWire(ctx, base)...)
 
 	ts := snap.teamState(l.Slug)
 	ts.Contracts = contracts.contracts()

@@ -361,12 +361,23 @@ func (h *Handler) EndSession(ctx context.Context, _ *mcp.CallToolRequest, args E
 			// writing back every column would clobber a status_line a
 			// concurrent heartbeat had just set, and the guard on status makes
 			// ending an already-ended session a no-op instead of a resurrection.
-			_, err = tc.Tx.ExecContext(ctx,
+			if _, err := tc.Tx.ExecContext(ctx,
 				"UPDATE `session` SET `status` = ?, `outcome` = ?, `outcome_note` = ?, `ended_at` = ?, `updated_at` = ? "+
 					"WHERE `id` = ? AND `status` IN (?, ?)",
 				enums.SESSION_STATUS_ENDED, outcome, truncate(args.Note, 400), tc.Now, tc.Now,
-				sess.ID.String(), enums.SESSION_STATUS_LIVE, enums.SESSION_STATUS_STALE)
-			return err
+				sess.ID.String(), enums.SESSION_STATUS_LIVE, enums.SESSION_STATUS_STALE); err != nil {
+				return err
+			}
+
+			// After the session row says ended, so the explanation can say how
+			// it ended and a conflict whose other side is already over is
+			// recognised as superseded.
+			return h.settleAfterRelease(ctx, tc, Release{
+				TeamUUID:    who.Team.ID,
+				SessionUUID: sess.ID,
+				Kind:        ReleaseSessionEnded,
+				At:          tc.Now,
+			}, eventActor{ProjectUUID: sess.ProjectUUID, SessionUUID: sess.ID, AgentUUID: ag.ID, MemberUUID: who.Member.ID})
 		},
 	})
 	if err != nil {

@@ -346,6 +346,13 @@ type payload struct {
 	Suggested   string        `json:"suggested_action"`
 	Resolution  string        `json:"resolution"`
 	Members     []participant `json:"participants"`
+
+	// The backend's conflict_resolved payload: the explanation, the new
+	// status, and (in Detail) the resolution. A recording may instead say
+	// resolution_note.
+	Message        string `json:"message"`
+	NewStatus      string `json:"new_status"`
+	ResolutionNote string `json:"resolution_note"`
 }
 
 type assertionPL struct {
@@ -576,9 +583,13 @@ func (s *Store) mutate(ev model.Event) {
 		s.conflict(p.ConflictKey).Status = "acknowledged"
 
 	case "conflict_resolved":
+		// The backend's own conflict_resolved payload names the resolution in
+		// detail and the explanation in message; a recording names them
+		// resolution and resolution_note. Either shape settles the card.
 		c := s.conflict(p.ConflictKey)
-		c.Status = orDefault(p.Status, "resolved")
-		c.Resolution = orDefault(p.Resolution, "resolved")
+		c.Status = orDefault(p.Status, orDefault(p.NewStatus, "resolved"))
+		c.Resolution = orDefault(p.Resolution, orDefault(p.Detail, "resolved"))
+		c.ResolutionNote = orDefault(p.ResolutionNote, p.Message)
 		c.ResolvedAt = at
 
 	case "judgement_reported", "note", "commit_pushed", "review_requested", "instruction_delivered":

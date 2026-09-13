@@ -81,6 +81,12 @@ type sweepEvent struct {
 	// its instruction under the same lock that orders the event describing
 	// them.
 	extra func(ctx context.Context, tx *sql.Tx, seq int64, now time.Time) error
+
+	// finish, when set, runs after extra and fills in the summary, subject key
+	// and payload from what extra decided under the lock. It exists for the
+	// conflict_resolved event, whose explanation is only known once the
+	// conflict has been re-evaluated inside the transaction.
+	finish func() (summary, subjectKey string, payload []byte)
 }
 
 // appendEvent writes one event and advances the team's cursors.
@@ -153,6 +159,11 @@ func (s *Sweeper) appendEvent(ctx context.Context, ev sweepEvent) (bool, error) 
 
 	if ev.extra != nil {
 		if err := ev.extra(ctx, tx, seq, now); err != nil {
+			if errors.Is(err, errNothingToSay) {
+				// Decided under the lock that there is nothing to record.
+				// Rolled back by the defer, with no sequence consumed.
+				return false, nil
+			}
 			if isDuplicateKey(err) {
 				// Another pod got there first. Roll back without consuming a
 				// sequence number — a gap in the log would make an SSE client

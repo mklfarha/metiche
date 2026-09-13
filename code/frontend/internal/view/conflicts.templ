@@ -57,7 +57,12 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 				if !open {
 					<span class="badge good">{ c.Status }</span>
 					if c.Resolution != "" {
-						<span class="badge plain">{ c.Resolution }</span>
+						<span class="badge plain" title="how it was resolved">{ c.Resolution }</span>
+					}
+					if !c.ResolvedAt.IsZero() {
+						<span class="badge plain" title={ c.ResolvedAt.UTC().Format("2006-01-02 15:04 UTC") }>
+							settled { c.ResolvedAt.UTC().Format("15:04 UTC") } · { state.Ago(s.Now, c.ResolvedAt) } ago
+						</span>
 					}
 				} else {
 					<span class="badge plain">{ c.Status } · { state.Ago(s.Now, c.RaisedAt) }</span>
@@ -67,7 +72,14 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 		if c.Detail != "" {
 			<div class="detail">{ c.Detail }</div>
 		}
-		if action := suggestedAction(s, c); action != "" {
+		if !open && c.ResolutionNote != "" {
+			// How it was settled replaces what to do: a settled conflict has
+			// nothing left to do, and the explanation is what a teammate reads.
+			<div class="suggest settled-note">
+				<span class="tag">how it was settled</span>
+				<span class="text">{ c.ResolutionNote }</span>
+			</div>
+		} else if action := suggestedAction(s, c); action != "" {
 			<div class="suggest">
 				<span class="tag">do this</span>
 				<span class="text">{ action }</span>

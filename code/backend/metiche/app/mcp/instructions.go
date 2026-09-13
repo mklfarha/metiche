@@ -323,6 +323,16 @@ func (h *Handler) GetInstructions(ctx context.Context, _ *mcp.CallToolRequest, a
 	}
 	committed = true
 
+	// Delivery is when the agent holding the files was actually told about a
+	// conflict, so its participant row is marked notified now. AFTER the
+	// commit, as its own statement: inside the delivery transaction it would
+	// take conflict_participant locks while holding instruction locks — the
+	// second lock order selectDeliverable warns about. Best-effort for the
+	// same reason: a lost receipt costs a timestamp, never a delivery.
+	if err := markConflictNoticesDelivered(ctx, h.core.DB(), sess.ID, waiting, delivered, now); err != nil {
+		h.logger.Warn("marking conflict participants notified failed", zap.Error(err))
+	}
+
 	out := InstructionsResult{
 		Envelope:     Envelope{OK: true, Key: sess.Key, Sequence: seq, Revision: rev},
 		Instructions: items,
@@ -671,7 +681,7 @@ func fallbackAction(kind enums.InstructionKind, key, with string) string {
 	case enums.INSTRUCTION_KIND_STEER:
 		return fmt.Sprintf("fold this into what you are doing and call update_intent with the new summary, then report_back('%s', 'done') — or report_back('%s', 'refused') with why not", key, key)
 	case enums.INSTRUCTION_KIND_CONFLICT_NOTICE:
-		return fmt.Sprintf("call check_paths on the files you hold to see where %s is, and narrow or drop what you do not need with update_intent(drop_paths=[...]); then report_back('%s', ...)", who, key)
+		return fmt.Sprintf("settle it with %s: split the file or sequence the work, drop what you give up with update_intent(drop_paths=[...]), then report_back('%s', ...) with a one-line note of what you agreed", who, key)
 	case enums.INSTRUCTION_KIND_JUDGE_REQUEST:
 		// No tool can serve a judge request yet, so the honest answer is
 		// blocked, which also closes the loop for whoever raised it.
@@ -811,6 +821,17 @@ func (h *Handler) ReportBack(ctx context.Context, _ *mcp.CallToolRequest, args R
 				enums.INSTRUCTION_STATUS_ACTED, int64(action), truncate(storedNote, 400),
 				tc.Now, tc.Now, tc.Now, instrUUID.String()); err != nil {
 				return retryable(err, "recording your report")
+			}
+			// An answer to a conflict notice proves this participant was
+			// told, and is its acknowledgement. Both COALESCEd, so the first
+			// delivery and the first answer are what stay on record.
+			if refConflict != nil {
+				if _, err := tc.Tx.ExecContext(ctx,
+					"UPDATE `conflict_participant` SET `notified_at` = COALESCE(`notified_at`, ?), "+
+						"`acked_at` = COALESCE(`acked_at`, ?), `updated_at` = ? WHERE `conflict_uuid` = ? AND `session_uuid` = ?",
+					tc.Now, tc.Now, tc.Now, refConflict.String(), sess.ID.String()); err != nil {
+					return retryable(err, "recording the answer on the conflict")
+				}
 			}
 			env.Key = instr.key
 			env.Note = truncate(fmt.Sprintf("%s reported as %s — the board shows your answer now", instr.key, outcome), instructionNoteChars)
