@@ -1,880 +1,936 @@
 # nuzur agent for metiche production data
 
-**Status:** design. Nothing here has been done yet. This file is the only thing
-written. No MySQL user, no view, no nuzur agent, no unit, no token exists yet.
+**Status:** design only. Nothing in this document exists yet: no MySQL user, no
+views, no image, no chart, no pairing, no Secret. This file is the only thing
+written.
 
 **Scope:** let the owner browse metiche's production MySQL in the nuzur data
-manager, read-only, with secret columns removed. It runs through a nuzur agent
-installed on the box as a host systemd service.
+manager. Access is read-only and secret columns are removed. The nuzur agent
+runs as a pod in the `metiche` namespace.
 
-Citations use `path:line`. Unless a path says otherwise, the roots are:
+Citations use `path:line`. The roots are:
 
 | prefix | location on the owner's laptop |
 |---|---|
 | `cli/` | `~/Dropbox/nuzur-24/code/nuzur-cli` (release v1.9.2, `constants/constants.go:3`) |
 | `go/` | `~/Dropbox/nuzur-24/code/nuzur-go` |
 | `web/` | `~/Dropbox/nuzur-24/code/nuzur-web` |
-| `kr/` | `~/go/pkg/mod/github.com/99designs/keyring@v1.2.2` (the keyring library nuzur-cli pins, `cli/go.mod:6`) |
+| `kr/` | `~/go/pkg/mod/github.com/99designs/keyring@v1.2.2` (pinned at `cli/go.mod:6`) |
+| `dbus/` | `~/go/pkg/mod/github.com/godbus/dbus@v0.0.0-20190726142602-4481cbc300e2` (`cli/go.mod:26`) |
+| `gostd/` | Go standard library source, `$(go env GOROOT)/src` (go1.26.2) |
 | (none) | this repository |
 
-Box facts marked *(observed)* came from read-only `get` and `describe` commands
-and `information_schema` queries on 2026-09-12. No values were read.
+Facts marked *(observed)* come from the box and nuzur on 2026-09-12. They were
+gathered read-only: `get`/`describe`, `information_schema`, `listLocalAgents`,
+and no values.
 
 ---
 
 ## 1. Context
 
-metiche's production data lives in `metiche-mysql`, which is:
+metiche's data lives in `metiche-mysql`:
 
-- a MySQL 8.0.46 StatefulSet in namespace `metiche`;
-- reachable only through the ClusterIP Service `metiche-mysql` (10.152.183.239:3306) *(observed)*;
-- holding database `metiche`, with 25 tables *(observed)*.
+- a MySQL 8.0.46 StatefulSet in namespace `metiche`, with 25 tables in database `metiche`;
+- reached only through the ClusterIP Service `metiche-mysql`, with no host port *(observed)*.
 
-Today there is no way to look at that data except by `kubectl exec` as root. The
-owner wants the nuzur data manager: browsing, search, and ad-hoc SELECTs.
+Today the only way to look at it is `kubectl exec` as root. The owner wants the
+nuzur data manager for browsing, search and ad-hoc SELECTs.
 
-The nuzur agent (`nuzur-cli agent start`) is a process next to the database. It
-dials **out** to `cm.nuzur.com:443` and holds a gRPC stream. The cloud sends it
-SQL and it runs that SQL locally (`cli/agent/daemon.go:1-11`, `:184-238`).
-Nothing connects in. On this box, `cm.nuzur.com` and `product.nuzur.com` both
-resolve to the box's own address, 69.164.192.246 *(observed)*.
+The nuzur agent (`nuzur-cli agent start`) runs next to the database and dials
+**out** to `cm.nuzur.com:443` over a gRPC stream. The cloud sends SQL down that
+stream (`cli/agent/daemon.go:1-11`, `:184-238`). Nothing connects in.
 
-**What the agent can do is the problem this design solves.** It runs anything it
-is sent:
+**The agent is the thing to contain.** It executes whatever it is sent:
 
-- queries (`cli/agent/handlers.go:33-94`);
-- writes (`handleExec`, `:97-120`);
-- transactions (`:126-185`).
+- queries (`cli/agent/handlers.go:33-94`)
+- writes (`:97-120`)
+- transactions (`:126-185`)
 
-It has no read-only mode and no column filter. connection-manager's PII masker
-applies only to queries that carry a nuzur project context and a project that
-declares PII (`go/connection-manager/module/sql-query-manager/policy.go:53-79`,
-`masker.go:41-55`). Its guard blocks only hidden tables, never writes
-(`guard.go:27-49`). **Neither is a security boundary for this database.** The
-only boundary is what the MySQL account can do. So the whole exposure model
-lives in MySQL.
+It has no read-only mode and no column filter. connection-manager does not help
+either:
 
-The metiche repository is **public**. Scripts, the unit template, the
-column policy and SQL without credentials may be committed. Passwords, tokens,
-DSNs and agent credentials live only on the box.
+- Its PII masker applies only to queries with a nuzur project context on a
+  project that declares PII
+  (`go/connection-manager/module/sql-query-manager/policy.go:53-79`,
+  `masker.go:41-55`).
+- Its guard blocks hidden tables, not writes (`guard.go:27-49`).
+
+The boundary is therefore **the MySQL account**, and section 5 builds it.
+
+The repository is **public**. Scripts, the chart, the Dockerfile, the column
+policy and SQL without credentials may be committed. Passwords, tokens, the
+DSN, the machine-id and agent credentials never are.
+
+---
 
 ## 2. Decisions
 
-The owner confirmed these. They are not open.
+### Owner decisions (final)
 
 | # | Decision |
 |---|---|
 | D1 | **Only the owner queries this connection.** It is never shared with a team. |
-| D2 | **Secret columns are NULL in what nuzur sees:** `invite.code`, `notification_channel.target_url`, `team_event.response_snapshot`, `account.token_hash`, `agent.token_hash`. `account.email` stays visible, because the owner is the only viewer. |
-| D3 | **The agent runs as a host systemd service**, not a pod. |
-| D4 | **A restart never creates a new agent or a new connection.** This is property **P1**, tested in section 9. |
+| D2 | **NULL in what nuzur sees:** `invite.code`, `notification_channel.target_url`, `team_event.response_snapshot`, `account.token_hash`, `agent.token_hash`. <br>**Visible:** `account.email`, `project.repo_url`, `agent.client_key`, `notification_channel.last_error`. The last three are acknowledged risky-name exposures (`expose!`). |
+| D3 | **The agent runs in-cluster** as StatefulSet `nuzur-agent` with `replicas: 1`, in namespace `metiche`, from a Helm chart under `deploy/.helm/` like the other releases. |
+| D4 | **A pod restart, reschedule, deletion or image upgrade never pairs and never creates a connection.** This is property **P1**, tested in section 10. |
+| D5 | **No nuzur plan limit applies to this owner.** Setup has no connection-count stop. |
+| D6 | **Restricting the agent's egress is a follow-up**, not part of the first rollout (section 7.3). |
+| D7 | **The DSN, including the password, is passed once, as an argument, to `agent connection add --uuid <recorded> --dsn …`**, during the one-time manual `kubectl exec`. <br>That argument is visible only inside the pod's PID namespace and to root on the host, who can already read the Kubernetes Secret it came from. <br>**The password comes from a Kubernetes Secret, generated once at random, and is never typed by a person.** |
+| D8 | **An agent serving another project already exists** in the owner's nuzur account. It is never revoked, unpaired, republished or touched by anything here. The metiche agent is identified **only by its recorded uuid**. |
 
-These decisions follow from the source research:
+### Decisions derived from the source
 
-| # | Decision | Why |
+| # | Decision | Where |
 |---|---|---|
-| D5 | nuzur reads a separate database `metiche_nuzur` of views, through a MySQL account `nuzur_ro` that has `SELECT` on `metiche_nuzur.*` and nothing on `metiche`. | Section 4. |
-| D6 | Views are an **allowlist with total classification**. Every column of every table is explicitly `expose` or `redact`. Anything unclassified stops the generator. | Section 4.2. |
-| D7 | **Registration uses the CLI's own login-free path.** Pair with a provisioning token, then `agent connection add` *without* `--no-publish`, which publishes using the agent's own credentials. No `nuzur-cli deploy`. No laptop-side `UpdateLocalAgentConnections`. | Section 3.A. |
-| D8 | The connection UUID is generated once, recorded on the box, and always passed as `--uuid`. | Section 3.B. |
-| D9 | **`nuzur-cli connect`, `agent install`, `agent pair --force` and `nuzur-cli login` are never run on the box.** | Each can create a second agent, connection or daemon. See section 3.B. |
-| D10 | The DSN and the pairing token go in through the CLI's **masked prompts**, never through argv or environment. | Section 6. |
-| D11 | Pairing and `connection add` happen **at most once**, from an operator shell, never from the unit. The unit refuses to start unless the paired state is exactly the recorded one. | Sections 5 and 7. |
+| D9 | nuzur reads a separate database `metiche_nuzur` of views, through `nuzur_ro`. That account has `SELECT` on `metiche_nuzur.*` and nothing on `metiche`. | §5 |
+| D10 | Views are an **allowlist with total classification.** An unclassified column stops the generator. | §5.1–5.2 |
+| D11 | Registration uses the CLI's login-free path: provisioning-token pairing, then `agent connection add` *without* `--no-publish`, signed by the agent. No `nuzur-cli deploy`, and no laptop-side `UpdateLocalAgentConnections`. | §4.A |
+| D12 | The whole nuzur config dir lives on the StatefulSet's PVC. `XDG_CONFIG_HOME`, `HOME` and `USER` are set explicitly. The pod hostname is `nuzur-agent-0`, and `/etc/machine-id` is a fixed file mounted from a Secret. | §4.C–4.D |
+| D13 | The chart has two modes. **`setup`** keeps the pod alive for the one-time exec. **`run`** puts a preflight init container in front of `agent start` that refuses to start on any identity or fingerprint mismatch. Nothing ever pairs automatically. | §6.2 |
+| D14 | `NUZUR_AGENT_DSN` and `NUZUR_AGENT_DRIVER` are **never** set on the pod. | §4.E |
+| D15 | These are never run in the pod: `nuzur-cli connect`, `agent install`, `agent pair --force`, `nuzur-cli login`. | §4.B |
 
 ---
 
-## 3. What the source says
+## 3. Why a pod, and what nuzur's own deploy does differently
 
-### A. Registering the connection without `nuzur-cli deploy`
+`nuzur-cli deploy` provisions a VM and runs the agent as a **host systemd
+service**. Its bootstrap (`cli/deploy/templates/bootstrap.sh.tmpl`) does five
+things:
 
-**The owner's hint was right.** nuzur-cli has a standalone, login-free path for
-a headless box. Publishing uses the paired agent's own token.
+1. Installs the CLI on the host from the GitHub release, verified by checksum (`:407-453`).
+2. Pairs the host if `agent status` shows no uuid (`:455-465`).
+3. Registers the database with `agent connection add '<name>' --uuid … --dsn "<user>:${DB_PASSWORD}@tcp(…)" --no-publish --non-interactive` (`:467-471`). The password is expanded into the argv of a **host** process.
+4. Writes the same full DSN, password included, as `NUZUR_AGENT_DSN` into `/etc/nuzur/agent.env` (`:473-480`). This feeds the legacy fallback DSN that §4.E forbids here.
+5. Installs a root unit with `Restart=always`, `HOME=/root` and `USER=root` that loads that env file (`:481-499`), and restarts it on every deploy (`:500-503`).
 
-**1. `agent pair` persists agent credentials, from a login or from a provisioning token.**
+That shape fits a VM nuzur owns end to end. This design is **the in-cluster
+variant**, for a database that already lives in Kubernetes:
 
-- `--provisioning-token` (env `NUZUR_PROVISIONING_TOKEN`) exchanges a single-use token (`cli/app/command_agent.go:56-60`, `:82-85`).
-- The exchange calls `ExchangeProvisioningToken` (`cli/app/command_agent.go:146-168`).
-- On a machine with no display, `agent pair` with no token asks for it in a **masked prompt** (`:89-92` → `cli/app/command_connect.go:127-158`). Headless detection is `cli/app/headless.go:28-35`.
-- The server consumes the token atomically (`go/product/server/local_agent.go:151-184`). The token lives 15 minutes (`go/product/server/provisioning_token.go:23`).
-- The server creates **one new `local_agent` row per exchange** (`local_agent.go:72-115`).
-- The CLI writes `local_agent_uuid.txt` and `local_agent_token.txt` into a 0700 directory, each file 0600 (`cli/app/command_agent.go:270-281`). The directory is `~/.config/nuzur/agent` (`cli/files/local_agent.go:33-38`).
+| | nuzur deploy (host) | this design (pod) |
+|---|---|---|
+| Lifecycle | bootstrap script plus systemd | Helm release next to `metiche`, `metiche-web` and `metiche-mysql` |
+| Identity | root, `HOME=/root` | uid 10001, read-only root filesystem, no service-account token |
+| State | `/root/.config/nuzur` | PVC `data-nuzur-agent-0` |
+| Keyring passphrase inputs | host hostname, host machine-id, `USER=root` | pod hostname `nuzur-agent-0`, chart-mounted machine-id, `USER=nuzur` |
+| Fallback DSN | plaintext `NUZUR_AGENT_DSN` in an env file | never set; preflight refuses if present |
+| Password in argv | host process namespace | pod process namespace only (D7) |
+| Reaching MySQL | local socket or TCP on the host | Service DNS name; the MySQL NetworkPolicy selects the agent **by pod label** |
+| Database account | the application user | `nuzur_ro`, SELECT on views only |
 
-**The only place a user login is needed is minting the provisioning token.**
-The owner does that in a browser at `app.nuzur.com/pair` ("Pair a server"), on
-the laptop. The box never logs in.
+A host agent would reach the ClusterIP from the node's address, and every other
+host process shares that address. A pod can be singled out by label.
 
-**2. `agent connection add` without `--no-publish` publishes with the agent's credentials.**
+---
 
-1. After saving locally, add calls `publishCatalog` (`cli/app/command_agent_connection.go:139-144`).
-2. `publishCatalog` chooses how to sign (`:267-288`, `:236-245`):
-   - a user token file present → sign as the user;
-   - otherwise, agent uuid and token present → **sign with the agent's token**.
-3. The agent-signed call is `PublishLocalAgentCatalog` (`:314-332`). The server authenticates it by the agent token alone. It is exempt from the user auth interceptor (`go/product/server/local_agent.go:272-288`, `:361-396`).
-4. What `--no-publish` suppresses is exactly that call, and nothing else (`cli/app/command_agent_connection.go:134-138`). nuzur's deploy passes it only because its laptop CLI publishes afterwards with the user token (`cli/deploy/templates/bootstrap.sh.tmpl:467-471`).
+## 4. What the source says
 
-The server's comment on `PublishLocalAgentCatalog` describes our case exactly:
-"A machine paired headlessly … has no user session, so this is the only way it
-can make its databases visible in nuzur."
+### A. Registering without `nuzur-cli deploy`
 
-**3. Replace-the-list semantics are harmless here.**
+**Pairing needs no login on the machine.**
 
-- Both server RPCs **replace** the agent's whole catalog (`go/product/server/local_agent.go:248-270`, `:290-338`, `:323`).
-- The CLI always sends its whole local registry (`cli/app/command_agent_connection.go:262-266`, `:249-260`).
-- The catalog belongs to **one agent**. This agent is dedicated to metiche, and its registry holds exactly one entry. So every publish sends `[metiche-prod]` and replaces `[metiche-prod]`.
-- No laptop publishes to this agent's uuid. A laptop's `agent connection` commands publish to the laptop's own agent (`cli/app/command_agent.go:183-193`).
-- The server keeps team shares server-side and strips any the client sends (`local_agent.go:434-439`). A republish can never share the connection.
+- `agent pair` accepts `--provisioning-token` (env `NUZUR_PROVISIONING_TOKEN`) (`cli/app/command_agent.go:56-60`, `:82-85`). The token is exchanged with `ExchangeProvisioningToken` (`:146-168`).
+- With no display, `agent pair` without a token asks for it in a **masked** prompt (`:89-92` → `cli/app/command_connect.go:127-158`; masking at `:137` and `cli/app/command_agent_start.go:264-272`).
+- A container has no `DISPLAY` on Linux, which counts as headless (`cli/app/headless.go:28-35`). So `kubectl exec -it … nuzur-cli agent pair` prompts, and **the token is never in argv**.
+- The server consumes the token atomically. It lives 15 minutes and is single use (`go/product/server/provisioning_token.go:23`, `go/product/server/local_agent.go:151-184`).
+- Each exchange inserts **one new** `local_agent` row (`local_agent.go:72-115`). The CLI writes the uuid and token files at 0600 in a 0700 directory (`cli/app/command_agent.go:270-281`).
+- **The only login is the owner's**, in a browser on the laptop, to mint the token at `app.nuzur.com/pair` ("Pair a server").
 
-**The supported sequence** (the full idempotent version is section 5):
+**Publishing without `--no-publish` uses the agent's own credentials.**
 
-```sh
-# laptop, browser, signed in:  app.nuzur.com/pair → "Pair a server" → copy token (15 min, single use)
-# box, as the dedicated user, clean environment:
-nuzur-cli agent pair                                        # masked prompt: paste the token
-nuzur-cli agent connection add metiche-prod --uuid <UUID>   # masked prompts: mysql / host / port / user / password
-                                                            # → "Published — the connection now appears … under "Via agent""
-systemctl enable --now nuzur-agent.service
-# laptop, browser: data manager → Via agent → this agent → metiche-prod → schema metiche_nuzur
-```
+- `agent connection add` saves the entry, then calls `publishCatalog` (`cli/app/command_agent_connection.go:139-144`).
+- With no user token file present, `publishCatalog` signs with the agent's uuid and token (`:236-245`, `:262-288`) through `PublishLocalAgentCatalog` (`:314-332`).
+- The server authenticates that call by the agent token alone (`go/product/server/local_agent.go:272-288`, `:361-396`).
+- `--no-publish` suppresses exactly that call (`command_agent_connection.go:134-138`).
 
-**Existing agents are left untouched.** `listLocalAgents` today *(observed)*:
+**Catalog replacement is harmless here.**
 
-- 2 agents, 1 connection each, so 2 connections;
-- one is `darwin`, the owner's laptop;
-- the other is `linux` with machine name `localhost`. It is **an agent serving another project**: its connection belongs to that project and is shared with another team. **This design never revokes, unpairs, re-publishes or otherwise touches it.** Revoking it would cut that project's data access.
+- Both server RPCs replace the agent's whole catalog (`local_agent.go:248-270`, `:290-338`).
+- The CLI always sends its whole registry (`command_agent_connection.go:249-266`).
+- This agent holds exactly one connection, `metiche-prod`, so every publish replaces `[metiche-prod]` with `[metiche-prod]`.
+- Team shares are server-owned. The server strips any the client sends (`local_agent.go:434-439`), so a republish can never share the connection.
 
-The metiche agent is a **separate, new agent**, created by step 8's single pairing.
+**Agent name.**
 
-**Starter plan cap: no headroom after metiche-prod.** On the Starter plan the
-server counts connections across all of the owner's non-revoked agents, and
-rejects a publish when the total would exceed **3** (`local_agent.go:29-31`,
-`:300-321`, `:398-411`). Today there are 2, so `metiche-prod` becomes the **3rd**.
-That is allowed, and it is the last one.
+- There is no flag to set one. `agent pair` accepts only `--force`, `--provisioning-token` and `--headless` (`cli/app/command_agent.go:51-65`).
+- The machine name is `os.Hostname()` (`:150-156`), so in the pod it is **`nuzur-agent-0`** (§4.D). That is distinct from the existing agents, whose names are `localhost` and the laptop's name *(observed)*.
+- The server writes the name only when it creates the row (`local_agent.go:89-100`).
+- Every action still uses the **recorded uuid**, never a name (D8).
 
-- **A 4th connection anywhere** fails at publish time with gRPC `FailedPrecondition`: "starter plan is limited to 3 database connections — upgrade to Pro for unlimited connections" (`local_agent.go:316-320`).
-  - "Anywhere" means on this agent, the laptop's, or the other project's agent.
-  - `agent connection add` has already saved the entry locally. It then prints "Saved on this machine but publishing the connection to nuzur failed" and returns success (`cli/app/command_agent_connection.go:139-143`).
-  - The new connection **does not appear** in the data manager. The existing three are unaffected, because the rejected publish writes nothing.
-- **Republishing metiche's own one-entry catalog stays allowed at the cap.** The target agent is counted by its incoming list (1), not added on top of its stored list (`local_agent.go:402-411`). So the same-uuid re-seal (section 3.C) and the password rotation still work.
-- **Before step 9, confirm the count is still 2.** If it is already 3, stop: the metiche publish would be the 4th. Resolve that first, by upgrading the plan or removing a connection the owner no longer needs. Never touch the other project's agent.
+### B. Restart semantics and every duplicate path
 
-**Two agents will be named `localhost`.** nuzur-cli has **no way to set an
-agent name**:
+**The container's command is `nuzur-cli agent start`. At startup it does this, and nothing else:**
 
-- `agent pair` accepts only `--force`, `--provisioning-token` and `--headless` (`cli/app/command_agent.go:51-65`).
-- The machine name is always `os.Hostname()` (`:122`, `:150-156`), and the box's static hostname is `localhost` *(observed)*.
-- The server sets `machine_name` only when it creates the row (`go/product/server/local_agent.go:89-100`), and no product RPC renames an agent.
+1. **CLI construction.**
+   - The config is an embedded YAML (`cli/config/config.go:13-14`, `:36-49`).
+   - The auth client only populates a struct (`cli/auth/auth.go:22-29`).
+   - The gRPC clients are created with `grpc.NewClient`, which is lazy (`cli/productclient/client.go:48`, `cli/cmclient/client.go:62`).
+   - No files and no network.
+2. **The `Before` hook.** It migrates `/tmp/nuzur-cli` files only when that directory exists, and never overwrites (`cli/app/command_agent.go:26-31`, `cli/files/local_agent.go:84-127`). `/tmp` is a fresh emptyDir on every pod start, so the migration returns at `:90-95`.
+3. **Fallback resolution** (`cli/app/command_agent_start.go:116-133`). No flag or env is set and there are no saved fallback files. The registry has an entry, so it returns empty **without prompting** (`:127-130`).
+4. **`agent.Run`** (`cli/agent/daemon.go:76-172`):
+   1. Read the uuid and token files, or exit with "agent not paired: … (run `nuzur-cli agent pair` first)" (`:77-80`, `:346-358`).
+   2. Load the registry read-only (`cli/agent/connections/connections.go:67-116`). It rewrites the file only to migrate a pre-keychain legacy file (`:94-98`).
+   3. Open the keyring. This writes and deletes one probe item (`cli/agent/connections/keyring.go:78-85`, `:119-130`).
+   4. Dial and send `Hello{uuid, token}` (`daemon.go:193-203`).
+5. **The server side.**
+   - It validates the token (`go/connection-manager/server/local_agent_channel.go:137-174`).
+   - It registers an in-memory session (`:69-70`).
+   - It runs one `UPDATE local_agent SET status, last_seen_at, updated_at` (`:186-227`). That statement cannot touch `connections` or `token_hash`.
+6. **Reconnects** reuse the same uuid and token with backoff (`daemon.go:129-171`).
 
-So the design identifies the metiche agent **only by its uuid**:
+None of `RegisterLocalAgent`, `ExchangeProvisioningToken`, `PublishLocalAgentCatalog` or `UpdateLocalAgentConnections` is reachable from this path.
 
-- Step 8 snapshots the owner's agent uuids **before** pairing. The metiche agent is the one uuid that is new afterwards, and it must equal `local_agent_uuid.txt`.
-- It is recorded as `AGENT_UUID` in `/etc/nuzur-agent/ids.env`.
-- Every later action, including P1, rotation, recovery and revocation, takes that uuid and **never a name**.
-- Do not rename the box to get a distinct name. The hostname feeds the keyring passphrase (section 3.C) and is the Kubernetes node name.
+**Why identity survives restarts.**
 
-### B. What a restart does, and every way a duplicate can arise
+- The connection uuid is a field of the entry in `local_agent_connections.json` (`connections.go:42-55`).
+- That file is written only by `Save` (`:118-129`), which only `connection add` and `connection remove` call.
+- The DSN is keyed by that uuid, as keyring item `dsn-<uuid>` (`keyring.go:189-191`).
+- Everything sits on the PVC (§4.C).
+- The same pod name, the same mounted machine-id and the same `USER` give the same passphrase (§4.D).
+- A restart, reschedule, delete or new image therefore finds identical state, and step 5's `UPDATE` changes only status and timestamps.
 
-**`agent start` never registers, pairs or publishes.** Its full startup path:
+**Duplicate paths and their prevention:**
 
-1. **`Before` hook.** It migrates legacy files from `/tmp/nuzur-cli` only if they exist, and never overwrites (`cli/app/command_agent.go:26-31`, `cli/files/local_agent.go:84-127`). The unit uses `PrivateTmp=yes`, so there is nothing to migrate.
-2. **Fallback DSN resolution** (`cli/app/command_agent_start.go:116-133`). With no `--dsn` or `--driver`, no env vars and no saved fallback files, it loads the registry. The registry has entries, so it returns empty **without prompting** (`:127-130`).
-3. **`agent.Run`** (`cli/agent/daemon.go:76-172`):
-   - reads the uuid and token files, or exits "agent not paired" (`:77-80`, `:346-358`);
-   - loads the registry read-only (`cli/agent/connections/connections.go:67-116`), which rewrites only for a pre-keychain legacy file (`:94-98`);
-   - opens the keyring; on Linux this writes and deletes a probe item (`cli/agent/connections/keyring.go:78-85`, `:119-130`);
-   - dials, and sends `Hello{uuid, token, cli_version}` (`daemon.go:193-203`).
-4. **The server** validates the token (`go/connection-manager/server/local_agent_channel.go:137-174`), registers an **in-memory** session (`:69-70`), and runs one column-scoped `UPDATE local_agent SET status, last_seen_at, updated_at` (`:186-227`). That write cannot touch `connections`, `token_hash` or `revoked_at`.
-5. **The read loop.** On stream loss it reconnects with backoff, reusing the same uuid and token (`daemon.go:129-171`).
-
-None of these calls exist on that path: `RegisterLocalAgent`,
-`ExchangeProvisioningToken`, `PublishLocalAgentCatalog`,
-`UpdateLocalAgentConnections`.
-
-**Where connection identity lives, and why it is stable.**
-
-- The uuid is a field of the entry in `local_agent_connections.json` (`connections.go:42-55`). The file is written only by `Save` (`:118-129`), which only `connection add` and `connection remove` call.
-- The DSN is keyed by that uuid in the keyring as `dsn-<uuid>` (`keyring.go:189-191`).
-- On the server, the uuid sits in `local_agent.connections`, which only a catalog publish replaces.
-- Requests arrive carrying the uuid, and the daemon resolves them against the registry (`cli/agent/dbpool.go:46-89`).
-- Nothing on the start path writes any of these, so the uuid is stable across restarts, reboots and binary upgrades.
-- `updated_at` and `last_seen_at` on the agent row **do** change on every connect. P1 excludes them.
-
-**Every duplicate path, and what prevents it.**
-
-| # | How a duplicate arises | Source | Prevention in this design |
+| # | How it arises | Source | Prevention |
 |---|---|---|---|
-| 1 | Re-running `agent pair` | Refused if `local_agent_uuid.txt` exists (`cli/app/command_agent.go:73-80`). `--force` inserts a second agent row, because every exchange inserts (`go/product/server/local_agent.go:72-115`). | Setup skips pairing when the uuid file exists, and stops if the recorded uuid exists but the file does not. `--force` is never used. A provisioning token is single-use, so an accidental re-run cannot pair without a fresh token. |
-| 2 | `nuzur-cli connect` | Removes any entry with the same name and adds one **without a uuid**, which mints a new connection uuid on every run (`cli/app/command_connect.go:182-184`, `:230-236`, `connections.go:162-164`). It also installs a `systemd --user` unit (`command_connect.go:263-281`, `cli/agent/install.go:172-211`), which is a **second daemon**. | Never run on the box (D9). |
-| 3 | `agent install` | Writes `~/.config/systemd/user/nuzur-agent.service` and enables it (`cli/agent/install.go:164-211`): a second daemon with the same credentials. | Never run (D9). Setup asserts no user unit exists. |
-| 4 | `agent connection add` again with the same name | **Interactive** mode refuses a duplicate name (`command_agent_connection.go:80-84`, `:347-353`). **Scripted** mode (any of `--dsn`, `--driver`, `--non-interactive`) removes the existing entry and re-adds it; without `--uuid` it mints a **new** uuid (`:62`, `:70-78`, `:118-125`). | Setup skips when the entry exists. `--uuid` from `/etc/nuzur-agent/ids.env` is always passed, even interactively (`:119`). |
-| 5 | A user login on the box | With a user token file present, publish switches to user mode. User mode **re-pairs** when the stored agent is NotFound, creating a new agent (`command_agent_connection.go:271-281`, `:290-309`). `agent unpair` without `--keep-remote` forces a login (`cli/app/command_agent_unpair.go:41-47`). | Never `nuzur-cli login` as `nuzur-agent` (D9). The unit's preflight refuses to start if a user token file exists in the agent's config dir. |
-| 6 | Laptop-side `UpdateLocalAgentConnections` against this agent | Replaces the catalog with whatever the laptop sends (`local_agent.go:256-270`). | Not used. The box is the only publisher of its own catalog. |
-| 7 | Keyring unreadable after a hostname, machine-id or `$USER` change | The passphrase is derived from those three (section 3.C). A decode failure makes `connections.Load` fail (`connections.go:109-112`). The daemon logs it and continues with an **empty** registry (`daemon.go:92-97`). `agent start` would try to prompt for a fallback DSN (`command_agent_start.go:128-132`, `:143-174`), which fails with stdin `/dev/null` **before** anything is saved (`:176`). **No duplicate, but an outage.** | Preflight compares hostname and a machine-id fingerprint to recorded values and refuses to start, with a precise message. Recovery keeps the same uuid (section 3.C). |
-| 8 | Loss of the config directory | uuid and token are gone, and the daemon exits "not paired" (`daemon.go:77-80`) in a restart loop. It creates nothing. The server stores only the token's hash (`local_agent.go:33-45`), so the pairing **cannot** be recovered. | This is the **one** case where the agent uuid legitimately changes, and it is manual: revoke the old metiche agent **by the recorded `AGENT_UUID` only**, pair once, record the new uuid, add the connection with the **recorded** connection uuid, and re-point the data manager. There is no automatic re-pair anywhere. |
-| 9 | A HOME or `XDG_CONFIG_HOME` mismatch between setup and the unit | The config dir is `os.UserConfigDir()/nuzur/agent`, falling back to `/tmp/nuzur-cli` (`cli/files/local_agent.go:33-38`). A different HOME looks "not paired", which tempts someone to re-pair. | The same explicit `HOME`, `USER` and `XDG_CONFIG_HOME` in the unit and in every setup invocation (`env -i`). Preflight asserts the paired files exist at the expected path. |
-| 10 | Two daemons with one pairing | The server registers sessions by agent uuid (`local_agent_channel.go:69-70`), so the two fight over the session. No new row, but flapping. | Only the system unit runs `agent start`. Setup checks `pgrep -u nuzur-agent -f 'agent start'` before enabling. |
+| 1 | Re-running `agent pair` | Refused when the uuid file exists (`cli/app/command_agent.go:73-80`). `--force` inserts a second row (`local_agent.go:72-115`). | Setup checks the uuid file on the PVC first. `--force` is never used. The token is single use. |
+| 2 | `nuzur-cli connect` | Replaces by name and adds **without** a uuid, so a new uuid on every run (`cli/app/command_connect.go:182-184`, `:230-236`, `connections.go:162-164`). It also tries to install a service (`:263-281`). | Never run (D15). |
+| 3 | `agent install` | Writes a `systemd --user` unit (`cli/agent/install.go:164-211`). Meaningless in a container. | Never run (D15). |
+| 4 | Scripted `connection add` without `--uuid` | Scripted mode (`--dsn`, `--driver` or `--non-interactive`, `command_agent_connection.go:62`) upserts by name. Without `--uuid` it mints a new uuid (`:70-78`, `:118-125`). | `--uuid` from ConfigMap `nuzur-agent-ids` is always passed. Setup skips when the entry exists. |
+| 5 | A user login in the pod | A user token file makes publishing use the user path, which **re-pairs** on NotFound (`command_agent_connection.go:271-281`, `:290-309`). `agent unpair` without `--keep-remote` also logs in (`cli/app/command_agent_unpair.go:41-47`). | Never log in (D15). Preflight fails if `$XDG_CONFIG_HOME/nuzur/token.txt` exists (`cli/files/token.go:15-17`). |
+| 6 | Laptop `UpdateLocalAgentConnections` | Replaces the catalog (`local_agent.go:256-270`). | Not used. |
+| 7 | The passphrase changes | Changing the hostname, machine-id or `USER` makes the keyring item undecryptable, so `connections.Load` fails (`connections.go:109-112`). The daemon continues with an empty registry (`daemon.go:92-97`). `agent start` would try to prompt (`command_agent_start.go:128-132`) and fail with no TTY, before saving anything (`:176`). **An outage, not a duplicate.** | Preflight compares the recorded fingerprint and decrypts once before `agent start` runs. Recovery keeps the uuid (§4.D). |
+| 8 | **PVC loss** | uuid and token are gone. The server stores only the token's hash (`local_agent.go:33-45`), so the pairing is unrecoverable. | The one documented **manual re-pair** (§8, "PVC loss"): new agent uuid, same connection uuid, old agent revoked **by recorded uuid**. Never automatic. |
+| 9 | The config dir resolves off the PVC | If `XDG_CONFIG_HOME` and `HOME` are unset, or `XDG_CONFIG_HOME` is relative, `UserConfigDir` errors (`gostd/os/file.go:582-591`). The CLI then falls back to `/tmp/nuzur-cli` (`cli/files/local_agent.go:20-25`, `:33-38`): ephemeral, lost on restart, "not paired", and a temptation to re-pair. | The chart sets an absolute `XDG_CONFIG_HOME` on the PVC. Setup checks it before pairing, and preflight checks it on every start. |
+| 10 | Two daemons with one pairing | Sessions are keyed by agent uuid (`local_agent_channel.go:69-70`), so two daemons flap. | `replicas: 1` is hard-coded in the template. StatefulSet at-most-one semantics. Never force-delete the pod. Never exec `agent start`. |
+| 11 | The legacy fallback env is set | A DSN in env applies to any uuid the registry lacks (`cli/agent/dbpool.go:84-86`). It is also saved in **plaintext** on the PVC (`command_agent_start.go:118-119`, `:176`, `:291-303`). | Never set (D14). Preflight fails if either env var or either saved file is present. |
 
-### C. The keyring on headless Linux under systemd
+### C. Persistence: exactly which path, and set explicitly
 
-- **Backend.** The allowed backends on Linux are Secret Service, KWallet, then File (`keyring.go:146-151`). If the chosen backend cannot write, a probe write falls back to File (`:68-85`).
-  - On this box `dbus-launch` and `gnome-keyring-daemon` are absent *(observed)*.
-  - A system service has no session bus.
-  - So **File** is what the CLI uses both at setup and in the daemon.
-  - Its directory is `~/.config/nuzur/agent/keyring` (`keyring.go:159-163`). The directory is 0700 (`kr/file.go:46`) and each item file is 0600 (`kr/file.go:146`).
-- **Passphrase inputs, confirmed** (`keyring.go:170-187`): `sha256( os.Hostname() ‖ contents of /etc/machine-id ‖ $USER ‖ "nuzur-cli-keyring-v1" )`.
-  - An unreadable input is **silently skipped** rather than raising an error, so a missing `/etc/machine-id` also changes the passphrase.
-  - It is an **environment variable**, `$USER`, not the uid.
-- **What a fixed `User=` guarantees.** systemd sets `$USER`, `$LOGNAME` and `$HOME` from `User=` for system services. The unit also sets them explicitly, as nuzur's own bootstrap does (`cli/deploy/templates/bootstrap.sh.tmpl:7-12`, `:487-492`). So the daemon always derives the passphrase with `USER=nuzur-agent`.
-  - The guarantee is only as good as setup doing the same. Every setup call therefore runs `runuser -u nuzur-agent -- env -i HOME=… USER=nuzur-agent …`, never a bare `sudo -u` that inherits the caller's `$USER`.
-- **If the hostname changes.** The box's static hostname is `localhost` *(observed)*, which is also its Kubernetes node name. Renaming the host would disturb microk8s as well, so it is unlikely to happen casually. If it does, the item no longer decrypts, and preflight stops the unit. There are two recoveries, and **neither creates a connection**:
-  1. **Preferred:** restore the hostname. Nothing else changes.
-  2. **Re-seal under the new passphrase, keeping the uuid:**
-     1. `systemctl stop nuzur-agent`.
-     2. Delete `~nuzur-agent/.config/nuzur/agent/keyring/dsn-<CONNECTION_UUID>`. The file backend's `Remove` is a plain unlink that needs no passphrase (`kr/file.go:158-165`). A missing item is a soft state (`kr/file.go:78-80`, `keyring.go:211-224`), so the registry loads again.
-     3. `agent connection remove metiche-prod --no-publish`. This drops the entry locally only; the server catalog is untouched (`command_agent_connection.go:178-210`).
-     4. `agent connection add metiche-prod --uuid <same>`, interactive. This publishes a catalog identical to the one already on the server.
-     5. Update `/etc/nuzur-agent/host.fingerprint`.
-     6. Start the unit and run P1.
+- **`os.UserConfigDir` on Linux** (`gostd/os/file.go:581-591`):
+  - returns `$XDG_CONFIG_HOME` if it is set;
+  - errors if that value is relative;
+  - otherwise returns `$HOME/.config`;
+  - errors if both are unset.
+- **The CLI** uses `<UserConfigDir>/nuzur` as its base (`cli/files/local_agent.go:20-25`) and `<UserConfigDir>/nuzur/agent` for agent state (`:33-38`). On error, both fall back to `/tmp/nuzur-cli`.
+- **The chart sets:**
+  - `HOME=/var/lib/nuzur`
+  - `XDG_CONFIG_HOME=/var/lib/nuzur/config`
+  - the PVC mounted at `/var/lib/nuzur`
 
-  A **machine-id change** has the same symptom and the same recovery. It happens when a VM is cloned or `systemd-machine-id-setup` is re-run.
+  `HOME` is then never consulted for config.
+- **Layout on the PVC** (file names from `cli/constants/constants.go:4-9`):
 
-### D. Default schema, `USE`, and `SELECT *`
+| path | content | written by |
+|---|---|---|
+| `/var/lib/nuzur/config/nuzur/agent/local_agent_uuid.txt` | agent uuid | pair (`cli/app/command_agent.go:270-281`) |
+| `…/agent/local_agent_token.txt` | agent token, 0600 | pair |
+| `…/agent/local_agent_connections.json` | registry: uuid, name, driver, db_type, default_schema. No DSN. | `connection add`/`remove` (`connections.go:118-129`) |
+| `…/agent/keyring/dsn-<CONNECTION_UUID>` | encrypted DSN, 0600, in a 0700 dir | `PutDSN` (`keyring.go:159-163`, `:193-206`; `kr/file.go:46`, `:146`) |
+| `/var/lib/nuzur/config/nuzur/token.txt` | user login token. **Must never exist.** | `nuzur-cli login` (`cli/files/token.go:15-17`) |
 
-**The agent issues `USE`, and the schema comes from the cloud, not from the box's registry.**
+- **Storage.** PVC `data-nuzur-agent-0` comes from `volumeClaimTemplates`: 1Gi, `ReadWriteOnce`, storage class `microk8s-hostpath`.
+  - That class has reclaim policy **Delete** and uses the `microk8s.io/hostpath` provisioner, which creates hostPath directories mode 0777 root:root *(observed)*. So uid 10001 can write, and the CLI creates its own 0700 subdirectories.
+  - `fsGroup` is set, but hostPath volumes ignore it.
+  - `ReadWriteOncePod` is not available on this non-CSI provisioner, so single-writer rests on StatefulSet semantics.
+  - `persistentVolumeClaimRetentionPolicy` is `Retain` on both delete and scale, so `helm uninstall` keeps the PVC.
+- **PVC loss is the documented manual re-pair case** (duplicate path 8). Deleting the PVC deletes the pairing, because the reclaim policy is Delete.
 
-- Every non-transaction query goes through `resolveQueryerWithSchema` (`cli/agent/handlers.go:34`, `:98`, `:197-222`). With a schema set, it takes a dedicated connection and runs ``USE `schema` `` with the identifier quoted (`:228-247`). Transactions apply it once at `BeginTx` (`:137-143`).
-- The schema is `userConnection.DbSchema`, the data manager's saved connection (`go/connection-manager/module/sql-connection-manager/connection_local_agent.go:112`, `:136`).
-- If that is empty, it falls back to the catalog's `default_schema` (`manager.go:199-203`).
-- The daemon itself never reads the registry's `DefaultSchema` (`cli/agent/dbpool.go:54-82`).
-- For a MySQL connection added interactively, `default_schema` stays empty (`cli/app/command_agent_connection.go:107-115`), and the DSN has **no database** (`cli/app/command_agent_start.go:244-249`).
+### D. A stable keyring passphrase in a pod
 
-The consequence is **fail-closed**:
+**Inputs** (`cli/agent/connections/keyring.go:170-187`): `sha256( os.Hostname() ‖ bytes of /etc/machine-id ‖ $USER ‖ "nuzur-cli-keyring-v1" )`.
 
-| Data manager schema | What happens |
-|---|---|
-| `metiche_nuzur` | Works. |
-| Empty | "No database selected". |
-| `metiche` | Access denied, because `nuzur_ro` has no grant there. |
+An input that cannot be read is **silently skipped**. That changes the
+passphrase, so each input must be guaranteed present.
 
-**Data-manager queries use `SELECT *`, so column-level GRANTs are unusable.**
+**Hostname.**
 
-- The default table action is `"SELECT * FROM " + entity.identifier + " LIMIT 100"` (`web/src/project-data-manager/entities_list.tsx:108`).
-- Fetching records by key is `"SELECT * FROM " + this.identifier + " WHERE "` (`web/src/domain/entity.ts:507-508`).
-- Search names its display fields explicitly (`web/src/project-data-manager/search_query.ts:35-38`).
+- Go's `os.Hostname` on Linux returns `uname().nodename` (`gostd/os/sys_linux.go:12-30`). In a pod, that is the pod's UTS hostname.
+- Kubernetes sets it to the pod name when `spec.hostname` is unset. For a StatefulSet the pod name is `<statefulset>-<ordinal>`, so **`nuzur-agent-0`**.
+- **Setting `hostname` or `subdomain` is not needed.** `subdomain` affects only DNS, not the short nodename.
+- The chart must **not** set `spec.hostname`, `setHostnameAsFQDN: true` (which would put the FQDN into nodename) or `hostNetwork: true` (which would use the node's hostname).
+- The StatefulSet name is fixed in the template, not derived from the release name. Renaming it is a passphrase change.
+- `kubectl exec` runs in the same UTS namespace, so pairing and adding from an exec see the same hostname as the daemon.
 
-MySQL refuses `SELECT *` when the user lacks the privilege on any column, so
-per-column grants would break the first two outright. Views that keep **every
-column name** serve both styles. A redacted column simply reads as NULL. That is
-why the views NULL columns rather than dropping them.
+**Machine-id.**
+
+- A random 128-bit value is generated **once at setup** as 32 lowercase hex characters followed by `\n`.
+- It is stored root-only at `/etc/metiche/nuzur-agent.machine-id` (0600) and loaded into Secret `nuzur-agent-machine-id` (key `machine-id`).
+- It is mounted read-only with `subPath` at `/etc/machine-id` (`defaultMode 0444`).
+- The code calls it "NOT a cryptographic secret" (`keyring.go:165-169`). But hostname and `USER` are public, so the machine-id is the only non-public input. It therefore lives in a Secret, not in values (Helm stores values in the release and `helm get values` prints them), not in a ConfigMap, and never in the repo.
+- It is never regenerated while the file or Secret exists. Setup stops if the two differ.
+- The trailing newline is part of the passphrase, so the value must never be retyped.
+
+**`USER`.**
+
+- The chart sets `USER=nuzur` and `LOGNAME=nuzur`.
+- The code reads the environment variable (`keyring.go:182-184`), not the uid.
+- `kubectl exec` processes inherit the container's env, so the one-time commands use the same value.
+
+**The backend in a container is the encrypted file backend.** From source:
+
+1. Linux allows, in order, Secret Service, KWallet, File (`keyring.go:146-151`).
+2. Secret Service and KWallet register themselves only if `dbus.SessionBus()` succeeds at package init (`kr/secretservice.go:17-24`, `kr/kwallet.go:18-29`).
+3. godbus looks for a session bus in three places (`dbus/conn.go:79-88`, `:91-98`):
+   - `DBUS_SESSION_BUS_ADDRESS` (not set);
+   - a bus socket under the runtime dir (`dbus/conn_other.go:51-71`; there is no `/run/user/10001` in the image);
+   - running `dbus-launch` (`dbus/conn_other.go:19-38`; not in the image).
+4. All three fail, so neither dbus backend is registered.
+5. The File backend is always registered (`kr/file.go:14-21`).
+6. `keyring.Open` returns the first registered allowed backend (`kr/keyring.go:58-74`), which is **File**.
+7. The Linux write probe (`keyring.go:78-85`) confirms it. On a read-only mount, such as the preflight's, the probe fails, and the code reopens File without probing (`:84`). Reads then decrypt normally (`kr/file.go:71-97`).
+
+**If the passphrase changes, recover with the same uuid.**
+
+1. **Preferred:** restore the input. Put the original machine-id back into the Secret, from `/etc/metiche/nuzur-agent.machine-id`, and restore the StatefulSet name or `USER`.
+2. **Otherwise, re-seal:**
+   1. `helm upgrade --set-string agent.mode=setup`.
+   2. In the pod, delete `keyring/dsn-<uuid>`. The file backend's `Remove` is a plain unlink that needs no passphrase (`kr/file.go:158-165`), and a missing item is a soft state (`keyring.go:211-224`), so the registry loads again.
+   3. Run §8 step 10 again (a scripted add with **the same `--uuid`**, which upserts in place and publishes the same one-entry catalog).
+   4. Update the fingerprint in ConfigMap `nuzur-agent-ids`.
+   5. Switch back to `run` and run P1.
+
+### E. The legacy fallback DSN is never set
+
+- `agent start` reads `--dsn`/`NUZUR_AGENT_DSN` and `--driver`/`NUZUR_AGENT_DRIVER` (`cli/app/command_agent_start.go:35-44`).
+- If either is set, it wins regardless of the registry. It is **saved in plaintext** to `local_agent_dsn.txt` and `local_agent_driver.txt` (`:117-119`, `:143-180`, `:291-303`).
+- The daemon then serves that DSN for any connection uuid the registry does not know (`cli/agent/dbpool.go:84-86`).
+- With neither set and a non-empty registry, the fallback is skipped silently (`:121-130`).
+- **Rule:** the chart never sets either variable. Preflight fails if either is present in the environment, or if either saved file exists on the PVC.
+- For contrast, nuzur's own deploy sets it (§3).
+
+### F. Default schema, `USE`, and `SELECT *`
+
+**`USE` per request.**
+
+- The agent issues ``USE `schema` `` on a dedicated connection whenever the request carries a schema (`cli/agent/handlers.go:197-247`), and once at `BeginTx` (`:137-143`).
+- The schema is the data manager's saved connection schema (`go/connection-manager/module/sql-connection-manager/connection_local_agent.go:112`, `:136`).
+- If that is empty, it is the catalog's `default_schema` (`manager.go:199-203`). The scripted add sets that with `--schema` (`cli/app/command_agent_connection.go:96`).
+- The daemon itself ignores the registry's default schema (`cli/agent/dbpool.go:54-82`).
+- With `--schema metiche_nuzur` and a DSN pointing at database `metiche_nuzur`, every path lands on the views.
+- Selecting `metiche` fails closed, because `nuzur_ro` has no grant there.
+
+**`SELECT *`.**
+
+- The data manager's default table action is `"SELECT * FROM " + entity.identifier + " LIMIT 100"` (`web/src/project-data-manager/entities_list.tsx:108`).
+- Fetching records by key is `SELECT * FROM … WHERE` (`web/src/domain/entity.ts:507-508`).
+- Search names its fields explicitly (`web/src/project-data-manager/search_query.ts:35-38`).
+- MySQL rejects `SELECT *` when any column is not granted, so **column-level GRANTs cannot work**.
+- Views that keep every column name, with redacted columns as typed NULLs, serve both query styles.
 
 ---
 
-## 4. Data exposure model
+## 5. Data exposure model
 
 ```
-metiche (database)          untouched; no grants to nuzur_ro
-   ▲ SELECT only
-nuzur_views@localhost       ACCOUNT LOCK; SELECT ON metiche.*; owns (DEFINER) every view
-   ▲ SQL SECURITY DEFINER
-metiche_nuzur (database)    one view per exposed table, same name as the table
-   ▲ SELECT only
-nuzur_ro@'69.164.192.246'   SELECT ON metiche_nuzur.*; MAX_USER_CONNECTIONS 5
-   ▲ DSN in the agent's keyring
-nuzur-agent (host unit) ──► cm.nuzur.com:443 ──► data manager (owner only)
+metiche                         untouched; nuzur_ro has no grant here
+  ▲ SELECT
+nuzur_views@localhost           ACCOUNT LOCK; SELECT ON metiche.*; DEFINER of every view
+  ▲ SQL SECURITY DEFINER
+metiche_nuzur                   one view per table, same name, every column (secrets as NULL)
+  ▲ SELECT
+nuzur_ro@'10.1.0.0/255.255.0.0' SELECT ON metiche_nuzur.*; MAX_USER_CONNECTIONS 5
+  ▲ DSN (encrypted on the PVC)
+pod nuzur-agent-0 ──► cm.nuzur.com:443 ──► data manager (owner only)
 ```
 
-- **Two accounts.** The definer can read `metiche` but cannot log in. The login account can read only views.
-  - MySQL checks the definer's privileges on the base tables and the invoker's privileges on the view.
-  - A write through a view would need INSERT, UPDATE or DELETE on both, and neither account has them.
-  - So even a mistaken future `GRANT ALL ON metiche_nuzur.*` could not write to `metiche`.
-- **Host restriction.** The agent reaches the ClusterIP from the host.
-  - `ip route get 10.152.183.239` gives `src 69.164.192.246` *(observed)*.
-  - kube-proxy, running with `--cluster-cidr=10.1.0.0/16`, masquerades non-pod sources to Services *(observed)*. On this single-node box that resolves to the same eth0 address.
-  - The account is therefore `'nuzur_ro'@'69.164.192.246'`. Setup step 1 **measures** the source before creating it.
-  - `skip_name_resolve=1` *(observed)*, so the host part must be an IP.
-  - Pods get 10.1.0.0/16 addresses and never match.
-- **Limits.**
-  - `MAX_USER_CONNECTIONS 5` equals the agent's own pool maximum (`cli/agent/dbpool.go:116`), so the agent never trips it under its own load.
-  - Five of the server's 200 *(observed)* is the most nuzur can ever hold.
-  - `PASSWORD EXPIRE NEVER`.
-  - No `FAILED_LOGIN_ATTEMPTS`, so a mistyped prompt cannot lock the account.
-- **Query timeout.** See section 6 and Q1. With the pinned CLI, an interactively entered DSN cannot carry `readTimeout`. `max_execution_time` is 0 globally *(observed)* and cannot be set per account. Changing it globally would also cap the backend, so this design does not.
+**Two accounts.**
 
-### 4.1 Allowlist, not denylist
+- The definer can read `metiche` but cannot log in.
+- The login account can read only the views.
+- A write through a view needs write privileges for both the invoker (on the view) and the definer (on the base table). Neither account has them, so even a future mistaken `GRANT ALL ON metiche_nuzur.*` could not write to `metiche`.
 
-**Decision: allowlist with total classification.**
+**Host part.**
 
-| Option | On a new column (as v4 added `agent.token_hash`, `deploy/sql/2026-09-agent-token-hash.sql`) | Verdict |
+- The agent connects from its **pod IP**. Pod-to-Service traffic is not masqueraded: kube-proxy masquerades only sources outside `--cluster-cidr=10.1.0.0/16` *(observed)*.
+- Pod IPs change on reschedule, so the host part is the pod pool `10.1.0.0/255.255.0.0` (Calico IPPool `10.1.0.0/16`) *(observed)*.
+- `skip_name_resolve=1` *(observed)*, so a hostname cannot be used.
+- The effective restriction is **password plus the NetworkPolicy** (§7.1), which lets only the agent pod and the backend reach 3306.
+
+**DSN host.** The Service DNS name `metiche-mysql.metiche.svc.cluster.local`, not the ClusterIP. It survives a reinstall of the mysql release.
+
+**Limits.**
+
+- `MAX_USER_CONNECTIONS 5`, equal to the agent's pool maximum (`cli/agent/dbpool.go:116`). The server allows 200 *(observed)*.
+- A query timeout in the DSN: `timeout=5s&readTimeout=60s&writeTimeout=60s` (go-sql-driver v1.9.3, `cli/go.mod:7`).
+- `max_execution_time` is 0 globally *(observed)*. It cannot be set per account, and setting it globally would also cap the backend, so this design leaves it alone.
+
+### 5.1 Allowlist, not denylist
+
+| Option | When a column is added (as v4 added `agent.token_hash`, `deploy/sql/2026-09-agent-token-hash.sql`) | Verdict |
 |---|---|---|
-| `SELECT *` views, or denylist by omission | The new column is exposed automatically, secret or not. | **Rejected.** This is how a secret leaks silently. |
-| Plain allowlist that silently omits unknown columns | Never exposed, but the view drifts from the model. Explicit-field queries break with "unknown column", and nobody decided anything. | Rejected: stale in silence. |
-| **Allowlist with total classification** | The generator **refuses to run** until someone writes `expose` or `redact` for the column. Existing views stay as they were: stale but safe. | **Chosen.** It never exposes by default, and it turns staleness into a loud failure. |
+| `SELECT *` views, or a denylist | New columns are exposed automatically, secrets included. | **Rejected** |
+| Allowlist that silently omits unknown columns | Never exposed, but silently stale, and explicit-field queries fail. | Rejected |
+| **Allowlist with total classification** | The generator refuses until a human writes `expose` or `redact`. Existing views stay, stale but safe. | **Chosen** |
 
-### 4.2 The column policy and the view generator
+### 5.2 Column policy and view generator
 
-**Policy file.** `deploy/nuzur-agent/columns.policy` is committed and contains no
-secrets. It has one line per column of `metiche`:
+**Policy file.** `deploy/nuzur-agent/columns.policy` is committed and holds no
+secrets. One line per column of `metiche`:
 
 ```
-# table.column                     decision   note
 account.token_hash                 redact     D2
 agent.token_hash                   redact     D2 (added v4)
 invite.code                        redact     D2 join code
 notification_channel.target_url    redact     D2 webhook URL is a credential (docs/MODEL.md:63-66)
 team_event.response_snapshot       redact     D2
 account.email                      expose     D2 owner-only viewer
-agent.client_key                   expose!    identifier, not a bearer (docs/IDENTITY.md:9-11,38)
-project.repo_url                   expose!    see Q3
-...every other column...           expose
+project.repo_url                   expose!    D2 owner decision
+agent.client_key                   expose!    D2 identifier, not a bearer (docs/IDENTITY.md:9-11,38)
+notification_channel.last_error    expose     D2 capped status line (docs/MODEL.md:66)
+...every other column...           expose | expose!
 ```
 
 **Decisions.**
 
-- `expose`: the column appears by name.
-- `redact`: the column appears as a typed NULL with the same name. `CAST(NULL AS CHAR)` for char and text types, `CAST(NULL AS JSON)` for json, plain `NULL` otherwise.
-- `expose!`: an **acknowledged** exposure of a column whose name looks risky.
+- `expose`: the column appears as is.
+- `redact`: the column appears as a typed NULL under the same name. `CAST(NULL AS CHAR)` for char and text types, `CAST(NULL AS JSON)` for json, plain `NULL` otherwise.
+- `expose!`: an acknowledged exposure of a risky-looking name.
 - A table with no lines gets no view.
 
-**Risky-name check.** Column names matching
-`/(token|secret|code|key|pass|pwd|url|uri|snapshot|hash|salt|credential|cookie|signature|private|webhook|dsn|auth)/i`
-**must** be `redact` or `expose!`. A plain `expose` on such a name fails.
+**Risky-name check.**
 
-Today's matches, other than the five redacted columns, must be written as `expose!`:
-
-- `*.key` on plan, account, agent, member, project, contract (also `key_norm`), decision, notification_channel, session, intent, claim, conflict and instruction;
-- `agent.client_key`, `conflict.dedupe_key`, `judgement.pair_key`;
-- `team_event.subject_key`, `team_event.idempotency_key`;
-- `decision_token.token` and `intent_token.token` (tokenized wording, `docs/MODEL.md:35,46`);
-- `contract_assertion.shape_hash`;
-- `project.repo_url`.
-
-Some columns do not match the pattern but deserve a conscious decision anyway;
-the policy notes them:
-
-- `notification_channel.last_error` is capped because a response body can echo the URL (`docs/MODEL.md:66`);
-- `team_event.payload`, `team.settings`;
-- `account.identity_subject` and `account.identity_handle`.
+- Any name matching `/(token|secret|code|key|pass|pwd|url|uri|snapshot|hash|salt|credential|cookie|signature|private|webhook|dsn|auth)/i` must be `redact` or `expose!`.
+- Today, besides the five redactions, that means:
+  - every `*.key` column, plus `contract.key_norm`;
+  - `agent.client_key`, `conflict.dedupe_key`, `judgement.pair_key`, `team_event.subject_key`, `team_event.idempotency_key`;
+  - `decision_token.token` and `intent_token.token`, which hold tokenized wording (`docs/MODEL.md:35,46`);
+  - `contract_assertion.shape_hash`;
+  - `project.repo_url`.
+- `last_error` does not match the pattern, so it is plain `expose`.
 
 **Generator.** `deploy/nuzur-agent/gen-views.sh [--check|--apply]` runs as root on
-the box, in the style of `deploy/scripts/apply-schema.sh`. It runs `mysql` inside
-the pod with the root password taken from the pod's environment, SQL on stdin,
-and never selects a row value.
+the box. Like `deploy/scripts/apply-schema.sh`, it runs `mysql` inside the pod
+via `kubectl exec`, with the root password from the pod's environment and SQL on
+stdin. It never selects a row value.
 
-1. Read `information_schema.columns` for `table_schema='metiche'`: table, column, ordinal position, data type. Names only.
-2. **Fail with no DDL** if any of these is true, printing each offending `table.column` and the fix:
-   - a column exists in MySQL but not in the policy (**new column**);
-   - a table exists that has no policy lines (**new table**);
-   - a policy line names a column that no longer exists, because a view naming it would error with 1356;
-   - a risky name is marked plain `expose`;
-   - a line is malformed or duplicated.
-3. Build, in ordinal order, one statement per table:
-   ``CREATE OR REPLACE ALGORITHM=MERGE DEFINER=`nuzur_views`@`localhost` SQL SECURITY DEFINER VIEW `metiche_nuzur`.`<t>` AS SELECT `<c1>`, CAST(NULL AS CHAR) AS `<secret>`, … FROM `metiche`.`<t>`;``
-   Then add `DROP VIEW` for any view in `metiche_nuzur` that is no longer expected.
-4. `--check` stops here. It exits 0 only if the policy is total and the generated SQL's sha256 matches `/etc/nuzur-agent/views.sha256`.
-5. `--apply` executes the SQL in one `mysql` session and writes the new sha256. It is idempotent: `CREATE OR REPLACE` produces the same result on re-run, and when the hash is unchanged it skips.
+1. Read `information_schema.columns` for `metiche` (names, ordinal positions, data types).
+2. **Fail before any DDL** if any of these hold, printing each offender:
+   - an unclassified column;
+   - a table with no lines;
+   - a line whose column no longer exists (the view would error with 1356);
+   - a risky name marked plain `expose`;
+   - a malformed or duplicate line.
+3. For each table, in ordinal order, emit
+   ``CREATE OR REPLACE ALGORITHM=MERGE DEFINER=`nuzur_views`@`localhost` SQL SECURITY DEFINER VIEW `metiche_nuzur`.`<t>` AS SELECT … FROM `metiche`.`<t>`;``
+   Add `DROP VIEW` for views that are no longer expected.
+4. `--check` exits 0 only if the policy is total and the SQL's sha256 equals the value recorded in ConfigMap `nuzur-agent-views`.
+5. `--apply` executes the SQL and records the hash. It is idempotent.
 
 **When it runs.**
 
-- **After every schema change**, as the last step of any `deploy/sql/*.sql` migration and of `deploy/scripts/apply-schema.sh`. apply-schema never adds columns (`deploy/scripts/apply-schema.sh:12-16`), so migrations are hand-applied, and the runbook line is "then `gen-views.sh --apply`".
-- **In CI, repo-side, with no database:** the same classification check against the committed, codegen-generated `code/backend/metiche/core/repository/sql/schema/create.sql`. A pull request that adds a column without a policy line fails before it merges.
-- **Daily on the box**, via `nuzur-views-check.timer` running `--check`. A failure leaves a failed unit visible in `systemctl --failed`, which catches a migration applied without the policy step.
+- Last step of every `deploy/sql/*.sql` migration and of `deploy/scripts/apply-schema.sh`. apply-schema never adds columns (`deploy/scripts/apply-schema.sh:12-16`), so migrations are applied by hand.
+- In CI, against the committed `code/backend/metiche/core/repository/sql/schema/create.sql`. That check needs no database.
+- Daily drift check: see Q2.
 
 ---
 
-## 5. Idempotent setup
+## 6. Deployment design
 
-**Constants** (non-secret):
+### 6.1 Image: `deploy/docker/nuzur-agent.Dockerfile`
 
-| name | value |
+**Where it is built.** On the box, like the other images: no registry, imported
+into containerd, `imagePullPolicy: Never` (`deploy/scripts/build-images.sh:1-33`).
+`build-images.sh` gains a `nuzur-agent` target, tagged `nuzur-agent:<cli-version>-<git short sha>`.
+
+**Stage 1, fetch.** It uses `alpine:3.22.1`, the same base as
+`deploy/docker/metiche-web.Dockerfile`, with `curl` added.
+
+- **Artifact name.** GoReleaser's archive template (`cli/.goreleaser.yaml:30-39`) yields `nuzur-cli_Linux_x86_64.tar.gz` for linux/amd64.
+- **Checksums file.** The yaml has no `checksum:` block, so GoReleaser's default name applies: `nuzur-cli_1.9.2_checksums.txt`. nuzur's bootstrap uses exactly these names (`cli/deploy/templates/bootstrap.sh.tmpl:414`, `:432`, `:438`).
+- **Both come from the release** at `https://github.com/nuzur/nuzur-cli/releases/download/v1.9.2/`.
+- **Pin the tarball's sha256 in the repo** as build ARG `NUZUR_CLI_SHA256`, and verify it **as well as** the release checksums file, before `tar`. The releases use `release: mode: replace` (`cli/.goreleaser.yaml:45-49`), which allows assets to be re-uploaded, so the release's own checksums alone are not a pin.
+- **Build fails** on any mismatch.
+- **Static binary.** The build is `CGO_ENABLED=0` (`cli/.goreleaser.yaml:23-24`), so it runs on alpine with no libc concerns.
+
+**Stage 2, runtime.** `alpine:3.22.1`.
+
+- `apk add --no-cache ca-certificates`. The CLI verifies TLS for `cm.nuzur.com` and `product.nuzur.com` against the system pool (`cli/cmclient/client.go:36-40`, `cli/productclient/client.go:36-40`).
+- User and group `nuzur`, uid and gid 10001, home `/var/lib/nuzur`, shell `/sbin/nologin`.
+- `COPY nuzur-cli /usr/local/bin/nuzur-cli`, root-owned, 0755.
+- `COPY nuzur-agent-preflight nuzur-agent-hold /usr/local/bin/`: two small POSIX sh scripts, run by busybox.
+- `USER 10001:10001`
+- `ENTRYPOINT ["/usr/local/bin/nuzur-cli"]`, `CMD ["agent", "start"]`
+- No dbus and no `dbus-launch`, which guarantees the file keyring (§4.D).
+
+### 6.2 Chart: `deploy/.helm/nuzur-agent`
+
+The chart follows the conventions of the existing charts: `_helpers.tpl` labels,
+`existingSecret` references, no secret values, and `automountServiceAccountToken: false`
+(`deploy/.helm/metiche-mysql/values.yaml:148-170`, `deploy/.helm/metiche/values.yaml:328`).
+
+**Templates.**
+
+| template | content |
 |---|---|
-| `KUBECTL` | `microk8s kubectl` |
-| `NS` | `metiche` |
-| `SVC_IP` | read from `$KUBECTL -n metiche get svc metiche-mysql -o jsonpath='{.spec.clusterIP}'` (10.152.183.239 today) |
-| `AGENT_USER` | `nuzur-agent` |
-| `AGENT_HOME` | `/var/lib/nuzur-agent` |
-| `CFG` | `$AGENT_HOME/.config/nuzur/agent` |
-| `CONN_NAME` | `metiche-prod` |
-| `CLI_VERSION` | `1.9.2`, the latest release, 2026-09-10 |
+| `serviceaccount.yaml` | SA `nuzur-agent`, `automountServiceAccountToken: false` |
+| `service.yaml` | headless Service `nuzur-agent` (`clusterIP: None`, no ports). It exists only because a StatefulSet names a governing Service. It exposes nothing. |
+| `statefulset.yaml` | see below |
 
-**Files on the box:**
+**No** Role, RoleBinding, Ingress, ConfigMap or Secret. Setup creates the
+Secrets and ConfigMaps (§8), so a Helm upgrade can never overwrite them.
 
-| path | owner, mode | content |
+**Values.** They contain nothing secret.
+
+```yaml
+agent:
+  mode: ""                 # REQUIRED: "setup" or "run" — template fails on anything else
+image:
+  repository: nuzur-agent
+  tag: ""                  # required, --set-string
+  pullPolicy: Never
+machineIdSecret: nuzur-agent-machine-id   # key: machine-id
+idsConfigMap: nuzur-agent-ids             # AGENT_UUID, CONNECTION_UUID, EXPECT_HOSTNAME, EXPECT_USER, MACHINE_ID_SHA256
+roPasswordSecret: nuzur-agent-db          # key: NUZUR_RO_PASSWORD — mounted in setup mode only
+persistence: { storageClass: microk8s-hostpath, size: 1Gi }
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits:   { memory: 256Mi }
+```
+
+**StatefulSet spec, fixed in the template.**
+
+- `metadata.name: nuzur-agent`, **literal**. This is the hostname (§4.D).
+- `replicas: 1`, **literal**, not a value.
+- `serviceName: nuzur-agent`.
+- `persistentVolumeClaimRetentionPolicy: {whenDeleted: Retain, whenScaled: Retain}`.
+- `volumeClaimTemplates: data` (RWO, 1Gi, `microk8s-hostpath`).
+- Pod labels `app.kubernetes.io/name: nuzur-agent` and `app.kubernetes.io/instance: nuzur-agent`. These are the labels the MySQL NetworkPolicy selects.
+
+**Pod spec.**
+
+- `automountServiceAccountToken: false` and `enableServiceLinks: false`.
+- **Not set:** `hostname`, `subdomain`, `setHostnameAsFQDN`, `hostNetwork`, `hostPID`, `shareProcessNamespace`.
+- `securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}`.
+- `terminationGracePeriodSeconds: 30`.
+
+**Volumes.**
+
+| volume | source | mounted at |
 |---|---|---|
-| `/etc/metiche/nuzur_ro.password` | root:root 0600 | 32 alphanumeric characters, no newline. Lives in the existing root-only credential dir. |
-| `/etc/nuzur-agent/ids.env` | root:root 0644 | `SOURCE_IP=`, `AGENT_UUID=`, `CONNECTION_UUID=`. Identifiers, not secrets. |
-| `/etc/nuzur-agent/host.fingerprint` | root:root 0644 | `HOSTNAME=` plus `MACHINE_ID_SHA256=` |
-| `/etc/nuzur-agent/views.sha256` | root:root 0644 | hash of the last applied view SQL |
+| `data` | the PVC | `/var/lib/nuzur` |
+| `tmp` | `emptyDir {sizeLimit: 16Mi}` | `/tmp` |
+| `machine-id` | Secret `nuzur-agent-machine-id`, item `machine-id`, `defaultMode: 0444` | `/etc/machine-id`, `subPath: machine-id`, `readOnly: true` |
+| `ro-password` | Secret `nuzur-agent-db`, `defaultMode: 0440`. **Only rendered when `agent.mode=setup`.** | `/run/secrets/nuzur-ro` |
 
-**Two helpers** that every step uses:
+**Common container settings** (`agent` container and `preflight` init container).
 
-```sh
-as_agent() {   # identical environment to the unit; nothing inherited
-    runuser -u nuzur-agent -- env -i HOME=/var/lib/nuzur-agent USER=nuzur-agent \
-        LOGNAME=nuzur-agent XDG_CONFIG_HOME=/var/lib/nuzur-agent/.config \
-        PATH=/usr/local/bin:/usr/bin:/bin TERM="${TERM:-xterm}" /usr/local/bin/nuzur-cli "$@"
-}
-mysql_root() { # SQL on stdin; password never leaves the pod's environment
-    $KUBECTL -n metiche exec -i metiche-mysql-0 -c mysql -- \
-        sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -u root --batch --skip-column-names'
-}
-```
+- **Env:**
+  - `HOME=/var/lib/nuzur`
+  - `XDG_CONFIG_HOME=/var/lib/nuzur/config`
+  - `USER=nuzur`
+  - `LOGNAME=nuzur`
 
-Every step below is **check → skip or act → verify**. `setup.sh` stops at the
-first STOP. The steps that need a human (6 and 7) print what to do and exit;
-re-running continues from the first incomplete step.
+  Nothing else. No `NUZUR_*` variable is ever set.
+- **securityContext:** `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities: {drop: [ALL]}`.
+- **Probes: none.** The agent listens on nothing, reconnects on its own (`cli/agent/daemon.go:129-171`), and exits on non-retryable conditions (`:141-151`). A liveness probe could only restart it, which adds nothing.
 
-### Step 0: preconditions (check only)
+**`agent.mode=setup`, for the one-time exec.**
 
-- It runs as root, from a checkout, on x86_64 (`deploy/scripts/lib.sh` conventions).
-- `metiche-mysql-0` is Ready.
-- **STOP** if any of these exist:
-  - a `systemd --user` nuzur unit;
-  - a process `pgrep -f 'nuzur-cli agent start'` not owned by our unit;
-  - `/tmp/nuzur-cli`;
-  - a user token file under `$CFG/..` (the login token; see duplicate path 5).
+- No init container.
+- The `agent` container runs `nuzur-agent-hold`. Every 60 seconds it prints one line of local state (paired? how many registry entries? keyring item present?) and then sleeps. It never runs `nuzur-cli` except `agent status`, which is local only (`cli/app/command_agent_install.go:52-94`).
+- The Secret mount `ro-password` is present, so step 10 can build the DSN inside the pod.
 
-### Step 1: source IP
+**`agent.mode=run`.**
 
-- **Check:** `ids.env` has `SOURCE_IP`, and `ip route get $SVC_IP` still reports that `src`. If so, skip.
-- **Act:**
-  1. Measure the source as MySQL sees it. Open one bare TCP connection with `timeout 5 sh -c 'exec 3<>/dev/tcp/$SVC_IP/3306; sleep 3'` (bash `/dev/tcp`).
-  2. Meanwhile run `SELECT DISTINCT SUBSTRING_INDEX(host,':',1) FROM information_schema.processlist WHERE user='unauthenticated user'` through `mysql_root`.
-  3. Expect `69.164.192.246`. Record it.
-  4. One aborted handshake is far below `max_connect_errors`.
+- **Init container `preflight`:**
+  - same image;
+  - PVC mounted **`readOnly: true`**, which proves it writes nothing;
+  - `machine-id` mounted;
+  - `envFrom: configMapRef nuzur-agent-ids`;
+  - runs `nuzur-agent-preflight`.
+- **Container `agent`:** runs `nuzur-cli agent start`. No password Secret, no ids ConfigMap.
 
-### Step 2: the password file
+**Preflight checks.** It runs as uid 10001 with the same env and the same pod
+hostname as the daemon. It exits 1 on the **first** failure with a single
+explicit sentence, so the pod shows `Init:CrashLoopBackOff` and
+`kubectl logs nuzur-agent-0 -c preflight` says why:
 
-- **Check:** `/etc/metiche/nuzur_ro.password` exists, is 0600 root, and is non-empty. Skip.
-- **Act:** `umask 077; LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 > …`. This is exactly `deploy/scripts/gen-credentials.sh`'s `gen_password`: alphanumeric because the value passes through SQL, a DSN and a prompt.
-- It is never echoed and never an argument.
+1. **Fingerprint:**
+   - `hostname` is `nuzur-agent-0` and equals `EXPECT_HOSTNAME`;
+   - `$USER` equals `EXPECT_USER`;
+   - `sha256sum /etc/machine-id` equals `MACHINE_ID_SHA256`;
+   - `XDG_CONFIG_HOME` is `/var/lib/nuzur/config` and lies on the mount.
+2. **Pairing:** `local_agent_uuid.txt` exists and equals `AGENT_UUID`, and `local_agent_token.txt` is non-empty.
+   - Message: "agent not paired on this PVC; this pod never pairs itself — follow docs/NUZUR_AGENT.md §8 step 9 (or 'PVC loss')".
+3. **Registry:**
+   - exactly one entry, whose uuid is `CONNECTION_UUID` and whose name is `metiche-prod`;
+   - `keyring/dsn-$CONNECTION_UUID` exists.
+4. **Decryption:** `nuzur-cli agent connection list` exits 0, and its output contains `CONNECTION_UUID`. The output is discarded; only a match is logged.
+   - This runs the real `connections.Load`, which fails if the passphrase no longer decrypts the item (`connections.go:105-114`).
+   - `list` never publishes (`cli/app/command_agent_connection.go:150-175`).
+   - At startup it touches no network (§4.B, step 1).
+5. **Forbidden state:**
+   - `NUZUR_AGENT_DSN`, `NUZUR_AGENT_DRIVER` and `NUZUR_PROVISIONING_TOKEN` are unset;
+   - `local_agent_dsn.txt`, `local_agent_driver.txt` and `config/nuzur/token.txt` are absent;
+   - `/tmp/nuzur-cli` is absent.
 
-### Step 3: MySQL accounts and database
+**What the operator sees when something is wrong.**
 
-- **Check:**
-  - `SELECT COUNT(*) FROM mysql.user WHERE (user,host) IN (('nuzur_ro',@src),('nuzur_views','localhost'))` returns 2;
-  - `SHOW GRANTS` for each is exactly the expected set;
-  - `SCHEMA_NAME='metiche_nuzur'` exists.
-  - All true → skip.
-  - Any **extra** grant → STOP. Never silently revoke.
-- **Act:** SQL built with the shell's `printf` **builtin** (dash), piped to `mysql_root`. The password is interpolated inside the shell process only, never into an external command's argv.
+- **Preflight passes but `agent start` still exits,** for example the token was revoked or the CLI is too old: the pod goes to `CrashLoopBackOff`, and the daemon's own message is in `kubectl logs`. That is "agent not paired" (`daemon.go:79`), a server rejection (`:147-151`) or CLI-too-old (`:220-225`).
+- **In no failure mode** does anything pair, add or publish.
+- **Exit on SIGTERM.** `agent start` exits 1 on SIGTERM (`daemon.go:133-135`, `cli/main.go:17`), which is harmless for pod termination.
 
-```sql
-CREATE DATABASE IF NOT EXISTS metiche_nuzur;
-CREATE USER IF NOT EXISTS 'nuzur_views'@'localhost' ACCOUNT LOCK;
-GRANT SELECT ON metiche.* TO 'nuzur_views'@'localhost';
-CREATE USER IF NOT EXISTS 'nuzur_ro'@'69.164.192.246'
-    IDENTIFIED BY '<from file>' PASSWORD EXPIRE NEVER;
-ALTER USER 'nuzur_ro'@'69.164.192.246' WITH MAX_USER_CONNECTIONS 5;   -- idempotent; password untouched
-GRANT SELECT ON metiche_nuzur.* TO 'nuzur_ro'@'69.164.192.246';
-```
+### 6.3 NetworkPolicy template, in the metiche-mysql chart
 
-Rotating the password is a separate `--rotate-ro` flag, like `gen-credentials.sh --rotate-app`. It runs `ALTER USER … IDENTIFIED BY`, then the section 3.C re-seal (remove `--no-publish` plus add with the same `--uuid`).
-
-### Step 4: views
-
-`deploy/nuzur-agent/gen-views.sh --apply`. It skips when the hash matches and fails loudly when the policy is incomplete (section 4.2).
-
-### Step 5: pinned nuzur-cli
-
-- **Check:** `/usr/local/bin/nuzur-cli --version` prints `nuzur CLI version 1.9.2`, and the file is root:root 0755. Skip.
-- **Act:** exactly nuzur's bootstrap (`cli/deploy/templates/bootstrap.sh.tmpl:407-453`):
-  1. Download `nuzur-cli_Linux_x86_64.tar.gz` and `nuzur-cli_1.9.2_checksums.txt` from the `v1.9.2` GitHub release.
-  2. **Verify sha256 before `tar`**, then `install -m 0755`.
-- Not writable by `nuzur-agent`.
-- An upgrade later is this step with a new version plus `systemctl restart`. It never re-pairs.
-
-### Step 6: system user
-
-- **Check:** `id nuzur-agent`. Skip creation.
-- **Act:** `useradd --system --user-group --home-dir /var/lib/nuzur-agent --create-home --shell /usr/sbin/nologin nuzur-agent`.
-- **Always enforce:** `chown nuzur-agent: /var/lib/nuzur-agent; chmod 0700 /var/lib/nuzur-agent`.
-- Only `root` has a login shell on the box today *(observed)*.
-
-### Step 7: host fingerprint
-
-- **Check:** `/etc/nuzur-agent/host.fingerprint` exists. If it matches `hostname` and `sha256sum /etc/machine-id`, continue. If it differs, **STOP** and show the section 3.C recovery.
-- **Act (first run only):** write it.
-
-### Step 8: pair (at most once, by a human)
-
-- **Check, in order:**
-  1. `$CFG/local_agent_uuid.txt` exists → skip. If `ids.env` has `AGENT_UUID`, they must be equal, else STOP.
-  2. `ids.env` has `AGENT_UUID` but the file is missing → **STOP**: credentials lost (duplicate path 8). Never pair automatically.
-- **Act:**
-  1. On the laptop, snapshot the owner's agent uuids with `listLocalAgents`. Today that is 2 agents, 2 connections. If the connection total is already 3, **STOP** (section 3.A cap).
-  2. The owner opens `app.nuzur.com/pair` → "Pair a server" **immediately** before, because the token lives 15 minutes.
-  3. Run `as_agent agent pair`. `env -i` has no `DISPLAY`, so headless detection triggers the masked "Pairing token" prompt (`cli/app/command_connect.go:127-158`), with 3 attempts.
-  4. Paste.
-  5. Record `AGENT_UUID` from `as_agent agent status`, which is local only (`cli/app/command_agent_install.go:52-66`).
-- **Verify:** on the laptop, `listLocalAgents` shows exactly one uuid that was not in the snapshot. It equals `AGENT_UUID`, with `connections` empty. Every pre-existing agent, including the one serving another project, is unchanged. Its machine name will also be `localhost`, so compare uuids only.
-
-### Step 9: connection (at most once, by a human)
-
-- **Check:** `as_agent agent connection list` shows exactly one entry, named `metiche-prod`, with uuid `CONNECTION_UUID`. Skip.
-  - Any other entry, or a different uuid → **STOP**.
-- **Act:**
-  1. If `ids.env` lacks `CONNECTION_UUID`, generate it **once** with `cat /proc/sys/kernel/random/uuid` and record it **before** adding.
-  2. Inside `tmux`, which is present on the box *(observed)*, load the password into a paste buffer without displaying it: `tmux load-buffer -b nuzurro /etc/metiche/nuzur_ro.password`.
-  3. Run `as_agent agent connection add metiche-prod --uuid "$CONNECTION_UUID"`. No `--driver`, `--dsn` or `--non-interactive`, so the command stays interactive (`cli/app/command_agent_connection.go:62`).
-  4. Answer the prompts: engine `mysql`, host `$SVC_IP`, port `3306`, user `nuzur_ro`, password `C-b :paste-buffer -b nuzurro` then Enter. The password field is masked (`cli/app/command_agent_start.go:237`, `:270-272`).
-  5. `tmux delete-buffer -b nuzurro`.
-- **Verify:**
-  - The output ends with "Published — the connection now appears in the nuzur data manager under "Via agent"" (`command_agent_connection.go:144`).
-  - `listLocalAgents` shows this agent with `connections` = [one entry, `CONNECTION_UUID`, `db_type` 1, no `shared_team_uuids`].
-- **If the save succeeded but the publish failed:** `connection list` does **not** retry, despite the CLI's message (`:139-142` vs `:150-175`). Run `as_agent agent connection remove metiche-prod --no-publish`, then re-run this step with the same uuid.
-
-### Step 10: preflight, unit, enable
-
-- **Check:** `cmp` the installed files against `deploy/nuzur-agent/`. Skip if identical. `systemctl is-enabled` and `is-active` → skip enabling or starting.
-- **Act:** `install -m 0644` the unit, `install -m 0755` the preflight. `daemon-reload` only if something changed. `enable --now` only if not enabled or not active.
-- Setup never restarts a healthy unit.
-
-### Step 11: NetworkPolicy
-
-Section 8. `kubectl diff` first, `apply` only if different.
-
-### Step 12: data manager, once, on the laptop
-
-- In nuzur: attach the "Via agent" connection → agent `AGENT_UUID` → `metiche-prod` → **schema `metiche_nuzur`**. The schema is what makes `USE` work (section 3.D).
-- **Check first** that it is not already attached.
-- Do not share it (D1). Sharing is only possible through `UpdateLocalAgentConnectionSharing` (`go/product/server/local_agent.go:514-583`).
+See §7.1. It belongs in `deploy/.helm/metiche-mysql`, because it selects the
+MySQL pods. It is off by default and enabled by `networkPolicy.enabled=true`.
 
 ---
 
-## 6. Credential handling
+## 7. Network
 
-| Secret | Created | Stored | How it moves | Never |
-|---|---|---|---|---|
-| `nuzur_ro` password | on the box, step 2 | `/etc/metiche/nuzur_ro.password` (root 0600), and inside the agent's keyring item as part of the DSN | into SQL through the shell builtin to `kubectl exec` stdin; into the CLI through a tmux paste buffer into a masked prompt | printed, argv, environment, repo, laptop |
-| provisioning token | owner mints it in the browser just before step 8 | nowhere; single use, 15 min | pasted into the masked pairing prompt | argv, history, file |
-| agent token | returned by the exchange | `$CFG/local_agent_token.txt` (0600 in a 0700 dir, `cli/app/command_agent.go:270-281`) | read by the daemon and sent in `Hello` | copied, backed up, hashed for display |
-| DSN | assembled by the CLI from the prompts | `$CFG/keyring/dsn-<uuid>`: encrypted file, 0600 | read by the daemon only | the plaintext fallback files `local_agent_dsn.txt` and `local_agent_driver.txt` (`cli/app/command_agent_start.go:291-303`). Preflight fails if either exists. |
+### 7.1 Ingress to metiche-mysql: backend and agent only
 
-**Why the pairing token goes through the prompt, not the environment.** The brief
-asked for the environment, and the CLI does support `NUZUR_PROVISIONING_TOKEN`
-(`cli/app/command_agent.go:57-59`). But getting a value *into* a clean
-`runuser … env -i` environment without putting it in `env`'s own argv needs
-extra machinery. The masked prompt keeps the token out of argv, out of
-`/proc/<pid>/environ` and out of history, and it is the CLI's own headless
-path. If the environment form is ever scripted, the token must be exported by a
-shell builtin in the final process, never passed as `env NAME=value`.
-
-**The cost of entering the DSN interactively** (see Q1). The prompt builds
-`user:pass@tcp(host:port)/?parseTime=true` (`cli/app/command_agent_start.go:248`).
-It has no database and no timeout parameters, and v1.9.2 offers no non-argv way
-to supply a full DSN to `agent connection add`: `--dsn` is a flag with no env or
-file source (`cli/app/command_agent_connection.go:45`). This design accepts that
-for v1:
-
-- the schema is pinned by the data manager plus the grants, fail-closed (section 3.D);
-- concurrency is capped by `MAX_USER_CONNECTIONS 5`;
-- a runaway query is killed by hand: `mysql_root <<< "SELECT id FROM information_schema.processlist WHERE user='nuzur_ro' AND time>60"` then `KILL QUERY <id>`.
-
-**Target DSN** once a non-argv input exists:
-
-```
-nuzur_ro:<pw>@tcp(10.152.183.239:3306)/metiche_nuzur?parseTime=true&timeout=5s&readTimeout=60s&writeTimeout=60s
-```
-
-together with `--schema metiche_nuzur`. Switching to it is a scripted add with
-the **same `--uuid`**, which upserts in place (`:70-78`, `:118-125`). No new
-connection.
-
-**Nothing under `deploy/` contains a secret.** Everything in `deploy/nuzur-agent/`
-is a template, a script or a policy. `.gitignore` already blocks
-`credentials.env`, `prod.yaml`, `*.key` and `*.pem`. The files above live
-outside the checkout.
-
----
-
-## 7. The systemd unit
-
-`deploy/nuzur-agent/nuzur-agent.service`, installed to `/etc/systemd/system/`:
-
-```ini
-[Unit]
-Description=nuzur agent: read-only metiche views for the nuzur data manager
-Documentation=https://github.com/mklfarha/metiche/blob/main/docs/NUZUR_AGENT.md
-Wants=network-online.target
-After=network-online.target snap.microk8s.daemon-kubelite.service
-# Never start half-configured: no pairing or connection → the unit is skipped, not failed.
-ConditionPathExists=/var/lib/nuzur-agent/.config/nuzur/agent/local_agent_uuid.txt
-ConditionPathExists=/var/lib/nuzur-agent/.config/nuzur/agent/local_agent_token.txt
-ConditionPathExists=/var/lib/nuzur-agent/.config/nuzur/agent/local_agent_connections.json
-StartLimitIntervalSec=600
-StartLimitBurst=10
-
-[Service]
-Type=simple
-User=nuzur-agent
-Group=nuzur-agent
-# Must equal setup's as_agent(): HOME finds the config dir, USER seeds the keyring passphrase.
-Environment=HOME=/var/lib/nuzur-agent
-Environment=USER=nuzur-agent
-Environment=LOGNAME=nuzur-agent
-Environment=XDG_CONFIG_HOME=/var/lib/nuzur-agent/.config
-# No fallback DSN, ever: a set driver/DSN would bypass the registry and prompt/save plaintext.
-UnsetEnvironment=NUZUR_AGENT_DSN NUZUR_AGENT_DRIVER NUZUR_PROVISIONING_TOKEN NUZUR_CONNECTION_MANAGER_ADDRESS NUZUR_AGENT_INSECURE
-# Read-only checks: hostname + machine-id fingerprint, USER, ids.env agent/connection uuids,
-# exactly one registry entry, keyring item present, no user token file, no fallback DSN files.
-ExecStartPre=/usr/local/lib/nuzur-agent/preflight.sh
-ExecStart=/usr/local/bin/nuzur-cli agent start
-Restart=on-failure
-RestartSec=10
-StandardInput=null
-UMask=0077
-# Sandbox
-NoNewPrivileges=yes
-PrivateTmp=yes
-PrivateDevices=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/lib/nuzur-agent
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
-ProtectClock=yes
-ProtectHostname=yes
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-RestrictNamespaces=yes
-RestrictSUIDSGID=yes
-LockPersonality=yes
-SystemCallArchitectures=native
-CapabilityBoundingSet=
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Notes:
-
-- **No secrets in the unit.** No `EnvironmentFile`, unlike nuzur's deploy (`cli/deploy/templates/bootstrap.sh.tmpl:473-480`, `:493`), because this design has no fallback DSN.
-- **`Restart=on-failure`, not `always`.** A missing pairing ends in a start-limit stop rather than an endless loop, and it creates nothing either way (section 3.B).
-- **`PrivateTmp=yes`** neutralises the legacy `/tmp/nuzur-cli` migration.
-- **`ProtectHostname=yes`** only stops the service from *changing* the hostname. It does not pin the name the service reads, so preflight is what catches a rename.
-- **A clean stop logs as a failure.** On SIGTERM, `agent start` returns the context error (`cli/agent/daemon.go:133-135`) and `main.go:17` calls `log.Fatal`, so the process exits 1. `systemctl stop` or `restart` therefore logs "status=1/FAILURE". A requested stop is never restarted, and the P1 test expects this log line.
-- **Preflight** (`deploy/nuzur-agent/preflight.sh`) only reads. It exits non-zero with one precise sentence per failed check.
-
----
-
-## 8. Network
-
-### 8.1 NetworkPolicy for metiche-mysql
-
-There is none in `metiche` today *(observed)*, so any pod in the cluster can reach
-3306. `deploy/nuzur-agent/networkpolicy-mysql.yaml`:
+There is no policy in `metiche` today, so any pod in the cluster can reach 3306
+*(observed)*. New template `deploy/.helm/metiche-mysql/templates/networkpolicy.yaml`:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: metiche-mysql-ingress
-  namespace: metiche
 spec:
   podSelector:
-    matchLabels:
-      app.kubernetes.io/name: metiche-mysql
-      app.kubernetes.io/instance: metiche-mysql
+    matchLabels: { app.kubernetes.io/name: metiche-mysql, app.kubernetes.io/instance: metiche-mysql }
   policyTypes: [Ingress]
   ingress:
-    - from:            # the backend
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: metiche
-              app.kubernetes.io/instance: metiche
-      ports: [{ protocol: TCP, port: 3306 }]
-    - from:            # the host agent (post-SNAT source, measured in step 1)
-        - ipBlock: { cidr: 69.164.192.246/32 }
+    - from:
+        - podSelector:   # the backend
+            matchLabels: { app.kubernetes.io/name: metiche, app.kubernetes.io/instance: metiche }
+        - podSelector:   # the nuzur agent
+            matchLabels: { app.kubernetes.io/name: nuzur-agent, app.kubernetes.io/instance: nuzur-agent }
       ports: [{ protocol: TCP, port: 3306 }]
 ```
 
-- **Probes cannot break.** `metiche-mysql`'s readiness and liveness probes are `exec` (`mysqladmin ping -h 127.0.0.1` inside the container) *(observed)*. They never cross the pod's network interface.
-- **Schema scripts are unaffected.** `apply-schema.sh` and `gen-views.sh` use `kubectl exec`, not the network.
-- **Calico may or may not police host-to-local-pod traffic.** The `ipBlock` rule makes the policy correct either way, and the test below settles which.
+**Where these labels come from.**
 
-**Test** (reversible in one command: `kubectl -n metiche delete networkpolicy metiche-mysql-ingress`):
+- **Backend:** `metiche.selectorLabels` (`deploy/.helm/metiche/templates/_helpers.tpl:40-43`) with release `metiche`. Observed on the running Deployment.
+- **MySQL:** the StatefulSet pod labels *(observed)*.
 
-1. `kubectl apply --dry-run=server -f …`, then `apply`.
-2. **Backend still works:** backend logs show no DB errors, and the board loads and updates.
-3. **Pod restarts:** `kubectl -n metiche get pod metiche-mysql-0 -w` shows no restart, and `READY` stays `1/1`.
-4. **Agent still works:** a data-manager query succeeds.
-5. **Others are blocked:** `kubectl run np-probe -n default --rm -it --image=busybox:1.36 --restart=Never -- nc -zvw3 10.152.183.239 3306` times out. Before the policy, it connects.
-6. **Isolate the host rule:** temporarily remove the `ipBlock` rule and repeat step 4.
-   - Fails → Calico polices host traffic and the rule is required.
-   - Passes → it is belt and braces.
-   - Restore the rule.
+**Nothing else breaks.**
 
-### 8.2 Agent egress (feasible; recommended as a second step, see Q4)
+- `metiche-web` has no database (`deploy/.helm/metiche-web/values.yaml:7`, `:92`, `:116`).
+- No chart contains a Job, CronJob or Helm hook (a grep of `deploy/.helm` finds none), and the repo has no backup job.
+- `apply-schema.sh` and `gen-views.sh` use **`kubectl exec`** (`deploy/scripts/apply-schema.sh:66-70`). Exec goes API server → kubelet → container runtime, **not the pod network**, so it is unaffected.
+- The MySQL readiness and liveness probes are `exec` (`mysqladmin ping -h 127.0.0.1` inside the container) *(observed)*, so they are unaffected too.
 
-A Kubernetes NetworkPolicy does not apply to host processes. A Calico
-HostEndpoint would, but auto host endpoints impose a default deny on the whole
-shared box. **Rejected.**
+**Test.** Revert with `helm upgrade … --set networkPolicy.enabled=false`.
 
-What works is an **nftables table scoped by socket owner**, loaded by a small
-oneshot unit `nuzur-agent-egress.service`. The agent unit declares
-`Requires=` and `After=` on it, so if the rules fail to load, the agent does not
-start. The file `deploy/nuzur-agent/egress.nft`:
+1. `helm upgrade metiche-mysql … --set networkPolicy.enabled=true --dry-run`, then apply.
+2. The backend works: no DB errors in its logs, and the board loads and updates.
+3. `kubectl -n metiche get pod metiche-mysql-0 -w` shows no restarts and `1/1`.
+4. A data-manager query through the agent succeeds.
+5. A probe pod is refused: `kubectl -n metiche run np-probe --rm -it --restart=Never --image=busybox:1.36 -- nc -zvw3 metiche-mysql 3306` times out. This pod carries neither allowed label, and before the policy the same command connects.
 
-```
-destroy table inet nuzur_agent
-table inet nuzur_agent {
-  chain output {
-    type filter hook output priority filter; policy accept;
-    meta skuid != "nuzur-agent" accept
-    ct state established,related accept
-    ip daddr 127.0.0.53 meta l4proto { udp, tcp } th dport 53 accept          # systemd-resolved stub
-    ct original ip daddr 69.164.192.246 ct original proto-dst 443 accept     # cm.nuzur.com, product.nuzur.com (both resolve here)
-    ct original ip daddr 10.152.183.239 ct original proto-dst 3306 accept    # metiche-mysql ClusterIP
-    counter reject
-  }
-}
-```
+### 7.2 The agent's own ingress
 
-- **Match with `ct original`.** Local DNAT, meaning kube-proxy for the ClusterIP and the ingress hostPort for 443, runs at `nat output`, before `filter output`. A plain `ip daddr` would already see the pod IP.
-- **Never enable Ubuntu's `nftables.service` with its default config.** It starts with `flush ruleset`, which would wipe kube-proxy's and Calico's rules.
-- ufw is inactive and `OUTPUT` policy is ACCEPT *(observed)*, so nothing else conflicts.
+Nothing listens in the pod, and the headless Service has no ports. No ingress
+policy is needed.
 
-**Test:**
+### 7.3 Egress: a follow-up (D6)
 
-- `runuser -u nuzur-agent -- curl -sS https://example.com` is rejected.
-- The agent reconnects after `systemctl restart nuzur-agent`, and the data manager still queries.
-- `nft list table inet nuzur_agent` counters rise only on `reject` for stray traffic.
+A follow-up NetworkPolicy on `nuzur-agent` pods would have `policyTypes: [Egress]`
+and allow only:
 
-**Caveat:** if nuzur moves `cm` or `product` off this box's IP, the agent goes
-offline. That fails closed, and the fix is to update one address.
+- DNS to `kube-system` kube-dns on UDP and TCP 53;
+- TCP 3306 to the metiche-mysql pods;
+- TCP 443 to `cm.nuzur.com` and `product.nuzur.com`.
+
+**Caveat to test first.** Both hosts resolve to this box's own public address,
+69.164.192.246 *(observed)*, and are served by the ingress controller in
+namespace `ingress`. Whether Calico matches the 443 rule on
+`ipBlock 69.164.192.246/32` or on the ingress controller pods, after DNAT,
+has to be established on the box before enforcing.
 
 ---
 
-## 9. Verification
+## 8. Idempotent setup
 
-### 9.1 Data through the data manager
+`deploy/nuzur-agent/setup.sh` runs as root on the box, from a checkout, with
+`KUBECTL="microk8s kubectl"` and `HELM="microk8s helm3"`. Every step is
+**check → skip or act → verify**. The script stops at the first STOP or human
+step, and a re-run resumes from the first incomplete step.
 
-- On the `metiche_nuzur` connection, `SELECT * FROM account LIMIT 100` and `SELECT * FROM agent LIMIT 100` return rows.
-  - `token_hash` is NULL on every row.
-  - `email` is populated.
-- `SELECT COUNT(*) FROM invite WHERE code IS NOT NULL` returns 0. Repeat the same check for `notification_channel.target_url`, `team_event.response_snapshot`, `account.token_hash` and `agent.token_hash`.
-- Entity search in the data manager works. It uses explicit fields (section 3.D), which proves the view column names line up with the nuzur project.
-- `SHOW DATABASES` lists only `information_schema` and `metiche_nuzur`, plus possibly `performance_schema`. `metiche` must not appear.
-- `USE metiche` fails with 1044.
+Helpers:
 
-### 9.2 Writes refused
+```sh
+podx() { $KUBECTL -n metiche exec nuzur-agent-0 -c agent -- "$@"; }          # non-interactive
+mysql_root() { $KUBECTL -n metiche exec -i metiche-mysql-0 -c mysql -- \
+    sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -u root --batch --skip-column-names'; }
+CFG=/var/lib/nuzur/config/nuzur/agent                                          # path inside the pod
+```
 
-Run through the data manager's SQL editor. Each must fail with MySQL 1142, command denied:
+**Step 0: preconditions (check only).** Running as root on x86_64.
+`metiche-mysql-0` is Ready. `$KUBECTL` and `$HELM` work.
 
-- `INSERT INTO plan (id, \`key\`, name, status) VALUES (UUID(), 'x', 'x', 1)`;
-- `UPDATE account SET display_name = display_name`;
-- `DELETE FROM team_event WHERE 1=0`;
-- `CREATE TABLE t (i INT)`.
+**Step 1: the `nuzur_ro` password.**
 
-Also create a record through the data manager UI: it must fail.
+- **Check:** `/etc/metiche/nuzur_ro.env` (root 0600, `NUZUR_RO_PASSWORD=…`) exists and is non-empty. If so, keep it.
+- **Act:** generate it exactly like `gen_password` in `deploy/scripts/gen-credentials.sh`: 32 characters from `[A-Za-z0-9]`, written by redirection under `umask 077`, never echoed.
+- **Always:** create or refresh Secret `nuzur-agent-db` from that file with `lib.sh`'s `secret_from_env_file`. The file is the source of truth, so the Secret can never drift into a different password.
 
-**Independent of nuzur**, from the box:
+**Step 2: MySQL accounts and database.**
 
-1. Write a temporary `[client]` defaults file on tmpfs (`umask 077`, under `/run`) from `/etc/metiche/nuzur_ro.password`.
-2. Run `docker run --rm --network host -v <file>:/c.cnf:ro mysql:8.0 mysql --defaults-extra-file=/c.cnf -h 10.152.183.239 -u nuzur_ro -e "<statement>"` for each statement above. Each fails. `SELECT 1` succeeds.
-3. `shred -u` the file.
+- **Check:**
+  - `nuzur_ro@'10.1.0.0/255.255.0.0'` and `nuzur_views@localhost` exist;
+  - `SHOW GRANTS` for each equals exactly the expected set;
+  - `metiche_nuzur` exists.
 
-The password never appears in argv.
+  All true → skip. Any **extra** grant → **STOP**, never silently revoke.
+- **Act:** SQL assembled with the shell's `printf` builtin, so the password is never an external command's argument, and piped into `mysql_root`:
 
-### 9.3 Property P1: identity is restart-stable
+```sql
+CREATE DATABASE IF NOT EXISTS metiche_nuzur;
+CREATE USER IF NOT EXISTS 'nuzur_views'@'localhost' ACCOUNT LOCK;
+GRANT SELECT ON metiche.* TO 'nuzur_views'@'localhost';
+CREATE USER IF NOT EXISTS 'nuzur_ro'@'10.1.0.0/255.255.0.0' IDENTIFIED BY '<from file>' PASSWORD EXPIRE NEVER;
+ALTER USER 'nuzur_ro'@'10.1.0.0/255.255.0.0' WITH MAX_USER_CONNECTIONS 5;
+GRANT SELECT ON metiche_nuzur.* TO 'nuzur_ro'@'10.1.0.0/255.255.0.0';
+```
 
-**Claim.** Restarts, crashes and reboots never create an agent or a connection,
-and never change their uuids.
+**Step 3: views.** `deploy/nuzur-agent/gen-views.sh --apply` (§5.2).
 
-**Snapshot S**, taken from the laptop via `listLocalAgents` and from the box:
+**Step 4: machine-id.**
 
-- the set and count of the owner's non-revoked agent uuids;
-- for `AGENT_UUID`: `created_at`, `machine_name`, and `connections` as a list of (`uuid`, `name`, `db_type`, `shared_team_uuids`), with count 1 and uuid equal to `CONNECTION_UUID`;
-- on the box: `sha256sum $CFG/local_agent_uuid.txt $CFG/local_agent_connections.json`;
-- `stat -c '%i %s %Y'` of `$CFG/local_agent_token.txt`. The token is not hashed: its hash is what the server treats as secret (`go/product/server/local_agent.go:240-243`);
-- `ls $CFG/keyring` names plus the `%Y` mtime of `dsn-$CONNECTION_UUID`;
-- `as_agent agent connection list`, with the DSN masked by the CLI.
+- **Check:** `/etc/metiche/nuzur-agent.machine-id` exists. If Secret `nuzur-agent-machine-id` also exists, its value must equal the file, else **STOP**. Skip generation.
+- **Act (first run only):** `umask 077; head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > file; printf '\n' >> file`. Create the Secret from the file (`--from-file=machine-id=<file>`). The argv carries the path, not the value.
+- **Never** regenerate.
 
-**Excluded, because they change legitimately on every connect:** `status`,
-`last_seen_at` and `updated_at` (`go/connection-manager/server/local_agent_channel.go:186-196`).
+**Step 5: identity ConfigMap.**
 
-**Procedure:**
+- **Check:** ConfigMap `nuzur-agent-ids` exists. `CONNECTION_UUID`, once set, is **never** changed.
+- **Act (first run only):** create it with:
+  - `CONNECTION_UUID=$(cat /proc/sys/kernel/random/uuid)`
+  - `EXPECT_HOSTNAME=nuzur-agent-0`
+  - `EXPECT_USER=nuzur`
+  - `MACHINE_ID_SHA256=$(sha256sum < file | cut -d' ' -f1)`
+  - `AGENT_UUID=` (empty)
+- **Mirror** these non-secret values to `/etc/nuzur-agent/ids.env` (root 0644), so teardown still knows the uuids if the cluster objects are gone.
 
-1. Take S0 with the agent ONLINE (`status` 1).
-2. **Restarts:** repeat 5 times:
-   1. `systemctl restart nuzur-agent`;
-   2. wait until `status` is 1 and `last_seen_at` is newer than before the restart;
-   3. take Si;
-   4. assert Si equals S0.
-3. **Crash:** `systemctl kill -s KILL nuzur-agent`. Expect a restart through `Restart=on-failure`. Snapshot and assert equal.
-4. **Reboot:** `systemctl reboot`. After boot, check that the unit is active and `status` is 1, then snapshot and assert equal.
-5. **Negative control:**
-   1. Temporarily move `local_agent_connections.json` aside.
-   2. `systemctl restart nuzur-agent` must be **skipped** (condition failed). No new connection appears in `listLocalAgents`.
-   3. Restore the file, restart, snapshot and assert equal.
+**Step 6: image.**
 
-**Pass:** every snapshot equals S0. **Any** difference fails P1. Stop and
-investigate before continuing.
+- **Check:** `microk8s ctr image ls` contains `nuzur-agent:<tag>`. Skip.
+- **Act:** `deploy/scripts/build-images.sh nuzur-agent`. It downloads the release, verifies the sha256 **before** `tar`, and imports into containerd.
 
+**Step 7: install in setup mode.**
+
+- **Check:** `helm status nuzur-agent`.
+  - Release exists and the pod passes run-mode preflight → skip to step 11.
+  - Release exists in setup mode → continue.
+- **Act:** `helm upgrade --install nuzur-agent deploy/.helm/nuzur-agent -n metiche --set-string agent.mode=setup --set-string image.tag=<tag> --wait`.
+- **Verify:**
+  - `podx printenv XDG_CONFIG_HOME` prints `/var/lib/nuzur/config`;
+  - `podx hostname` prints `nuzur-agent-0`;
+  - `podx sh -c 'df /var/lib/nuzur | tail -1'` shows the PVC mount.
+
+  Any mismatch → **STOP** before pairing (duplicate path 9).
+
+**Step 8: snapshot before pairing (laptop).** Record the owner's agent uuids with
+`listLocalAgents`. The existing agents stay untouched (D8).
+
+**Step 9: pair, once, by a human.**
+
+- **Check:**
+  - `podx test -s $CFG/local_agent_uuid.txt` → already paired. Its content must equal `AGENT_UUID` if that is recorded, else **STOP**. Skip.
+  - `AGENT_UUID` is recorded but the file is missing → **STOP**. This is the PVC-loss case below. Never pair automatically.
+- **Act:**
+  1. The owner mints a token at `app.nuzur.com/pair` ("Pair a server") **immediately** before. It lives 15 minutes.
+  2. `$KUBECTL -n metiche exec -it nuzur-agent-0 -c agent -- nuzur-cli agent pair`, **without** `--provisioning-token`. The container is headless, so the CLI shows the masked "Pairing token" prompt with 3 attempts (§4.A). Paste the token.
+
+  The token never appears in argv, on the box or in the pod.
+- **Record:**
+  1. On the laptop, `listLocalAgents` now shows **exactly one** uuid not in the step 8 snapshot. Its `machine_name` is `nuzur-agent-0` and its `connections` list is empty.
+  2. `podx nuzur-cli agent status` prints the same uuid. It is local only (`cli/app/command_agent_install.go:60-66`).
+  3. If the two differ → **STOP**.
+  4. Write it as `AGENT_UUID` into ConfigMap `nuzur-agent-ids` and `/etc/nuzur-agent/ids.env`.
+
+**Step 10: connection, once.** No human input beyond running it: the password
+comes from the Secret (D7).
+
+- **Check:** `podx nuzur-cli agent connection list` shows exactly one entry, `metiche-prod`, with `CONNECTION_UUID`. The CLI masks the DSN (`command_agent_connection.go:171`, `cli/app/command_agent_start.go:316-354`). Skip.
+  - Any other entry, or a different uuid → **STOP**.
+- **Act.** The whole script is single-quoted, so every `$…` expands **inside the pod**. On the box, `kubectl`'s argv and the API server's exec request carry only the literal script, never the password. The password exists only in the argv of `nuzur-cli` inside the pod's PID namespace, for the lifetime of that process (D7).
+
+```sh
+$KUBECTL -n metiche exec nuzur-agent-0 -c agent -- env CONNECTION_UUID="$CONNECTION_UUID" sh -c '
+  PW=$(cat /run/secrets/nuzur-ro/NUZUR_RO_PASSWORD)
+  exec nuzur-cli agent connection add \
+    --uuid "$CONNECTION_UUID" --driver mysql --schema metiche_nuzur --non-interactive \
+    --dsn "nuzur_ro:${PW}@tcp(metiche-mysql.metiche.svc.cluster.local:3306)/metiche_nuzur?parseTime=true&timeout=5s&readTimeout=60s&writeTimeout=60s" \
+    metiche-prod'
+```
+
+- **Verify:**
+  - The output contains `Added connection "metiche-prod" (uuid: <CONNECTION_UUID>, dsn: nuzur_ro:***@…)` and `Published —` (`command_agent_connection.go:132`, `:144`).
+  - `listLocalAgents` shows `AGENT_UUID` with `connections = [{uuid: CONNECTION_UUID, name: metiche-prod, db_type: 1, default_schema: metiche_nuzur}]` and no `shared_team_uuids`.
+- **If the output says "Saved on this machine but publishing … failed"** (`:139-143`): run the same command again. A scripted add with the same `--uuid` upserts in place (`:70-78`) and republishes. It never mints a new uuid.
+
+**Step 11: switch to run mode.**
+
+- **Check:** the release values show `agent.mode=run` and the pod is `Running` with preflight completed. Skip.
+- **Act:** `helm upgrade nuzur-agent … --reuse-values --set-string agent.mode=run --wait`.
+  - This drops the password mount.
+  - The pod is recreated with the same name and the same PVC.
+- **Verify:**
+  - `kubectl logs nuzur-agent-0 -c preflight` ends with "preflight ok";
+  - `kubectl logs nuzur-agent-0 -c agent` shows `paired and online` (`cli/agent/daemon.go:214`);
+  - `listLocalAgents` shows status 1 (ONLINE).
+
+**Step 12: MySQL NetworkPolicy.** §7.1, then its test.
+
+**Step 13: data manager (laptop, once).**
+
+- Attach the "Via agent" connection: agent `AGENT_UUID` → `metiche-prod` → schema `metiche_nuzur`. The catalog default already points there (§4.F).
+- Check first that it is not already attached.
+- Do not share it (D1).
+
+**Step 14: P1** (§10.3).
+
+### PVC loss (the one manual re-pair)
+
+Symptom: preflight says "agent not paired on this PVC". The PVC was deleted or
+the node's disk was lost.
+
+1. Revoke the **old** metiche agent **by the recorded `AGENT_UUID` only** (§11 step 2).
+2. Clear `AGENT_UUID` from the ConfigMap and the mirror file. Keep `CONNECTION_UUID`, the machine-id and the password.
+3. Switch to setup mode, then run steps 8–11. The new agent gets a new uuid; the connection keeps its recorded uuid.
+4. Re-point the data manager's saved connection to the new agent.
+5. Run P1.
+
+---
+
+## 9. Credentials
+
+| Secret | Created | Stored | Moves by | Never |
+|---|---|---|---|---|
+| `nuzur_ro` password | step 1, random | `/etc/metiche/nuzur_ro.env` (root 0600) → Secret `nuzur-agent-db`, plus inside the encrypted DSN on the PVC | `printf` builtin into `kubectl exec` stdin (MySQL); Secret volume in setup mode → in-pod `nuzur-cli` argv (D7) | typed, echoed, in `kubectl`'s argv, in values, in the repo, on the laptop |
+| machine-id | step 4, random | `/etc/metiche/nuzur-agent.machine-id` (0600) → Secret `nuzur-agent-machine-id` | Secret volume, read-only | regenerated, retyped, in values, in the repo |
+| provisioning token | owner, browser, just before step 9 | nowhere; single use, 15 min | pasted into the masked prompt | argv, env, file |
+| agent token | pairing | PVC, 0600 (`cli/app/command_agent.go:270-281`) | read by the daemon and sent in `Hello` | copied, backed up (Q1), hashed for display |
+| DSN | step 10 | PVC `keyring/dsn-<uuid>`, encrypted, 0600 | read by the daemon | the plaintext fallback files or env (§4.E) |
+
+Nothing under `deploy/` contains a secret. `.gitignore` already covers
+`credentials.env`, `prod.yaml`, `*.key` and `*.pem`, and the files above live
+outside the checkout.
+
+---
+
+## 10. Verification
+
+### 10.1 Data through the data manager
+
+- `SELECT * FROM account LIMIT 100` and `SELECT * FROM agent LIMIT 100` return rows. `token_hash` is NULL throughout; `email`, `client_key` and `repo_url` are populated.
+- `SELECT COUNT(*) FROM invite WHERE code IS NOT NULL` returns 0. The same holds for the other four redacted columns.
+- Entity search works. It uses explicit field lists, which proves the view column names line up.
+- `SHOW DATABASES` lists no `metiche`. `USE metiche` fails with 1044.
+
+### 10.2 Writes refused
+
+- In the data manager's SQL editor, each of these fails with 1142:
+  - `INSERT INTO plan (id, \`key\`, name, status) VALUES (UUID(), 'x', 'x', 1)`
+  - `UPDATE account SET display_name = display_name`
+  - `DELETE FROM team_event WHERE 1=0`
+  - `CREATE TABLE t (i INT)`
+- Creating a record through the UI fails.
+- **Independent of nuzur:** `kubectl -n metiche run ro-probe --rm -it --restart=Never --image=mysql:8.0 --labels app.kubernetes.io/name=nuzur-agent,app.kubernetes.io/instance=nuzur-agent` plus a `[client]` defaults file mounted from a temporary Secret. Run the same statements; each fails, and `SELECT 1` succeeds. Delete the temporary Secret afterwards.
+  - The probe borrows the agent's labels so the NetworkPolicy admits it.
+  - The password never appears in any argv.
+
+### 10.3 Property P1: identity is stable across restarts, reschedules, deletes and upgrades
+
+**Snapshot S.**
+
+- **From `listLocalAgents` on the laptop:**
+  - the set and count of the owner's non-revoked agent uuids;
+  - for `AGENT_UUID`: `created_at`, `machine_name` (`nuzur-agent-0`), and `connections` as a list of `{uuid, name, db_type, default_schema, shared_team_uuids}`, with exactly one entry whose uuid is `CONNECTION_UUID`.
+- **From the pod:**
+  - `podx sha256sum $CFG/local_agent_uuid.txt $CFG/local_agent_connections.json`;
+  - `podx stat -c '%i %s %Y' $CFG/local_agent_token.txt`. The token is never hashed, because its hash is what the server treats as secret (`go/product/server/local_agent.go:240-243`);
+  - `podx ls $CFG/keyring` and the mtime of `dsn-$CONNECTION_UUID`;
+  - `$KUBECTL -n metiche get pvc data-nuzur-agent-0 -o jsonpath='{.metadata.uid}'`.
+
+**Excluded, because they change legitimately:** `status`, `last_seen_at`,
+`updated_at` (`go/connection-manager/server/local_agent_channel.go:186-196`),
+the pod uid and the pod IP.
+
+**Procedure.** Take S0 with the agent ONLINE. After each action below, wait until
+`status` is 1 with a newer `last_seen_at`, take a snapshot, and assert it equals S0.
+
+1. **Restart ×2:** `kubectl -n metiche rollout restart statefulset/nuzur-agent`, twice, each followed by `rollout status`.
+2. **Delete:** `kubectl -n metiche delete pod nuzur-agent-0`, graceful, never `--force`. The StatefulSet recreates it.
+3. **Container crash:** `podx kill 1`. The container restarts in the same pod, and its RESTARTS count increases.
+4. **Image upgrade:** rebuild with a new tag, then `helm upgrade --set-string image.tag=<new>`.
+5. **Optional node reboot:** after the box comes back.
+6. **Negative control.**
+   1. Temporarily set `EXPECT_USER=wrong` in ConfigMap `nuzur-agent-ids`, then delete the pod.
+   2. Expect `Init:CrashLoopBackOff`, with the preflight log naming the USER mismatch.
+   3. Expect `listLocalAgents` to equal S0, apart from status going OFFLINE.
+   4. Restore the ConfigMap, delete the pod, snapshot, and assert equal.
+
+**Pass:** every snapshot equals S0. Any difference fails P1: stop and investigate.
 `deploy/nuzur-agent/verify-p1.sh` automates the box half and prints only uuids,
-counts, hashes of non-secret files and mtimes.
+counts, non-secret file hashes, inode numbers and mtimes.
 
 ---
 
-## 10. Revocation, in order
+## 11. Revocation, in order, by recorded uuid only
 
-1. **Cut data access first.** `DROP USER 'nuzur_ro'@'69.164.192.246';` then kill any remaining sessions (`KILL <id>` for `user='nuzur_ro'` in `information_schema.processlist`), because DROP USER does not end open sessions. From this moment the agent can reach nothing.
-2. **Revoke the metiche agent in nuzur, by uuid only.** From the signed-in laptop, run `. /etc/nuzur-agent/ids.env` (copied over, non-secret) or read `AGENT_UUID` from it. Then `nuzur-cli agent revoke "$AGENT_UUID"` (`cli/app/command_agent.go:235-267`).
-   - Before running it, check that this uuid's `connections` in `listLocalAgents` is exactly [`metiche-prod`, `CONNECTION_UUID`]. If it is not, **STOP**.
-   - **Never pick the agent by name in the web UI or anywhere else.** Two agents are named `localhost`, and the other one serves another project. Revoking it would cut that project's data access.
-   - The server marks it REVOKED and clears shares (`go/product/server/local_agent.go:186-225`).
-   - Reconnects are refused (`go/connection-manager/server/local_agent_channel.go:163-165`).
-   - Remove the data manager's saved connection.
-3. **Stop the service:** `systemctl disable --now nuzur-agent nuzur-agent-egress nuzur-views-check.timer`. Then remove the unit files from `/etc/systemd/system` and `daemon-reload`.
-4. **Remove config and keyring:** `rm -rf /var/lib/nuzur-agent`, then `userdel nuzur-agent`.
-   - This removes the uuid, the token, the registry and the keyring.
-   - Do **not** use `agent unpair` on the box. It needs a login (`cli/app/command_agent_unpair.go:41-47`), and it leaves the registry and keyring behind (`:73-81`).
-5. **Tidy up:**
+1. **Cut data access.** `DROP USER 'nuzur_ro'@'10.1.0.0/255.255.0.0';`, then `KILL` any sessions with `user='nuzur_ro'` in `information_schema.processlist`. DROP USER does not end open sessions.
+2. **Revoke the metiche agent, and only that one.**
+   1. Read `AGENT_UUID` from `/etc/nuzur-agent/ids.env`.
+   2. In `listLocalAgents`, confirm that uuid's `connections` is exactly `[metiche-prod, CONNECTION_UUID]`. If not → **STOP**.
+   3. `nuzur-cli agent revoke "$AGENT_UUID"` from the signed-in laptop (`cli/app/command_agent.go:235-267`). The server marks it REVOKED and clears its shares (`go/product/server/local_agent.go:186-225`). Reconnects are refused (`go/connection-manager/server/local_agent_channel.go:163-165`).
+   4. **Never** select an agent by name in the web UI or anywhere else. The agent serving another project must remain untouched.
+   5. Remove the data manager's saved connection.
+3. **Stop the agent.** `helm uninstall nuzur-agent -n metiche`. The PVC is retained (§6.2).
+4. **Remove agent state.**
+   - `kubectl -n metiche delete pvc data-nuzur-agent-0`. The reclaim policy is Delete, so this removes the uuid, the token, the registry and the keyring. Confirm the hostPath directory under `/var/snap/microk8s/common/default-storage/` is gone.
+   - `kubectl -n metiche delete secret nuzur-agent-db nuzur-agent-machine-id`
+   - `kubectl -n metiche delete configmap nuzur-agent-ids nuzur-agent-views`
+5. **Tidy.**
    - `DROP DATABASE metiche_nuzur; DROP USER 'nuzur_views'@'localhost';`
-   - `rm /etc/metiche/nuzur_ro.password`, `rm -r /etc/nuzur-agent /usr/local/lib/nuzur-agent`, `rm /usr/local/bin/nuzur-cli`.
-   - `nft delete table inet nuzur_agent`.
-   - Remove the `ipBlock` rule from the NetworkPolicy, and keep the backend rule.
-6. **Confirm:** `listLocalAgents` shows the agent REVOKED (status 3), and no process runs as `nuzur-agent`.
+   - `rm /etc/metiche/nuzur_ro.env /etc/metiche/nuzur-agent.machine-id`
+   - `rm -r /etc/nuzur-agent`
+   - Remove the agent rule from the MySQL NetworkPolicy, and keep the backend rule.
+   - Remove `nuzur-agent:*` from containerd.
+6. **Confirm.** `listLocalAgents` shows `AGENT_UUID` REVOKED (status 3) and **every other agent unchanged**.
 
 ---
 
-## 11. Where the non-secret pieces live in the repo
+## 12. Where the non-secret pieces live in the repo
 
-Described here, not written yet. Everything goes under `deploy/nuzur-agent/`,
-next to the existing `deploy/scripts/` conventions: POSIX sh, `lib.sh` helpers,
-`need_root`, no `pipefail`.
+This is a description only; none of it is written yet.
 
-| file | purpose |
+| path | purpose |
 |---|---|
-| `setup.sh` | Section 5. Idempotent, root, stops at the first STOP or human step. Reuses `deploy/scripts/lib.sh`. |
-| `columns.policy` | Total column classification (section 4.2). |
-| `gen-views.sh` | `--check` / `--apply` view generator (section 4.2). |
-| `check-policy-ci.sh` | The same classification check against `create.sql`, for CI; no database. |
-| `nuzur-agent.service` | Section 7. |
-| `preflight.sh` | Read-only `ExecStartPre` checks (section 7). |
-| `nuzur-views-check.service` and `nuzur-views-check.timer` | Daily `gen-views.sh --check`. |
-| `networkpolicy-mysql.yaml` | Section 8.1. |
-| `egress.nft` and `nuzur-agent-egress.service` | Section 8.2. |
-| `verify-p1.sh` | Box half of P1 (section 9.3). |
-| `rotate-ro.sh` | Password rotation plus same-uuid re-seal. Could instead be `setup.sh --rotate-ro`. |
+| `deploy/docker/nuzur-agent.Dockerfile` | §6.1. Pinned version plus pinned sha256 ARGs. |
+| `deploy/nuzur-agent/nuzur-agent-preflight` | Run-mode init checks (§6.2). POSIX sh, copied into the image. |
+| `deploy/nuzur-agent/nuzur-agent-hold` | Setup-mode placeholder process (§6.2). |
+| `deploy/.helm/nuzur-agent/` | `Chart.yaml`, `values.yaml`, `templates/{_helpers.tpl, serviceaccount.yaml, service.yaml, statefulset.yaml, NOTES.txt}` |
+| `deploy/.helm/metiche-mysql/templates/networkpolicy.yaml` | §7.1, behind `networkPolicy.enabled`. |
+| `deploy/nuzur-agent/setup.sh` | §8. |
+| `deploy/nuzur-agent/columns.policy` | §5.2. |
+| `deploy/nuzur-agent/gen-views.sh` and `check-policy-ci.sh` | §5.2. |
+| `deploy/nuzur-agent/verify-p1.sh` | §10.3. |
 
-`deploy/README.md` gains one line in its migration runbook: "after any
-`deploy/sql/*.sql`, run `deploy/nuzur-agent/gen-views.sh --apply`".
+Changes to existing files:
+
+- `deploy/scripts/build-images.sh` gains a `nuzur-agent` target.
+- `deploy/scripts/helm-deploy.sh` gains `nuzur-agent`. It never passes a secret, and it `require_secret`s the two Secrets.
+- `deploy/README.md` gains the line "after any `deploy/sql/*.sql`, run `deploy/nuzur-agent/gen-views.sh --apply`".
 
 ---
 
-## 12. Open questions for the owner
+## 13. Open questions
 
-1. **Q1: query timeout vs. keeping the DSN out of argv.** With CLI v1.9.2 you can have only one of these:
-   - **(a)** the DSN via the masked prompt, as designed: no timeout and no database in the DSN;
-   - **(b)** the DSN via `--dsn` from the 0600 file, which gets `readTimeout` and the database, but puts the password in the CLI's argv for about 2 seconds, readable through `/proc` by any local UID;
-   - **(c)** a small nuzur-cli change first: an `EnvVar` or file source for `agent connection add --dsn`, in the style of `NUZUR_AGENT_DSN` on `agent start`. Then switch in place with the same `--uuid`.
-
-   The design defaults to (a) now and (c) when it is released. Agree?
-2. **Q2: plan headroom.** `metiche-prod` will be the owner's 3rd connection, which exhausts the Starter cap (section 3.A). A 4th connection anywhere will then fail to publish. Is the owner on Starter? If so, is having no headroom acceptable, or should the plan change before step 9? The agent serving another project stays untouched either way.
-3. **Q3: three risky-name columns beyond the five redactions.**
-   - `project.repo_url`: a URL someone typed can embed credentials. Options are `expose!`, `redact`, or expose with the userinfo stripped via `REGEXP_REPLACE`.
-   - `agent.client_key`: it embeds a machine id.
-   - `notification_channel.last_error`: capped, but it is next to a webhook.
-
-   The default is `expose!` for all three, with the note in the policy.
-4. **Q4: enable the owner-scoped egress rules (section 8.2)** together with the agent, or as a follow-up once the agent is proven? The default is follow-up.
+1. **Q1: back up the PVC?** It holds the agent token and the encrypted DSN.
+   - **Recommendation: no backup.** Losing it costs one provisioning token, one re-pair and re-pointing the data manager (§8, "PVC loss"). A backup would be a second copy of a live credential to protect.
+2. **Q2: where does the daily views drift check run?**
+   - Option A: a host systemd timer on the box running `gen-views.sh --check`. It uses `kubectl exec`, like `apply-schema.sh`.
+   - Option B: an in-cluster CronJob. It would need MySQL root credentials in a pod and its own NetworkPolicy exception.
+   - **Recommendation: Option A plus the CI check.** No root credential leaves the MySQL pod.
+3. **Q3: CLI upgrade policy.**
+   - **Recommendation:** stay pinned at 1.9.2. Upgrade only when needed, for example when the server raises `min_cli_version` and the pod reports CLI-too-old (`cli/agent/daemon.go:141-143`, `:220-225`).
+   - Each upgrade is a rebuild with a new pinned sha256, a `helm upgrade`, then P1.
