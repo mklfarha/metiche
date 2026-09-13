@@ -441,7 +441,7 @@ func collideContract() templ.Component {
 			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<article class=\"cc soon k-contract\"><div class=\"kind\">contract mismatch · nobody is building this <span class=\"soon-badge\">Coming next</span></div><h3>A frontend coding against an endpoint nobody is building</h3><p class=\"scene\">Once agents can publish the endpoints they produce and consume, metiche will flag a consumer with no producer, and two sides that disagree on a shape, before the demo does.</p></article>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<article class=\"cc soon k-contract\"><div class=\"kind\">contract mismatch <span class=\"soon-badge\">Coming next</span></div><h3>Nobody is building this: the endpoint a frontend is coding against</h3><p class=\"scene\">Once agents can publish the endpoints they produce and consume, metiche will flag a consumer with no producer, and two sides that disagree on a shape, before the demo does.</p></article>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
