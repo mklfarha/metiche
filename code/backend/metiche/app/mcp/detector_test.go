@@ -424,3 +424,21 @@ func TestPathDetectionContextSeam(t *testing.T) {
 		t.Error("the hook and the tool are not looking at the same request")
 	}
 }
+
+// TestNormalizedPathFromStoredRow round-trips through the value actually
+// written to claim_path.prefix, which for a root-level claim is the "/"
+// sentinel rather than "".
+func TestNormalizedPathFromStoredRow(t *testing.T) {
+	for _, pattern := range []string{"*.go", "**/*.go", "**", "go.mod", "app/*.go", "app/rest.go", "app/**"} {
+		fresh := mustPath(t, pattern)
+		stored := coordination.PathPrefixToStored(fresh.Prefix)
+		if stored == "" {
+			t.Errorf("%q would store an empty prefix", pattern)
+		}
+		rebuilt := normalizedPathFromRow(fresh.Pattern, fresh.PatternNorm, pathKindEnum(fresh.Kind),
+			stored, fresh.SuffixPattern, int64(fresh.Depth), fresh.Ext)
+		if rebuilt != fresh {
+			t.Errorf("round trip through the stored prefix changed %q:\n stored: %+v\n fresh:  %+v", pattern, rebuilt, fresh)
+		}
+	}
+}

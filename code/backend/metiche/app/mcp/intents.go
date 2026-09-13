@@ -640,18 +640,20 @@ func (h *Handler) writeClaimPaths(ctx context.Context, tc *TxContext, claimID, p
 		}
 		if _, err := h.core.ClaimPath().Insert(ctx, claim_path_types.UpsertRequest{
 			ClaimPath: claim_path_entity.ClaimPath{
-				ID:            id,
-				ClaimUUID:     claimID,
-				ProjectUUID:   projectUUID,
-				SessionUUID:   sessionUUID,
-				MemberUUID:    memberUUID,
-				Mode:          claimModeEnum(mode),
-				Status:        enums.CLAIM_STATUS_HELD,
-				ExpiresAt:     expires,
-				Pattern:       truncate(p.Pattern, 400),
-				PatternNorm:   truncate(p.PatternNorm, 400),
-				Kind:          pathKindEnum(p.Kind),
-				Prefix:        truncate(p.Prefix, 400),
+				ID:          id,
+				ClaimUUID:   claimID,
+				ProjectUUID: projectUUID,
+				SessionUUID: sessionUUID,
+				MemberUUID:  memberUUID,
+				Mode:        claimModeEnum(mode),
+				Status:      enums.CLAIM_STATUS_HELD,
+				ExpiresAt:   expires,
+				Pattern:     truncate(p.Pattern, 400),
+				PatternNorm: truncate(p.PatternNorm, 400),
+				Kind:        pathKindEnum(p.Kind),
+				// The root prefix is "" in memory and "/" in the column; see
+				// coordination.PathRootPrefixStored.
+				Prefix:        truncate(coordination.PathPrefixToStored(p.Prefix), 400),
 				SuffixPattern: nullString(truncate(p.SuffixPattern, 200)),
 				Depth:         int64(p.Depth),
 				Ext:           nullString(p.Ext),

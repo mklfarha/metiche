@@ -295,6 +295,39 @@ func pathLiteralPrefix(p string) string {
 	return ""
 }
 
+// PathRootPrefixStored is how the repo-root prefix is written to
+// claim_path.prefix.
+//
+// In memory the root prefix is "" - that is what makes ancestry a plain
+// string-prefix test, and every rule in this file relies on it. But the column
+// is required, and the generated validation reads "" as missing, so a claim
+// whose first wildcard is in the first segment ("*.go", "**/*.go", "**", ".")
+// used to be refused outright and never entered detection. "/" cannot be a
+// real prefix: absolute paths are rejected and separators are collapsed before
+// a prefix is computed, so no normalized prefix starts with "/".
+//
+// The translation happens only at the storage boundary, through the two
+// functions below, so nothing that compares prefixes ever sees the sentinel.
+const PathRootPrefixStored = "/"
+
+// PathPrefixToStored is the value to write to, or look up in, claim_path.prefix.
+func PathPrefixToStored(prefix string) string {
+	if prefix == "" {
+		return PathRootPrefixStored
+	}
+	return prefix
+}
+
+// PathPrefixFromStored turns a claim_path.prefix value back into the in-memory
+// prefix. "" is accepted too, so a row written before the sentinel existed
+// still reads as the root.
+func PathPrefixFromStored(stored string) string {
+	if stored == PathRootPrefixStored {
+		return ""
+	}
+	return stored
+}
+
 func pathSegmentCount(prefix string) int {
 	n := 0
 	for _, seg := range strings.Split(prefix, "/") {

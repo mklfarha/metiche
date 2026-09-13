@@ -401,8 +401,12 @@ func scanClaimPathCandidates(ctx context.Context, q queryer, projectUUID, exclud
 	args = append(args, projectUUID.String(), int64(enums.CLAIM_STATUS_HELD), now, excludeSession.String())
 	for i, a := range ancestors {
 		placeholders[i] = "?"
-		args = append(args, a)
+		// The ancestors always include the root "", which is stored as "/".
+		args = append(args, coordination.PathPrefixToStored(a))
 	}
+	// The LIKE deliberately uses the IN-MEMORY prefix: a root claim's "" becomes
+	// "%", which is every row including the stored root "/". Translating it
+	// would turn it into "/%" and a root glob would see only other root globs.
 	args = append(args, likePrefixPattern(mine.Prefix))
 
 	query := "SELECT `id`, `claim_uuid`, `session_uuid`, `member_uuid`, `mode`, `pattern`, `pattern_norm`, " +
@@ -1084,7 +1088,7 @@ func normalizedPathFromRow(pattern, norm string, kind enums.ClaimPathKind, prefi
 		Pattern:       pattern,
 		PatternNorm:   norm,
 		Kind:          pathKindToCoordination(kind),
-		Prefix:        prefix,
+		Prefix:        coordination.PathPrefixFromStored(prefix),
 		SuffixPattern: suffix,
 		Depth:         int(depth),
 		Ext:           ext,

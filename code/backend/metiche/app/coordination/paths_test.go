@@ -759,3 +759,39 @@ func TestPathDedupeKeyIsStable(t *testing.T) {
 		t.Error("key must be lowercase hex")
 	}
 }
+
+// TestPathPrefixStoredForm pins the storage-boundary translation of the root
+// prefix. claim_path.prefix is required, so "" cannot be written; every
+// pattern whose first wildcard is in the first segment has that prefix.
+func TestPathPrefixStoredForm(t *testing.T) {
+	for _, pattern := range []string{"*.go", "**/*.go", "**", ".", "./", "*", "{a,b}/x.go", "?.go"} {
+		np, err := NormalizePath(pattern, nil, false)
+		if err != nil {
+			t.Fatalf("NormalizePath(%q): %v", pattern, err)
+		}
+		if np.Prefix != "" {
+			t.Errorf("NormalizePath(%q).Prefix = %q, want the root prefix \"\"", pattern, np.Prefix)
+		}
+		if got := PathPrefixToStored(np.Prefix); got != PathRootPrefixStored {
+			t.Errorf("stored prefix for %q = %q, want %q", pattern, got, PathRootPrefixStored)
+		}
+	}
+	for _, prefix := range []string{"", "app/", "app/rest.go", "go.mod", ".env", "src/api/"} {
+		stored := PathPrefixToStored(prefix)
+		if stored == "" {
+			t.Errorf("PathPrefixToStored(%q) is empty; the column would refuse it", prefix)
+		}
+		if back := PathPrefixFromStored(stored); back != prefix {
+			t.Errorf("round trip of %q = %q", prefix, back)
+		}
+	}
+	// A row written before the sentinel still reads as the root.
+	if got := PathPrefixFromStored(""); got != "" {
+		t.Errorf("PathPrefixFromStored(\"\") = %q, want \"\"", got)
+	}
+	// The sentinel can never collide with a real prefix: those never start
+	// with "/", because absolute paths are refused.
+	if _, err := NormalizePath("/", nil, false); err == nil {
+		t.Error(`NormalizePath("/") was accepted; "/" must stay unambiguous as the stored root`)
+	}
+}
