@@ -14,22 +14,68 @@ No arguments, no setup, no database. It listens on **http://localhost:8787** and
 replays the embedded fixture recordings, so the board is populated the moment it
 opens and keeps changing for about two minutes as the recorded story plays out.
 
-* `/` — pick a team
+* `/` — the landing page, with a "see a live demo" link to `/t/demo`
+* `/teams` — the demo recordings (this page never lists a real team)
 * `/t/demo` — **the board** (team "Orbital Freight", three members, five agents)
 * `/t/demo/graph` — the entanglement graph: who is working on the same things
 * `/t/demo/contracts` — the produces/consumes matrix
 * `/t/demo/conflicts`, `/t/demo/decisions`, `/t/demo/runs`
-* `/t/tidewater` — a team with nobody working, i.e. the empty state
-* `/healthz` — feed name and both cursors per team
+* `/t/demo-tidewater` — a team with nobody working, i.e. the empty state
+* `/healthz` — feed name and both cursors per demo team; live teams are only counted
+
+Every recording is served as a **demo board**: its slug is `demo` or
+`demo-<recorded slug>`, and every page of it carries a "DEMO · a recording"
+banner so nobody mistakes it for a real team.
 
 Useful flags: `-addr`, `-speed` (replay multiplier), `-warmup` (events delivered
 instantly at start), `-loop`, `-fixtures <dir>` to replay your own recordings.
 
-## Running against the real backend
+## Running against the real backend (mixed mode)
+
+```sh
+go run ./cmd/metiche-web -backend https://api.metiche.xyz
+```
+
+That serves three kinds of board at once:
+
+* **Demo boards** (`-demo`, default true): the embedded recordings, exactly as
+  above, looping forever so the demo always has motion. They are registered
+  first and their slugs (`demo`, `demo-*` as recorded) are reserved: a
+  registered slug is never looked up on the backend, and a `-teams` entry that
+  collides with one is refused and logged. The backend can mint any
+  `[a-z0-9-]` slug, so no route spelling is truly outside its namespace; the
+  `demo` prefix keeps the reserved set tiny and legible in the address bar.
+* **Discovered live boards** (`-discover`, default true): the first request for
+  an unregistered `/t/<slug>` asks the backend `GET /v1/teams/<slug>`. On 200
+  the board registers a live feed and serves it; on 404 it serves the normal
+  not-found page. The backend answers 404 both for "no such team" and for
+  "private and you may not read it", deliberately, and the board does not try
+  to tell them apart. Safeguards: the slug must look like a slug before any
+  request is made; concurrent first requests share one probe and one feed; a
+  404 is remembered for `-discover-notfound-ttl` (30s) and a backend error for
+  5s (served as 503, not as "no such team"); at most `-max-discovered-teams`
+  (50) are registered this way, after which new slugs are not probed at all.
+  Discovered teams stay registered until the process restarts.
+* **Pre-warmed live boards** (`-teams`, optional): slugs registered at startup,
+  which only saves the first visitor the discovery round trip.
+
+**Only public teams are discoverable in practice.** The board sends a bearer
+token only if `METICHE_BOARD_TOKEN` is set, and production has none today, so
+every private team is a 404 to the board exactly as it is to a stranger. A
+viewer gate that lets a member open their private team's board is a known
+backlog item, not something this service does.
+
+**Real teams never appear on a public page.** `/`, `/teams`, `/join` and
+`/healthz` are built from demo teams only: the landing link opens a demo,
+`/teams` lists demos and says your own board is at `/t/<your-team-slug>`, and
+`/join?code=` matches demo codes only — a live team's invite codes are the
+backend's business and the board never holds one.
+
+To give the board a credential:
 
 ```sh
 export METICHE_BOARD_TOKEN=…            # the read API's bearer token
-go run ./cmd/metiche-web -backend https://api.metiche.xyz -teams demo
+go run ./cmd/metiche-web -backend https://api.metiche.xyz
 ```
 
 The token is read from the environment and never from a flag: a bearer token
@@ -38,9 +84,11 @@ passed as an argument lands in shell history and in every `ps` on the box.
 flag, never a file in this repo, and never logged. The process clears the
 variable from its own environment once it has read it.
 
-Other live-mode flags: `-teams` (comma-separated slugs) and `-backfill` (how
-many events of history to pull into the timeline behind the snapshot cursor,
-default 200; `0` starts the rail empty and resumes exactly at the snapshot).
+Other live-mode flags: `-demo`, `-discover`, `-max-discovered-teams`,
+`-discover-notfound-ttl`, `-teams` (comma-separated pre-warm slugs) and
+`-backfill` (how many events of history to pull into the timeline behind the
+snapshot cursor, default 200; `0` starts the rail empty and resumes exactly at
+the snapshot).
 
 `internal/feed` is the seam. `Feed` is a two-method interface; `Fixture`
 replays JSONL and `Live` reads the real backend. Nothing above that package
@@ -112,7 +160,8 @@ internal/state/    folds events into a snapshot; derives lanes, the matrix
 internal/wording/  every cadence-dependent string, in one map
 internal/hub/      renders fragments and fans them out; owns the two cursors
 internal/view/     templ components (.templ and generated _templ.go, both committed)
-internal/web/      chi router, pages, the SSE endpoint, the board controls
+internal/web/      chi router, pages, the SSE endpoint, the board controls,
+                   on-demand live team discovery (discovery.go)
 static/            vendored htmx + SSE extension, stylesheet, icon, ~30 lines of JS
 fixtures/          recorded event streams
 ```

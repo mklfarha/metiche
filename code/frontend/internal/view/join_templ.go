@@ -89,7 +89,7 @@ func JoinPage(teams []TeamCard) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></span> <span class=\"st\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " · demo recording</div></span> <span class=\"st\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -166,7 +166,7 @@ func JoinPage(teams []TeamCard) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<form method=\"get\" action=\"/join\"><input name=\"code\" placeholder=\"join code — e.g. MET-4QX7-PLUM\" autocomplete=\"off\"> <button class=\"btn primary\" type=\"submit\">Join</button></form><div class=\"note\">A join code mints a per-agent token server-side. No third-party credential is ever required to run metiche — and the board is not public just because the repository is.</div></div></div></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"note\">These are demo recordings. This page never lists real teams: your own team&#39;s board is at <b>/t/&lt;your-team-slug&gt;</b>.</div><form method=\"get\" action=\"/join\"><input name=\"code\" placeholder=\"join code — e.g. MET-4QX7-PLUM\" autocomplete=\"off\"> <button class=\"btn primary\" type=\"submit\">Join</button></form><div class=\"note\">A join code mints a per-agent token server-side. No third-party credential is ever required to run metiche — and the board is not public just because the repository is.</div></div></div></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -203,7 +203,7 @@ func NotFound(slug string) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(slug)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/join.templ`, Line: 93, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/join.templ`, Line: 97, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {

@@ -48,27 +48,53 @@ backend:
   # "metiche-api".
   serviceName: metiche
   port: 8080
-  # Comma-separated team slugs, passed as -teams.
+  # OPTIONAL pre-warm list: comma-separated live team slugs registered at
+  # startup, passed as -teams. Empty (the default) omits the flag.
   #
-  # The board's main.go requires an explicit list when running against a live
-  # backend (it has no team-discovery call yet), so this is the one place a
-  # real team slug has to be named. A slug is not a credential — the join code
-  # is, and it never appears here or anywhere else in deploy/.
-  teams: "demo"
+  # No team has to be named here any more. With discovery on (below) the board
+  # registers a team the first time somebody opens /t/<slug>, if the backend
+  # answers 200 for it. Pre-warming only saves that first visitor one backend
+  # round trip. A slug is not a credential — the join code is, and it never
+  # appears here or anywhere else in deploy/. Never list a slug that a demo
+  # recording holds ("demo", "demo-*"): it is refused and logged.
+  teams: ""
+
+# -- Demo boards (mixed mode) -------------------------------------------------
+# The recordings baked into the image, served next to the real teams as
+# /t/demo and /t/demo-tidewater, looping forever and labelled on every page as
+# a recording. They are what a new visitor sees, what the landing page's "see a
+# live demo" link opens, and the ONLY teams the public pages (/, /teams, /join,
+# /healthz) ever list. Passed as -demo.
+demo:
+  enabled: true
+
+# -- On-demand team discovery -------------------------------------------------
+# With a backend configured, a request for an unregistered /t/<slug> asks the
+# backend GET /v1/teams/<slug>. 200 → a live board is registered and served;
+# 404 → the not-found page, remembered for notFoundTTL. The backend answers 404
+# for private teams too, and the board sends a bearer only if
+# METICHE_BOARD_TOKEN is set in env/envFrom — with none, only PUBLIC teams are
+# discoverable.
+discovery:
+  enabled: true
+  # Cap on teams registered this way (each holds one upstream SSE stream).
+  maxTeams: 50
+  # How long a 404 is believed. A Go duration.
+  notFoundTTL: 30s
 
 # -- Fixture mode ----------------------------------------------------------
 # With backend.url empty AND backend.serviceName empty, the binary gets no
-# -backend flag and replays the embedded recordings instead. That is the
-# board-only deploy: it renders a full, live-looking team with no backend and
-# no database, which is exactly what you want for a first smoke test of
-# ingress + TLS + SSE before the backend exists.
+# -backend flag and serves ONLY the embedded recordings. That is the
+# board-only deploy: no backend and no database, which is exactly what you
+# want for a first smoke test of ingress + TLS + SSE before the backend exists.
 #
 #   helm upgrade --install metiche-web ... --set backend.serviceName=""
 fixtures:
   # Replay speed multiplier and the number of events delivered instantly on
-  # connect. Ignored unless the board is in fixture mode.
+  # connect. Apply to the demo boards in both modes.
   speed: 6
   warmup: 30
+  # Fixture mode only: with a backend the demo boards always loop.
   loop: true
 
 # Extra flags appended verbatim to the binary's argv.

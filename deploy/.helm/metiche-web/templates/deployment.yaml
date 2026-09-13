@@ -51,17 +51,25 @@ spec:
             # backend Service in this namespace unless backend.url overrides
             # it — no hostname is hardcoded in this chart or in the image.
             - "-backend={{ $backendURL }}"
-            - "-teams={{ .Values.backend.teams }}"
+            # Mixed mode: the demo recordings next to the real teams, and real
+            # teams registered on first request. -teams is only a pre-warm.
+            - "-demo={{ .Values.demo.enabled }}"
+            - "-discover={{ .Values.discovery.enabled }}"
+            - "-max-discovered-teams={{ .Values.discovery.maxTeams }}"
+            - "-discover-notfound-ttl={{ .Values.discovery.notFoundTTL }}"
+            {{- with .Values.backend.teams }}
+            - "-teams={{ . }}"
+            {{- end }}
             {{- else }}
             # No backend configured: replay the recordings embedded in the
             # image. Useful before the backend exists, and the fastest way to
             # prove ingress + TLS + SSE work end to end on their own.
-            - "-speed={{ .Values.fixtures.speed }}"
-            - "-warmup={{ .Values.fixtures.warmup }}"
             {{- if .Values.fixtures.loop }}
             - "-loop"
             {{- end }}
             {{- end }}
+            - "-speed={{ .Values.fixtures.speed }}"
+            - "-warmup={{ .Values.fixtures.warmup }}"
             {{- range .Values.extraArgs }}
             - {{ . | quote }}
             {{- end }}

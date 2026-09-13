@@ -7,8 +7,9 @@ package view
 // It is deliberately static. Nothing on it is live team data, because nothing
 // on it should be: a public page that leaks who is working on what would be
 // the exact opposite of the product. The one parameter is where the "see a
-// live board" link points; pass "" and the link is left out rather than
-// pointing somewhere that does not exist.
+// live demo" link points — always a demo recording, never a real team (see
+// web.Server.landing); pass "" and the link is left out rather than pointing
+// somewhere that does not exist.
 //
 // Everything visual here is inline SVG and one stylesheet. No framework, no
 // CDN, no webfont, no build step past templ.
@@ -54,7 +55,7 @@ templ landingNav(boardURL string) {
 				<a href="#how">How it works</a>
 				<a href="#board">The board</a>
 				if boardURL != "" {
-					<a href={ templ.SafeURL(boardURL) }>Live board</a>
+					<a href={ templ.SafeURL(boardURL) }>Live demo</a>
 				}
 				<a href="https://github.com/mklfarha/metiche">Source</a>
 			</div>
@@ -82,7 +83,7 @@ templ landingHero(boardURL string) {
 				<div class="cta-row">
 					<a class="btn primary" href="#join">Get your team on it <span class="arw">→</span></a>
 					if boardURL != "" {
-						<a class="btn" href={ templ.SafeURL(boardURL) }>Watch a board live</a>
+						<a class="btn" href={ templ.SafeURL(boardURL) }>See a live demo <span class="arw">→</span></a>
 					} else {
 						<a class="btn" href="#how">See how it works</a>
 					}
@@ -565,7 +566,7 @@ templ landingBoard(boardURL string) {
 			</div>
 			if boardURL != "" {
 				<div class="cta-row">
-					<a class="btn" href={ templ.SafeURL(boardURL) }>Open a live board <span class="arw">→</span></a>
+					<a class="btn" href={ templ.SafeURL(boardURL) }>See a live demo <span class="arw">→</span></a>
 				</div>
 			}
 		</div>

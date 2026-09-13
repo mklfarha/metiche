@@ -39,7 +39,7 @@ templ JoinPage(teams []TeamCard) {
 						<a class="teamlink" href={ templ.SafeURL("/t/" + t.Slug) }>
 							<span>
 								<div class="nm">{ t.Name }</div>
-								<div class="sl">/t/{ t.Slug }</div>
+								<div class="sl">/t/{ t.Slug } · demo recording</div>
 							</span>
 							<span class="st">
 								if t.Open > 0 {
@@ -56,6 +56,10 @@ templ JoinPage(teams []TeamCard) {
 							</span>
 						</a>
 					}
+					<div class="note">
+						These are demo recordings. This page never lists real teams: your own
+						team&#39;s board is at <b>/t/&lt;your-team-slug&gt;</b>.
+					</div>
 					<form method="get" action="/join">
 						<input name="code" placeholder="join code — e.g. MET-4QX7-PLUM" autocomplete="off"/>
 						<button class="btn primary" type="submit">Join</button>

@@ -1,4 +1,6 @@
-// Package web is the HTTP surface: five pages, one SSE stream, two controls.
+// Package web is the HTTP surface: five pages, one SSE stream, two controls,
+// and — against a real backend — on-demand registration of the teams people
+// ask for (discovery.go).
 package web
 
 import (
@@ -11,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/a-h/templ"
@@ -25,22 +28,44 @@ import (
 
 // Team is one board this service serves.
 type Team struct {
-	Slug     string
-	Name     string
+	Slug string
+	Name string
+	// JoinCode is only ever set on a demo team, whose recording carries a
+	// made-up one. A live team's invite codes are the backend's business and
+	// this service never learns them.
 	JoinCode string
-	Hub      *hub.Hub
-	Feed     feed.Feed
+	// Demo is true for a recording replayed from a fixture and false for a
+	// real team read from the backend. It is decided once, by whoever
+	// registered the team, and every public surface filters on it: a live
+	// team never appears on /, /teams, /join or /healthz, and a demo board
+	// always says it is a recording.
+	Demo bool
+	// Discovered is true for a live team registered on demand, because
+	// somebody asked for its board and the backend confirmed it, rather than
+	// named up front with -teams.
+	Discovered bool
+	Hub        *hub.Hub
+	Feed       feed.Feed
+
+	cancel context.CancelFunc
 }
 
 // Server holds the teams and the static assets.
+//
+// teams is written after Handler is serving — discovery registers boards on
+// demand — so every read and write goes through mu.
 type Server struct {
+	mu     sync.RWMutex
 	teams  map[string]*Team
 	order  []string
 	static fs.FS
 	log    *slog.Logger
+
+	disc *discovery
 }
 
-// NewServer builds the server. Teams are registered before Handler is called.
+// NewServer builds the server. Demo and pre-warmed teams are registered before
+// Handler is called; discovered ones are registered while it serves.
 func NewServer(static fs.FS, log *slog.Logger) *Server {
 	if log == nil {
 		log = slog.Default()
@@ -48,10 +73,34 @@ func NewServer(static fs.FS, log *slog.Logger) *Server {
 	return &Server{teams: map[string]*Team{}, static: static, log: log}
 }
 
-// AddTeam registers a team and starts its feed.
-func (s *Server) AddTeam(ctx context.Context, slug, name, joinCode string, f feed.Feed) (*Team, error) {
+// AddDemoTeam registers a recording. It is labelled a demo on every page, it
+// is the only kind of team the public pages list, and its slug is reserved:
+// once a demo holds a slug, the backend is never asked about that slug and a
+// live team cannot be registered over it.
+func (s *Server) AddDemoTeam(ctx context.Context, slug, name, joinCode string, f feed.Feed) (*Team, error) {
+	return s.addTeam(ctx, slug, name, joinCode, true, false, f)
+}
+
+// AddLiveTeam registers a real team read from the backend. It carries no join
+// code and is never listed on a public page.
+func (s *Server) AddLiveTeam(ctx context.Context, slug string, f feed.Feed) (*Team, error) {
+	return s.addTeam(ctx, slug, slug, "", false, false, f)
+}
+
+func (s *Server) addTeam(ctx context.Context, slug, name, joinCode string, demo, discovered bool, f feed.Feed) (*Team, error) {
+	if existing, ok := s.Lookup(slug); ok {
+		kind := "live"
+		if existing.Demo {
+			kind = "demo"
+		}
+		return nil, fmt.Errorf("team %q is already registered as a %s board", slug, kind)
+	}
+	// Each team gets its own context so that one which loses a registration
+	// race below can be stopped without touching anybody else's feed.
+	ctx, cancel := context.WithCancel(ctx)
 	h := hub.New(slug, name, view.Renderer{}, s.log)
 	if err := h.Run(ctx, f); err != nil {
+		cancel()
 		return nil, fmt.Errorf("start feed for %s: %w", slug, err)
 	}
 	// A live feed learns the team's real name from its snapshot during Run;
@@ -59,10 +108,52 @@ func (s *Server) AddTeam(ctx context.Context, slug, name, joinCode string, f fee
 	if loaded := h.Snapshot().Team.Name; loaded != "" {
 		name = loaded
 	}
-	t := &Team{Slug: slug, Name: name, JoinCode: joinCode, Hub: h, Feed: f}
+	t := &Team{Slug: slug, Name: name, JoinCode: joinCode, Demo: demo, Discovered: discovered,
+		Hub: h, Feed: f, cancel: cancel}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.teams[slug]; ok {
+		cancel()
+		kind := "live"
+		if existing.Demo {
+			kind = "demo"
+		}
+		return nil, fmt.Errorf("team %q is already registered as a %s board", slug, kind)
+	}
 	s.teams[slug] = t
 	s.order = append(s.order, slug)
 	return t, nil
+}
+
+// Lookup returns a registered team. It never asks the backend.
+func (s *Server) Lookup(slug string) (*Team, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.teams[slug]
+	return t, ok
+}
+
+// Teams returns every registered team in registration order.
+func (s *Server) Teams() []*Team {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Team, 0, len(s.order))
+	for _, slug := range s.order {
+		out = append(out, s.teams[slug])
+	}
+	return out
+}
+
+// demoTeams is the only list a public page may be built from.
+func (s *Server) demoTeams() []*Team {
+	var out []*Team
+	for _, t := range s.Teams() {
+		if t.Demo {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // Handler builds the router.
@@ -119,10 +210,17 @@ func (s *Server) Handler() http.Handler {
 
 // ---------------------------------------------------------------- pages
 
+// join serves /teams. It lists DEMO teams only.
+//
+// In fixture mode that was every team, and harmless. Against a real backend a
+// directory of registered teams with their live-session counts is a public
+// index of who is building what — and with discovery, of every public team
+// anybody has ever typed into the address bar. A real team's board is reached
+// by its URL, which the page says, never by browsing.
 func (s *Server) join(w http.ResponseWriter, r *http.Request) {
-	cards := make([]view.TeamCard, 0, len(s.order))
-	for _, slug := range s.order {
-		t := s.teams[slug]
+	demos := s.demoTeams()
+	cards := make([]view.TeamCard, 0, len(demos))
+	for _, t := range demos {
 		snap := t.Hub.Snapshot()
 		cards = append(cards, view.TeamCard{
 			Slug: t.Slug, Name: t.Name,
@@ -135,21 +233,27 @@ func (s *Server) join(w http.ResponseWriter, r *http.Request) {
 }
 
 // landing serves the public page. It is handed at most one board URL, for the
-// "watch one live" link; with no teams configured it gets "" and the link is
-// omitted rather than pointing at a 404.
+// "see a live demo" link, and that URL is only ever a DEMO board: the landing
+// page is shown to every visitor, and pointing it at the first registered
+// team advertised a real team to all of them the moment the board ran against
+// a backend. With no demo registered it gets "" and the link is omitted
+// rather than pointing at a 404 — or at somebody's team.
 func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 	boardURL := ""
-	if len(s.order) > 0 {
-		boardURL = "/t/" + s.order[0]
+	if demos := s.demoTeams(); len(demos) > 0 {
+		boardURL = "/t/" + demos[0].Slug
 	}
 	s.render(w, r, view.Landing(boardURL))
 }
 
+// joinCode matches demo join codes only. A live team's invite codes live in
+// the backend and are redeemed by an agent there; the board never holds one,
+// so there is nothing to compare against.
 func (s *Server) joinCode(w http.ResponseWriter, r *http.Request) {
 	code := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("code")))
-	for _, slug := range s.order {
-		if strings.EqualFold(s.teams[slug].JoinCode, code) {
-			http.Redirect(w, r, "/t/"+slug, http.StatusSeeOther)
+	for _, t := range s.demoTeams() {
+		if code != "" && t.JoinCode != "" && strings.EqualFold(t.JoinCode, code) {
+			http.Redirect(w, r, "/t/"+t.Slug, http.StatusSeeOther)
 			return
 		}
 	}
@@ -313,8 +417,16 @@ func (s *Server) nudge(w http.ResponseWriter, r *http.Request) {
 //   - the board frame is sent last and is idempotent by construction, since
 //     it replaces the container outright.
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
-	t, ok := s.teams[chi.URLParam(r, "slug")]
-	if !ok {
+	// The stream resolves exactly as the page does. After a restart a browser
+	// still holding a discovered team's page reconnects HERE first, and must
+	// get the board back rather than a 404 it would retry forever.
+	t, res := s.resolveTeam(r.Context(), chi.URLParam(r, "slug"))
+	switch res {
+	case resolveFound:
+	case resolveUnavailable, resolveFull:
+		http.Error(w, "board unavailable, try again shortly", http.StatusServiceUnavailable)
+		return
+	default:
 		http.NotFound(w, r)
 		return
 	}
@@ -394,6 +506,9 @@ func writeFrame(w http.ResponseWriter, f hub.Frame) {
 
 // ---------------------------------------------------------------- plumbing
 
+// healthz is served on the public host (the ingress routes everything here),
+// so it names demo teams only. Live teams are counted, never named: the probe
+// needs a 200, and an operator who needs a live team's cursors has the logs.
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	type teamHealth struct {
 		Slug          string `json:"slug"`
@@ -403,14 +518,22 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 		Subscribers   int    `json:"subscribers"`
 	}
 	out := struct {
-		OK    bool         `json:"ok"`
-		Teams []teamHealth `json:"teams"`
+		OK              bool         `json:"ok"`
+		Teams           []teamHealth `json:"teams"`
+		LiveTeams       int          `json:"live_teams"`
+		DiscoveredTeams int          `json:"discovered_teams"`
 	}{OK: true}
-	for _, slug := range s.order {
-		t := s.teams[slug]
+	for _, t := range s.Teams() {
+		if !t.Demo {
+			out.LiveTeams++
+			if t.Discovered {
+				out.DiscoveredTeams++
+			}
+			continue
+		}
 		snap := t.Hub.Snapshot()
 		out.Teams = append(out.Teams, teamHealth{
-			Slug: slug, Feed: t.Feed.Name(),
+			Slug: t.Slug, Feed: t.Feed.Name(),
 			Sequence: snap.Team.Sequence, BoardRevision: snap.Team.BoardRevision,
 			Subscribers: t.Hub.Subscribers(),
 		})
@@ -421,17 +544,26 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) team(w http.ResponseWriter, r *http.Request) (*Team, state.Snapshot, bool) {
 	slug := chi.URLParam(r, "slug")
-	t, ok := s.teams[slug]
-	if !ok {
+	t, res := s.resolveTeam(r.Context(), slug)
+	switch res {
+	case resolveFound:
+		return t, t.Hub.Snapshot(), true
+	case resolveUnavailable, resolveFull:
+		// Not a verdict about the team — the backend is unreachable or this
+		// process is at its cap — so it must not read as "no such team".
+		http.Error(w, "this board is unavailable right now; try again shortly", http.StatusServiceUnavailable)
+	default:
 		w.WriteHeader(http.StatusNotFound)
 		s.render(w, r, view.NotFound(slug))
-		return nil, state.Snapshot{}, false
 	}
-	return t, t.Hub.Snapshot(), true
+	return nil, state.Snapshot{}, false
 }
 
 func (s *Server) page(w http.ResponseWriter, r *http.Request, t *Team, snap state.Snapshot, tab view.Tab, body templ.Component) {
 	streamURL := fmt.Sprintf("/t/%s/stream?after=%d", t.Slug, snap.Team.Sequence)
+	if t.Demo {
+		r = r.WithContext(view.WithDemo(r.Context()))
+	}
 	s.render(w, r, view.Layout(snap, tab, streamURL, body))
 }
 

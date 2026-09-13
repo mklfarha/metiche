@@ -19,7 +19,11 @@ templ Layout(s state.Snapshot, tab Tab, streamURL string, body templ.Component) 
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>{ s.Team.Name } · metiche</title>
+			if IsDemo(ctx) {
+				<title>demo · { s.Team.Name } · metiche</title>
+			} else {
+				<title>{ s.Team.Name } · metiche</title>
+			}
 			<link rel="icon" href="/static/metiche-icon.png" type="image/png"/>
 			<link rel="stylesheet" href="/static/app.css"/>
 			<script src="/static/htmx.min.js"></script>
@@ -31,11 +35,26 @@ templ Layout(s state.Snapshot, tab Tab, streamURL string, body templ.Component) 
 		>
 			<div class="app">
 				@topbar(s, tab)
+				if IsDemo(ctx) {
+					@demoBanner()
+				}
 				@body
 			</div>
 			<script src="/static/board.js"></script>
 		</body>
 	</html>
+}
+
+// demoBanner sits outside the board container, so the SSE "board" frame that
+// replaces that container never removes it. Styled inline on purpose: it has
+// to be unmissable on every page of a demo board regardless of what the
+// stylesheet is doing.
+templ demoBanner() {
+	<div class="demo-banner" role="note" data-demo="recording" style="margin:10px 16px 0;padding:8px 12px;border:1px dashed currentColor;border-radius:6px;font-size:13px;line-height:1.4">
+		<b>DEMO · a recording.</b>
+		This team is not real: it is a recorded session replaying on a loop, so nothing on this board is live data.
+		<a href="/#join" style="color:inherit;text-decoration:underline">Put your own team on metiche →</a>
+	</div>
 }
 
 templ topbar(s state.Snapshot, tab Tab) {
