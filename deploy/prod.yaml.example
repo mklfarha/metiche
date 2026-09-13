@@ -84,6 +84,12 @@ monitoring:
 #                      surfaces the process serves and wants to be visible in
 #                      `kubectl get deploy` without decoding a Secret.
 #
+#   METICHE_BOARD_     an environment variable, set in the backend chart's
+#   BASE_URL           values.yaml `env` (https://metiche.xyz in production).
+#                      The board origin open_board builds sign-in links on
+#                      (docs/BOARD_LOGIN.md §2.3). Not a secret, so it belongs
+#                      in the Deployment, not in this Secret-mounted file.
+#
 #   Per-project tuning ignore_patterns and hotspot_patterns are ROWS in the
 #                      project table, editable from the board without a
 #                      redeploy. That is deliberate (README, "Configuration").

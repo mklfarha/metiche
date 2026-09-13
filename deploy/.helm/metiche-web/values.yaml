@@ -76,9 +76,11 @@ demo:
 # With a backend configured, a request for an unregistered /t/<slug> asks the
 # backend GET /v1/teams/<slug>. 200 → a live board is registered and served;
 # 404 → the not-found page, remembered for notFoundTTL. The backend answers 404
-# for private teams too, and the board sends a bearer only if
-# METICHE_BOARD_TOKEN is set in env/envFrom — with none, only PUBLIC teams are
-# discoverable.
+# for private teams too. The board holds NO credential of its own: there is no
+# METICHE_BOARD_TOKEN any more (docs/BOARD_LOGIN.md §9, decision 7), and the
+# board refuses to start if one is set, so never put it in env/envFrom. A
+# private team is shown only to a signed-in member, read with that viewer's own
+# browser session (§4.2); anonymous visitors discover only PUBLIC teams.
 discovery:
   enabled: true
   # Cap on teams registered this way (each holds one upstream SSE stream).
@@ -156,6 +158,36 @@ ingress:
   #  - name: www
   #    host: www.metiche.xyz
   #    ...
+
+  # -- /signin, rate limited per client IP ------------------------------------
+  # docs/BOARD_LOGIN.md §6.1, §6.2. /signin is where a sign-in link's secret is
+  # exchanged for a browser session. For EVERY host above this renders a second
+  # Ingress: path /signin, pathType Exact, carrying ingress-nginx's per-client-IP
+  # limit. The `/` Prefix Ingress already routes /signin; nginx matches the
+  # Exact location first, so the limit applies to /signin alone and the board's
+  # pages and SSE streams are never throttled. Per host, so an alias added above
+  # cannot become an unlimited way in.
+  #
+  # This is the per-IP layer. Behind it: the board's own signinLimit and the
+  # backend's global exchange backstop.
+  #
+  # nginx keys the limit on the address it believes is the client. That is the
+  # real one only if nothing in front of the controller hides it and the
+  # controller does not trust client-supplied X-Forwarded-For
+  # (use-forwarded-headers). deploy/scripts/preflight.sh prints which it is.
+  #
+  # No cert-manager annotation here: this Ingress reuses the host's TLS secret,
+  # which the host's own Ingress already requests. Annotating both would give
+  # one Secret two owning Ingresses.
+  #
+  # ONLY /signin. /v1/browser/* and /v1/teams/{slug}/access are backend routes
+  # reached in-cluster; they never appear in any Ingress of either chart.
+  signin:
+    enabled: true
+    # nginx.ingress.kubernetes.io/limit-rpm. Must be > 0: "0" disables the limit.
+    limitRpm: 20
+    # nginx.ingress.kubernetes.io/limit-burst-multiplier. Must be >= 1.
+    limitBurstMultiplier: 2
 
 # -- SSE --------------------------------------------------------------------
 # THE BOARD'S OWN STREAM IS THE ONE USERS SEE. /t/{slug}/stream is a

@@ -122,7 +122,12 @@ config:
 
 # Extra plain environment variables. NOT for secrets — anything here is
 # visible in `kubectl get deploy -o yaml` to everyone with namespace read.
-env: {}
+env:
+  # The board origin that open_board builds sign-in links on
+  # (docs/BOARD_LOGIN.md §2.3, §6.1). Not a secret. Must be https://, except
+  # http://localhost* and http://127.0.0.1* for local runs; the backend refuses
+  # anything else. An older binary ignores it.
+  METICHE_BOARD_BASE_URL: https://metiche.xyz
 #  METICHE_LOG_LEVEL: info
 
 # Extra environment from existing Secrets/ConfigMaps in this namespace.

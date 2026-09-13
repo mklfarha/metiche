@@ -43,4 +43,65 @@ spec:
                 port:
                   number: {{ $root.Values.service.port }}
 {{- end }}
+{{- /*
+  /signin, rate limited per client IP (docs/BOARD_LOGIN.md §6.1, §6.2). One
+  extra Ingress per host above, path /signin pathType Exact: nginx matches the
+  exact location before the `/` Prefix one, so the limit covers /signin and
+  nothing else. The path and pathType are fixed here, not values, so this
+  Ingress cannot be widened into a Prefix by a values change.
+
+  No SSE annotations (/signin does not stream) and no cert-manager annotation
+  (the host's own Ingress already requests the TLS secret reused below).
+*/}}
+{{- $signin := $root.Values.ingress.signin | default dict }}
+{{- if $signin.enabled }}
+{{- $rpm := int64 (required "ingress.signin.limitRpm is required when ingress.signin.enabled" $signin.limitRpm) }}
+{{- $burst := int64 (required "ingress.signin.limitBurstMultiplier is required when ingress.signin.enabled" $signin.limitBurstMultiplier) }}
+{{- if le $rpm 0 }}
+{{- fail (printf "ingress.signin.limitRpm must be > 0 (got %v): 0 turns the /signin rate limit off. Set ingress.signin.enabled=false to drop the Ingress instead." $signin.limitRpm) }}
+{{- end }}
+{{- if lt $burst 1 }}
+{{- fail (printf "ingress.signin.limitBurstMultiplier must be >= 1 (got %v)." $signin.limitBurstMultiplier) }}
+{{- end }}
+{{- range $root.Values.ingress.hosts }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-%s-signin" $fullname .name | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "metiche-web.labels" $root | nindent 4 }}
+    metiche.xyz/surface: {{ printf "%s-signin" .name | quote }}
+  annotations:
+    # Per client IP: where a sign-in link's secret is exchanged. See values.yaml
+    # ingress.signin for what "client IP" means behind this controller.
+    nginx.ingress.kubernetes.io/limit-rpm: {{ $rpm | quote }}
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: {{ $burst | quote }}
+    {{- with $root.Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with $root.Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if and .tls .tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .host | quote }}
+      secretName: {{ .tls.secretName | quote }}
+  {{- end }}
+  rules:
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: /signin
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ $root.Values.service.port }}
+{{- end }}
+{{- end }}
 {{- end }}
