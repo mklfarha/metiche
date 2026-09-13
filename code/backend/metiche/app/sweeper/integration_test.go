@@ -1062,3 +1062,327 @@ func TestIntegrationLeaseSkipsTheSecondPod(t *testing.T) {
 		t.Fatal("a second pod ran the pass while another held the lease")
 	}
 }
+
+// ─────────────────────────────────────────────
+// (e) Login sweep: expired sign-in links and browser sessions
+// ─────────────────────────────────────────────
+//
+// BOARD_LOGIN.md §3.3. These rows are credentials, not history, so the sweep
+// runs with RetentionEnabled=false (the zero Options), and its own switch,
+// LoginSweepEnabled, defaults to on even when the YAML omits the key.
+
+// newLoginHarness is newHarness plus a clean slate for the two login tables.
+// truncateAll predates them and does not list them, so rows from a previous
+// test would otherwise survive.
+func newLoginHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t)
+	h.exec("DELETE FROM `board_login_link`")
+	h.exec("DELETE FROM `browser_session`")
+	return h
+}
+
+type loginLinkSeed struct {
+	expiresAt  time.Time
+	consumedAt *time.Time
+}
+
+// seedLoginLinks inserts the links in multi-row INSERTs of at most 200 rows
+// and returns their ids in order.
+func (h *harness) seedLoginLinks(links []loginLinkSeed) []string {
+	h.t.Helper()
+	ids := make([]string, 0, len(links))
+	for start := 0; start < len(links); start += 200 {
+		end := start + 200
+		if end > len(links) {
+			end = len(links)
+		}
+		var (
+			rows []string
+			args []any
+		)
+		for _, l := range links[start:end] {
+			lid := id()
+			ids = append(ids, lid)
+			var consumed any
+			if l.consumedAt != nil {
+				consumed = *l.consumedAt
+			}
+			rows = append(rows, "(?,?,?,?,?,?,?,?)")
+			args = append(args, lid, h.accountUUID.String(), h.agentUUID.String(),
+				strings.ReplaceAll(lid, "-", ""), "/t/test", int64(enums.BOARD_LINK_SOURCE_CLI),
+				l.expiresAt, consumed)
+		}
+		h.exec("INSERT INTO `board_login_link` (`id`,`account_uuid`,`agent_uuid`,`secret_hash`,`redirect_path`,`requested_via`,`expires_at`,`consumed_at`) VALUES "+
+			strings.Join(rows, ","), args...)
+	}
+	return ids
+}
+
+type browserSessionSeed struct {
+	expiresAt  time.Time
+	lastSeenAt *time.Time
+	revokedAt  *time.Time
+}
+
+// seedBrowserSessions inserts the sessions in multi-row INSERTs of at most 200
+// rows and returns their ids in order.
+func (h *harness) seedBrowserSessions(sessions []browserSessionSeed) []string {
+	h.t.Helper()
+	ids := make([]string, 0, len(sessions))
+	for start := 0; start < len(sessions); start += 200 {
+		end := start + 200
+		if end > len(sessions) {
+			end = len(sessions)
+		}
+		var (
+			rows []string
+			args []any
+		)
+		for _, s := range sessions[start:end] {
+			sid := id()
+			ids = append(ids, sid)
+			var lastSeen, revoked, reason any
+			if s.lastSeenAt != nil {
+				lastSeen = *s.lastSeenAt
+			}
+			if s.revokedAt != nil {
+				revoked = *s.revokedAt
+				reason = int64(enums.BROWSER_SESSION_END_REASON_SIGNED_OUT)
+			}
+			rows = append(rows, "(?,?,?,?,?,?,?,?,?,?)")
+			args = append(args, sid, strings.ReplaceAll(sid, "-", ""), h.accountUUID.String(),
+				"h"+strings.ReplaceAll(sid, "-", ""), int64(enums.BROWSER_AUTH_METHOD_TERMINAL_LINK),
+				h.agentUUID.String(), s.expiresAt, lastSeen, revoked, reason)
+		}
+		h.exec("INSERT INTO `browser_session` (`id`,`key`,`account_uuid`,`secret_hash`,`auth_method`,`created_from_agent_uuid`,`expires_at`,`last_seen_at`,`revoked_at`,`end_reason`) VALUES "+
+			strings.Join(rows, ","), args...)
+	}
+	return ids
+}
+
+func (h *harness) rowExists(table, rowID string) bool {
+	h.t.Helper()
+	return h.count("SELECT COUNT(*) FROM `"+table+"` WHERE `id` = ?", rowID) == 1
+}
+
+func timePtr(t time.Time) *time.Time { return &t }
+
+// TestLoginSweepIsOnByDefault covers the zero-value config. It needs no
+// database. The switch must be on for the zero Options, after withDefaults,
+// and after Populate from a sweeper YAML block that omits the key, which is
+// the path app/worker.go takes. Only an explicit false turns it off.
+func TestLoginSweepIsOnByDefault(t *testing.T) {
+	if !(Options{}).loginSweepOn() {
+		t.Fatal("the zero Options turned the login sweep off")
+	}
+	d := Options{}.withDefaults()
+	if d.LoginSweepEnabled == nil || !*d.LoginSweepEnabled {
+		t.Fatal("withDefaults left LoginSweepEnabled unset or false; it must default to true")
+	}
+	if d.RetentionEnabled {
+		t.Fatal("withDefaults turned retention on while defaulting the login sweep")
+	}
+
+	populate := func(yaml string) Options {
+		t.Helper()
+		provider, err := config.NewYAML(config.Source(strings.NewReader(yaml)))
+		if err != nil {
+			t.Fatalf("building config: %v", err)
+		}
+		opts := Options{}
+		if err := provider.Get("sweeper").Populate(&opts); err != nil {
+			t.Fatalf("populating Options: %v", err)
+		}
+		return opts
+	}
+
+	cases := []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{"no sweeper block", "other:\n  x: 1\n", true},
+		{"block omits the key", "sweeper:\n  retentionenabled: false\n  batchsize: 250\n", true},
+		{"explicit true", "sweeper:\n  loginsweepenabled: true\n", true},
+		{"explicit false", "sweeper:\n  loginsweepenabled: false\n", false},
+	}
+	for _, c := range cases {
+		opts := populate(c.yaml)
+		if got := opts.loginSweepOn(); got != c.want {
+			t.Errorf("%s: loginSweepOn() = %v after Populate, want %v", c.name, got, c.want)
+		}
+		eff := New(&core.Implementation{}, zap.NewNop(), opts).Options()
+		if got := *eff.LoginSweepEnabled; got != c.want {
+			t.Errorf("%s: effective LoginSweepEnabled = %v, want %v", c.name, got, c.want)
+		}
+		if eff.RetentionEnabled {
+			t.Errorf("%s: retention came out enabled", c.name)
+		}
+	}
+}
+
+// TestIntegrationLoginSweepLiveSessionSurvives is the §8 mutation target.
+// With the cutoff sign flipped (now + tail instead of now - tail), the live
+// session and the unexpired link fall inside the delete and this test fails.
+func TestIntegrationLoginSweepLiveSessionSurvives(t *testing.T) {
+	h := newLoginHarness(t)
+	now := time.Now().UTC()
+
+	live := h.seedBrowserSessions([]browserSessionSeed{{
+		expiresAt:  now.Add(29 * 24 * time.Hour),
+		lastSeenAt: timePtr(now.Add(-time.Minute)),
+	}})[0]
+	unexpired := h.seedLoginLinks([]loginLinkSeed{{expiresAt: now.Add(10 * time.Minute)}})[0]
+
+	opts := Options{} // RetentionEnabled=false, LoginSweepEnabled unset
+	rep := h.runOnce(h.sweeper(opts))
+
+	if rep.Retention.Enabled {
+		t.Fatal("fixture is wrong: retention is enabled")
+	}
+	if !rep.Logins.Enabled {
+		t.Error("the report says the login sweep was disabled under the zero Options")
+	}
+	if !h.rowExists("browser_session", live) {
+		t.Error("a live browser session was deleted by the sweeper")
+	}
+	if !h.rowExists("board_login_link", unexpired) {
+		t.Error("an unexpired sign-in link was deleted by the sweeper")
+	}
+	if rep.Logins.SessionsDeleted != 0 || rep.Logins.LinksDeleted != 0 {
+		t.Errorf("deleted %d sessions and %d links, want 0 and 0", rep.Logins.SessionsDeleted, rep.Logins.LinksDeleted)
+	}
+}
+
+// TestIntegrationLoginSweepDeletesLinksPastTheTailInBatches seeds more than
+// one batch of dead links, with RetentionEnabled=false. Every link expired over
+// 24h ago goes, consumed or not, across several LIMIT 500 statements. Links
+// inside the tail survive, and so does the unexpired one.
+func TestIntegrationLoginSweepDeletesLinksPastTheTailInBatches(t *testing.T) {
+	h := newLoginHarness(t)
+	now := time.Now().UTC()
+
+	const dead = 1203
+	var seeds []loginLinkSeed
+	for i := 0; i < dead; i++ {
+		s := loginLinkSeed{expiresAt: now.Add(-25*time.Hour - time.Duration(i)*time.Minute)}
+		if i%2 == 0 {
+			s.consumedAt = timePtr(s.expiresAt.Add(-5 * time.Minute))
+		}
+		seeds = append(seeds, s)
+	}
+	h.seedLoginLinks(seeds)
+
+	survivors := h.seedLoginLinks([]loginLinkSeed{
+		{expiresAt: now.Add(10 * time.Minute)},                                                 // unexpired
+		{expiresAt: now.Add(-23 * time.Hour)},                                                  // expired, inside the tail
+		{expiresAt: now.Add(-2 * time.Hour), consumedAt: timePtr(now.Add(-130 * time.Minute))}, // consumed, inside the tail
+	})
+
+	opts := Options{}
+	if opts.RetentionEnabled {
+		t.Fatal("the zero Options enabled retention")
+	}
+	rep := h.runOnce(h.sweeper(opts))
+
+	if rep.Logins.LinksDeleted != dead {
+		t.Errorf("deleted %d links, want %d", rep.Logins.LinksDeleted, dead)
+	}
+	// 1203 links at 500 a batch is 500+500+203: three link batches, plus at
+	// least one (empty) session batch.
+	if rep.Logins.Batches < 4 {
+		t.Errorf("used %d batches for %d links at LIMIT 500; the delete was not bounded", rep.Logins.Batches, dead)
+	}
+	for i, sid := range survivors {
+		if !h.rowExists("board_login_link", sid) {
+			t.Errorf("survivor %d was deleted", i)
+		}
+	}
+	if n := h.count("SELECT COUNT(*) FROM `board_login_link`"); n != len(survivors) {
+		t.Errorf("%d links remain, want %d", n, len(survivors))
+	}
+
+	// A second pass has nothing left to delete.
+	if rep2 := h.runOnce(h.sweeper(opts)); rep2.Logins.LinksDeleted != 0 {
+		t.Errorf("the second pass deleted %d more links, want 0", rep2.Logins.LinksDeleted)
+	}
+}
+
+// TestIntegrationLoginSweepDeletesSessionsPastTheTail covers each of the three
+// clauses with a row just past the tail and a row just inside it, plus more
+// than one batch of absolutely expired sessions. RetentionEnabled is false
+// throughout.
+func TestIntegrationLoginSweepDeletesSessionsPastTheTail(t *testing.T) {
+	h := newLoginHarness(t)
+	now := time.Now().UTC()
+	day := 24 * time.Hour
+	future := now.Add(20 * day)
+
+	const bulk = 612
+	var seeds []browserSessionSeed
+	for i := 0; i < bulk; i++ {
+		seeds = append(seeds, browserSessionSeed{expiresAt: now.Add(-8*day - time.Duration(i)*time.Minute)})
+	}
+	h.seedBrowserSessions(seeds)
+
+	gone := h.seedBrowserSessions([]browserSessionSeed{
+		{expiresAt: now.Add(-8 * day), lastSeenAt: timePtr(now.Add(-9 * day))},  // absolute expiry 8d ago
+		{expiresAt: future, revokedAt: timePtr(now.Add(-8 * day))},              // revoked 8d ago
+		{expiresAt: future, lastSeenAt: timePtr(now.Add(-15 * day))},            // idle 15d
+		{expiresAt: now.Add(-30 * day), revokedAt: timePtr(now.Add(-31 * day))}, // all at once
+	})
+	kept := h.seedBrowserSessions([]browserSessionSeed{
+		{expiresAt: future, lastSeenAt: timePtr(now.Add(-time.Minute))},        // live
+		{expiresAt: now.Add(-6 * day), lastSeenAt: timePtr(now.Add(-6 * day))}, // expired 6d ago, inside the tail
+		{expiresAt: future, revokedAt: timePtr(now.Add(-6 * day))},             // revoked 6d ago, inside the tail
+		{expiresAt: future, lastSeenAt: timePtr(now.Add(-13 * day))},           // idle 13d, inside 7d+7d
+		{expiresAt: future}, // never seen, not expired
+	})
+
+	rep := h.runOnce(h.sweeper(Options{}))
+
+	if want := bulk + len(gone); rep.Logins.SessionsDeleted != want {
+		t.Errorf("deleted %d sessions, want %d", rep.Logins.SessionsDeleted, want)
+	}
+	// 616 sessions at 500 a batch is two session batches, plus at least one
+	// (empty) link batch.
+	if rep.Logins.Batches < 3 {
+		t.Errorf("used %d batches for %d sessions at LIMIT 500; the delete was not bounded", rep.Logins.Batches, bulk+len(gone))
+	}
+	for i, sid := range gone {
+		if h.rowExists("browser_session", sid) {
+			t.Errorf("session %d past the tail survived", i)
+		}
+	}
+	for i, sid := range kept {
+		if !h.rowExists("browser_session", sid) {
+			t.Errorf("session %d inside the tail was deleted", i)
+		}
+	}
+	if n := h.count("SELECT COUNT(*) FROM `browser_session`"); n != len(kept) {
+		t.Errorf("%d sessions remain, want %d", n, len(kept))
+	}
+}
+
+// TestIntegrationLoginSweepSwitchOffDeletesNothing: an explicit
+// LoginSweepEnabled=false is the only way to stop the sweep.
+func TestIntegrationLoginSweepSwitchOffDeletesNothing(t *testing.T) {
+	h := newLoginHarness(t)
+	now := time.Now().UTC()
+	link := h.seedLoginLinks([]loginLinkSeed{{expiresAt: now.Add(-48 * time.Hour)}})[0]
+	sess := h.seedBrowserSessions([]browserSessionSeed{{expiresAt: now.Add(-30 * 24 * time.Hour)}})[0]
+
+	off := false
+	rep := h.runOnce(h.sweeper(Options{LoginSweepEnabled: &off}))
+
+	if rep.Logins.Enabled {
+		t.Error("the report says the login sweep ran with the switch off")
+	}
+	if rep.Logins.LinksDeleted != 0 || rep.Logins.SessionsDeleted != 0 || rep.Logins.Batches != 0 {
+		t.Errorf("with the switch off: %+v, want all zero", rep.Logins)
+	}
+	if !h.rowExists("board_login_link", link) || !h.rowExists("browser_session", sess) {
+		t.Error("a row was deleted with LoginSweepEnabled=false")
+	}
+}

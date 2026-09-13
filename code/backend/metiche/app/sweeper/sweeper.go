@@ -122,6 +122,18 @@ type Options struct {
 	// pass", which is what an operator calling RunOnce by hand wants.
 	RetentionInterval time.Duration
 
+	// LoginSweepEnabled switches the login sweep (step 5, logins.go). That
+	// step deletes expired sign-in links and expired, revoked or long-idle
+	// browser sessions. It defaults to ON and does not depend on
+	// RetentionEnabled: those rows are credentials, not history (BOARD_LOGIN.md
+	// §3.3, decision 11).
+	//
+	// It is a pointer because a missing key must mean true. With a plain bool,
+	// a YAML block that omits the key would decode to false, and nothing could
+	// tell that apart from an operator writing false. Nil means on.
+	// withDefaults fills it in.
+	LoginSweepEnabled *bool
+
 	// BatchSize bounds every DELETE and every scan. Retention never issues
 	// one unbounded DELETE: a single statement deleting a month of a busy
 	// team's events would hold row locks over the whole range while agents
@@ -238,6 +250,10 @@ func (o Options) withDefaults() Options {
 	if o.LeaseName == "" {
 		o.LeaseName = DefaultLeaseName
 	}
+	if o.LoginSweepEnabled == nil {
+		on := true
+		o.LoginSweepEnabled = &on
+	}
 	if o.Clock == nil {
 		o.Clock = func() time.Time { return time.Now().UTC() }
 	}
@@ -293,6 +309,9 @@ type Report struct {
 	EventsSkippedForDupe int `json:"events_skipped_for_dupe"`
 
 	Retention RetentionReport `json:"retention"`
+
+	// Logins is step 5: expired sign-in links and browser sessions deleted.
+	Logins LoginsReport `json:"logins"`
 
 	// Errors are the non-fatal ones: a pass that fails on one team still
 	// sweeps the rest, because one wedged team must not freeze every other
@@ -447,6 +466,8 @@ func (s *Sweeper) safePass(ctx context.Context) {
 		zap.Int("retention_events_deleted", rep.Retention.EventsDeleted),
 		zap.Int("retention_sessions_deleted", rep.Retention.SessionsDeleted),
 		zap.Int("retention_floors_advanced", rep.Retention.FloorsAdvanced),
+		zap.Int("login_links_deleted", rep.Logins.LinksDeleted),
+		zap.Int("browser_sessions_deleted", rep.Logins.SessionsDeleted),
 		zap.Duration("took", rep.Duration),
 		zap.Strings("errors", rep.Errors))
 }
@@ -454,7 +475,8 @@ func (s *Sweeper) safePass(ctx context.Context) {
 func (r Report) isQuiet() bool {
 	return r.ClaimsExpired == 0 && r.SessionsStale == 0 && r.SessionsAbandoned == 0 &&
 		r.UnclaimedRaised == 0 && r.Retention.EventsDeleted == 0 &&
-		r.Retention.SessionsDeleted == 0 && len(r.Errors) == 0
+		r.Retention.SessionsDeleted == 0 && r.Logins.LinksDeleted == 0 &&
+		r.Logins.SessionsDeleted == 0 && len(r.Errors) == 0
 }
 
 // RunOnce does one complete pass: claim expiry, session liveness,
@@ -469,6 +491,7 @@ func (s *Sweeper) RunOnce(ctx context.Context) (Report, error) {
 	now := s.now()
 	rep := Report{StartedAt: now}
 	rep.Retention.Enabled = s.opts.RetentionEnabled
+	rep.Logins.Enabled = s.opts.loginSweepOn()
 	defer func() {
 		rep.FinishedAt = s.now()
 		rep.Duration = rep.FinishedAt.Sub(rep.StartedAt)
@@ -528,6 +551,12 @@ func (s *Sweeper) RunOnce(ctx context.Context) (Report, error) {
 		if err := s.enforceRetention(ctx, t, now, defaultRetentionDays, &rep); err != nil {
 			rep.addErr("enforcing retention for team "+t.uuid.String(), err)
 		}
+	}
+
+	// ── 5. expired sign-in links and browser sessions ───────────────────────
+	// Instance-wide, and NOT gated on RetentionEnabled (logins.go).
+	if err := s.sweepLogins(ctx, now, &rep); err != nil {
+		rep.addErr("sweeping expired browser logins", err)
 	}
 
 	return rep, nil
