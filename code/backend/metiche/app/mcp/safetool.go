@@ -56,8 +56,10 @@ func addTool[In, Out any](s *mcp.Server, hdl *Handler, logger *zap.Logger, t *mc
 // while holding a perfectly good token it is already sending. That is a
 // confusing enough dead end to have cost an afternoon; it is tested by
 // TestAuthToolReadsTheHeaderOfThisCall, TestAuthToolToleratesAMissingHeader and
-// TestEveryToolIsWrappedForPerCallAuth (authpercall_test.go) so it cannot come
-// back.
+// TestEveryToolIsWrappedForPerCallAuth (authpercall_test.go), and end to end
+// through the real streamable transport by
+// TestIntegrationTwoAgentsTwoTokensNoHints (identity_integration_test.go), so it
+// cannot come back.
 //
 // req.Extra.Header is the header of the request being served right now, which
 // is exactly the thing the session context cannot tell us.
@@ -66,38 +68,14 @@ func authTool[In, Out any](hdl *Handler, next mcp.ToolHandlerFor[In, Out]) mcp.T
 		if hdl == nil || req == nil || req.Extra == nil || req.Extra.Header == nil {
 			return next(ctx, req, in)
 		}
-		// The agent's own identity, if the connection declares it. Read before
+		// The client_key override, if the connection declares one. Read before
 		// the token and applied regardless of whether the token resolves,
-		// because it is not a credential -- it only selects among agents that
-		// already belong to whoever authenticated, and is meaningless without
-		// that. See ClientKeyFromContext for why it rides on the connection
-		// rather than being passed as an argument.
+		// because it is not a credential: for a legacy account token it selects
+		// among that person's agents, and for an agent token RequireAgent
+		// refuses it when it names a different agent. See ClientKeyFromContext.
 		ck := strings.TrimSpace(req.Extra.Header.Get("X-Metiche-Client-Key"))
 		if ck != "" {
 			ctx = WithClientKey(ctx, ck)
-		}
-		// WHICH HEADERS ACTUALLY ARRIVED. Names only, never values -- one of
-		// them is a bearer token.
-		//
-		// This exists because "the client is configured correctly" and "the
-		// server received it" are different claims, and confusing them cost a
-		// long evening: a config file on disk was read, verified and still
-		// produced a request with no identity on it, and nothing in the system
-		// could say whether the client never sent it or something in between
-		// dropped it. Debug level, so it costs nothing in normal operation.
-		// Logged at INFO when the identity header is ABSENT, and not at all
-		// when it is present: the anomaly is worth a line, the normal case is
-		// noise. zap.NewProduction is Info level, so a Debug line here would
-		// have been invisible in the place it is actually needed.
-		if ck == "" && hdl.logger != nil {
-			names := make([]string, 0, len(req.Extra.Header))
-			for k := range req.Extra.Header {
-				names = append(names, k)
-			}
-			sort.Strings(names)
-			hdl.logger.Info("mcp call arrived with no agent identity header",
-				zap.String("tool", toolName(req)),
-				zap.Strings("headers_received", names))
 		}
 
 		token := BearerFromHeader(req.Extra.Header.Get("Authorization"))
@@ -111,18 +89,66 @@ func authTool[In, Out any](hdl *Handler, next mcp.ToolHandlerFor[In, Out]) mcp.T
 			// tells the agent what to do about it.
 			return next(ctx, req, in)
 		}
-		acct, err := hdl.resolveToken(ctx, token)
+		ident, err := hdl.resolveToken(ctx, token)
 		if err != nil {
 			// Same reasoning: let the tool refuse. Returning a transport
 			// error here would break the whole MCP session over one bad
 			// call, and an agent that has to reconnect to recover is an
 			// agent that stops using the tool.
-			hdl.logger.Warn("a tool call carried a token that did not resolve",
-				zap.String("tool", toolName(req)))
+			if hdl.logger != nil {
+				hdl.logger.Warn("a tool call carried a token that did not resolve",
+					zap.String("tool", toolName(req)))
+			}
 			return next(ctx, req, in)
 		}
-		return next(WithAccount(ctx, acct), req, in)
+		// Gated on "a LEGACY ACCOUNT token and no client-key header" and on
+		// nothing wider. An agent token names its agent, so a missing header
+		// is the normal case for every new install and a line per call would
+		// be pure noise. No token at all is create_team, join_team or health,
+		// which need no agent. The anomaly worth a line is the one left: a
+		// person-level token that does not say which agent is calling.
+		if ck == "" && ident.Agent == nil {
+			logMissingIdentityHeader(hdl.logger, req)
+		}
+		return next(WithIdentity(ctx, ident), req, in)
 	}
+}
+
+// noIdentityHeaderMsg is the diagnostic logMissingIdentityHeader writes.
+const noIdentityHeaderMsg = "mcp call arrived with no agent identity header"
+
+// logMissingIdentityHeader records WHICH HEADERS ACTUALLY ARRIVED on a call
+// whose account token names no agent. Names only, never values — one of them
+// is a bearer token.
+//
+// This exists because "the client is configured correctly" and "the server
+// received it" are different claims, and confusing them cost a long evening:
+// a config file on disk was read, verified and still produced a request with
+// no identity on it, and nothing could say whether the client never sent it or
+// something in between dropped it. It is how the server proved that Claude
+// Code drops custom headers from a plugin's .mcp.json. INFO rather than Debug
+// because zap.NewProduction is Info level, and a Debug line would be invisible
+// exactly where it is needed.
+//
+// Nil-safe on the logger and on every part of the request: it runs inside
+// authTool, which wraps every tool, and a log line must never be what takes a
+// call down.
+func logMissingIdentityHeader(logger *zap.Logger, req *mcp.CallToolRequest) {
+	if logger == nil {
+		return
+	}
+	var names []string
+	if req != nil && req.Extra != nil {
+		names = make([]string, 0, len(req.Extra.Header))
+		for k := range req.Extra.Header {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+	}
+	logger.Info(noIdentityHeaderMsg,
+		zap.String("tool", toolName(req)),
+		zap.String("token_scope", "account"),
+		zap.Strings("headers_received", names))
 }
 
 // toolName is the called tool's name for a log line, or "" when the request

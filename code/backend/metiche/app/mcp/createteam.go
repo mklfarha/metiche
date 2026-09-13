@@ -72,10 +72,18 @@ type CreateTeamResult struct {
 //
 // UNAUTHENTICATED, like join_team, and for the same reason: metiche has no
 // signup, because a coordination tool that takes ten minutes to join does not
-// get joined. A first contact mints an anonymous `account` and hands back its
-// one-time token; a request that already carries a token creates the team as
-// the person it already is. What bounds creation is therefore a per-IP rate
-// limit and the team's plan, not a login — see ratelimit.go.
+// get joined. A first contact mints an anonymous `account` and hands back the
+// creating agent's one-time token; a request that already carries a token
+// creates the team as the person it already is. The token decision (mint,
+// keep or rotate) is joinAs's, identical to join_team's. What bounds creation
+// is therefore a per-IP rate limit and the team's plan, not a login — see
+// ratelimit.go.
+//
+// One consequence of the derived primary key below, left alone on purpose:
+// client_key feeds the team's uuid, so each of a person's clients calling
+// create_team with the same idempotency key would make its own team. The
+// installer runs create_team ONCE, as the first client, and attaches the others
+// with join_team by team_slug.
 //
 // RETRY SAFETY, without a team row to lock. Every other mutating call takes
 // the team's row lock and replays a stored response on a duplicate

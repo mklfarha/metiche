@@ -36,10 +36,15 @@
 // # Reuse, not a second scheme
 //
 // The token path is app/mcp's, unchanged: mcp.BearerFromHeader parses the
-// header, mcp.AccountByToken hashes it with mcp.HashToken and re-checks it in
-// constant time with mcp.VerifyToken against account.token_hash. There is
-// exactly ONE definition in this repository of "what a metiche token is and
-// who it belongs to", and this package calls it rather than restating it. The
+// header, and mcp.AccountByToken delegates to mcp.IdentityByToken, which hashes
+// it with mcp.HashToken and re-checks it in constant time with mcp.VerifyToken.
+// Since schema v4 a token names an AGENT (agent.token_hash) and resolves to
+// that agent's account — or to nobody if the agent is retired — and a token
+// from before v4 names an account directly (account.token_hash). Either way
+// this package gets the ACCOUNT, and the membership decision below is the same.
+// There is exactly ONE definition in this repository of "what a metiche token
+// is and who it belongs to", and this package calls it rather than restating
+// it. The
 // import direction (authz -> mcp) is deliberate: mcp is where identity lives,
 // and nothing in mcp imports this package, so there is no cycle.
 //

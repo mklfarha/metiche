@@ -119,21 +119,20 @@ repository right now, and nobody can see anyone else's work until it lands in gi
 saying what you are ABOUT TO DO before you do it.
 
 The loop:
-  1. join_team once, with the team's join code. Save the token it returns; it is shown once.
+  1. join_team once per client, with the team's join code. Save the token it returns; it is shown once.
   2. start_session once, when you begin a piece of work.
   3. heartbeat about every 60 seconds while you work. Claims lapse without it.
   4. end_session when you are done, so your holds are released immediately.
 
-You do not need to know your own client_key, and you must never guess one. If your MCP config
-sends an X-Metiche-Client-Key header - the installer sets this up - the server already knows which
-of this person's agents you are. Omit client_key and it will be right. A guessed value is either
-rejected or, worse, files your work under somebody else's agent.
+Your token identifies THIS agent - this client, on this machine. Every client gets its own, and the
+Authorization header is the only thing any call needs. You never need client_key; omit it, and never
+guess one. Several terminals of one client are several sessions of one agent: call start_session in
+each, and it tells you about your other live sessions.
 
-Your token is the PERSON you work for, not this process and not one team. Send it on every call,
-including a later join_team for a second team - joining again with it adds a membership rather than
-a second identity. Because of that, a team is a per-call scope: pass team_slug when you are on more
-than one, and client_key when that person runs more than one agent. A join code is an invite, so it
-can be revoked, expired or used up; ask for a fresh one rather than retrying a dead one.
+Send your token on every call, including a later join_team for a second team - joining again with
+your own token keeps it and adds a membership rather than a second identity. A team is a per-call
+scope: pass team_slug when you are on more than one. A join code is an invite, so it can be revoked,
+expired or used up; ask for a fresh one rather than retrying a dead one.
 
 Every response carries "pending": counts of instructions, conflicts and reviews waiting for you.
 MCP cannot push, so that count is how you find out anything. When it is non-zero, fetch the
@@ -185,8 +184,8 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	addTool(server, h, logger, &mcp.Tool{
 		Name: "create_team",
 		Description: "Create a new metiche team and join it in the same call. Use this when nobody has set the team up yet; if you were given a join code, use join_team instead. " +
-			"Returns the team's first join_code — the shared secret your teammates need — and, if you did not already have one, your own bearer token. " +
-			"There is no signup anywhere in metiche: a first call with no token mints you an anonymous identity and hands you its token once, so abuse is bounded by per-address rate limiting and the team's plan rather than by a sign-in. " +
+			"Returns the team's first join_code — the shared secret your teammates need — and, unless you sent this agent's own token, this agent's bearer token. " +
+			"There is no signup anywhere in metiche: a first call with no token mints you an anonymous identity and hands you this agent's token once, so abuse is bounded by per-address rate limiting and the team's plan rather than by a sign-in. " +
 			"Pass an idempotency_key of at least 8 characters (a uuid is ideal): retrying with the same key, carrying your token, returns the same team and the same join code instead of creating a second one.",
 		// Additive rather than idempotent: two calls with two different
 		// idempotency keys are two real teams. The key makes a RETRY safe,
@@ -196,9 +195,10 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 
 	addTool(server, h, logger, &mcp.Tool{
 		Name: "join_team",
-		Description: "Join a team with its join code and get your own bearer token. Call this before anything else, then send the token as an Authorization: Bearer header on every later call. " +
-			"Pass a stable client_key (your session id, or the working directory plus your label) so that restarting re-joins you as the same agent instead of adding a duplicate to the board. " +
-			"The token identifies the PERSON you work for, not this agent: it is shown once, it cannot be recovered, and it already works for every other team that person joins — so send it on this call too when you have one, and no second token is minted.",
+		Description: "Join a team and get this agent's bearer token. Call this before anything else, then send the token as an Authorization: Bearer header on every later call — it is the only thing later calls need. " +
+			"Admission is a join_code, or — to attach another of your clients to a team you are already on — team_slug plus any of your tokens, which spends no invite. " +
+			"Pass a stable client_key so that restarting re-joins you as the same agent instead of adding a duplicate to the board. " +
+			"The token identifies THIS agent, not the person: every client gets its own, it is shown once and cannot be recovered. Re-joining with this agent's own token keeps it (token_kept); a join without it issues this agent a new token.",
 		// Idempotent on identity: re-joining with the same (member, client_key)
 		// lands on the same agent row rather than creating a second one.
 		Annotations: idempotent,
@@ -208,7 +208,8 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 		Name: "start_session",
 		Description: "Begin one bounded piece of work: which repo, which branch, what commit you are starting from, and what you are trying to achieve. Returns a session_key you pass to every later call. " +
 			"Start a new session per piece of work, not per message. " +
-			"If you are on more than one team, or run more than one agent, pass team_slug and client_key so the work lands on the right board under the right agent.",
+			"If you are on more than one team, pass team_slug so the work lands on the right board. You never need client_key: your token already names this agent. " +
+			"Several terminals of one client are several sessions of one agent; start_session tells you about your other live sessions.",
 		Annotations: idempotent,
 	}, h.StartSession)
 

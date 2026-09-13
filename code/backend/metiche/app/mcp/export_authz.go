@@ -3,16 +3,18 @@ package mcp
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 
 	"github.com/gofrs/uuid"
 
 	account_entity "github.com/mklfarha/metiche/backend/entity/account"
+	agent_entity "github.com/mklfarha/metiche/backend/entity/agent"
 	"github.com/mklfarha/metiche/backend/enums"
 )
 
-// This file exists for exactly one caller: app/authz, the gate in front of
-// app/webapi and app/stream.
+// This file exists for exactly one caller outside this package: app/authz, the
+// gate in front of app/webapi and app/stream.
 //
 // Those two packages serve the board over the PUBLIC router, and a private
 // team must only be readable by an account that is a member of it. To decide
@@ -28,93 +30,203 @@ import (
 // to look up a token — it holds a *sql.DB, which is all the lookup ever
 // actually touches.
 //
-// Why it is its own file: it is not part of the MCP auth story, it is a seam
-// cut for a different package, and keeping it separate makes that legible —
-// and means auth.go itself is untouched.
-//
 // The direction of the dependency is one-way and must stay that way:
 // app/authz imports app/mcp. Nothing in app/mcp may import app/authz.
 
-// AccountByToken resolves a presented bearer token to its ACCOUNT, over a bare
-// database handle.
+// Identity is who a bearer token names.
 //
-// Semantics are identical to the unexported resolveToken that the MCP
-// middleware uses, and deliberately so:
+// Since schema v4 a token names an AGENT: one client install (Claude Code on
+// this laptop, Codex on that one), stored as agent.token_hash. Agent is then
+// set, and Account is the person that agent belongs to.
+//
+// A token minted before v4 names only an ACCOUNT (account.token_hash). Agent is
+// then nil, and which of that person's agents is calling has to come from
+// somewhere else — the legacy client_key chain in RequireAgent. That path
+// exists so installs made before v4 keep working until they are re-run; no new
+// account is ever given a usable account token.
+type Identity struct {
+	Account account_entity.Account
+	Agent   *agent_entity.Agent
+}
+
+// IdentityByToken resolves a presented bearer token to the identity it names,
+// over a bare database handle. It is THE one implementation of "whose token is
+// this?" in the process: resolveToken (every MCP request and every tool call)
+// and AccountByToken (the board gate) both delegate here.
+//
+// Two lookups, in order:
+//
+//  1. agent.token_hash, joined to its account. A match must VerifyToken, and
+//     the agent must be ACTIVE: a retired agent's token is dead at the edge,
+//     on the MCP surface and the board alike, rather than authenticating a
+//     caller who is then refused one tool at a time.
+//  2. account.token_hash — the legacy anchor. Identity{Account, nil}.
+//
+// Semantics that did not change with v4:
 //
 //   - the lookup is by HashToken(token), because the hash is the stored value
 //     and therefore the only thing that can be indexed;
 //   - the match is then re-checked with VerifyToken, in constant time. The SQL
 //     equality is not the security boundary; VerifyToken is;
-//   - every failure — no such token, a hash collision that does not verify, a
-//     database that is unhappy, an unparseable row — comes back as the one
-//     opaque ErrUnauthenticated. A caller that can tell those apart has an
-//     oracle, and one of those callers is always a probe.
+//   - every failure — no such token, a hash that does not verify, a retired
+//     agent, a database that is unhappy or absent, an unparseable row — comes
+//     back as the one opaque ErrUnauthenticated. A caller that can tell those
+//     apart has an oracle, and one of those callers is always a probe.
 //
 // It does NOT check account.Status: "who is this token" and "is this person
-// still active" are two questions, and the caller decides what to do about the
-// second. app/authz treats anything but RECORD_STATUS_ACTIVE as a denial.
+// still active" are two questions, and each caller answers the second.
+//
+// A nil db is ErrUnauthenticated, not a panic. Production always has one; a
+// Handler built without a core (the tool-surface tests do this) must still be
+// able to receive a bearer header without crashing the call.
 //
 // The token is never logged here, and never appears in the returned error.
-//
-// resolveToken, which the MCP auth middleware and every tool call go through,
-// is a one-line delegation to this function — so there is exactly one
-// implementation of "whose token is this?" in the process, and the board and
-// the tool surface cannot drift apart on it.
-func AccountByToken(ctx context.Context, db *sql.DB, token string) (account_entity.Account, error) {
+func IdentityByToken(ctx context.Context, db *sql.DB, token string) (Identity, error) {
 	// Trim BEFORE the empty check, not after: HashToken trims too, so a token
 	// of pure whitespace would otherwise be hashed as the empty string and
 	// sent to the database as a real-looking lookup.
 	token = strings.TrimSpace(token)
-	if token == "" {
-		return account_entity.Account{}, ErrUnauthenticated
+	if token == "" || db == nil {
+		return Identity{}, ErrUnauthenticated
 	}
 	hash := HashToken(token)
 
 	var (
-		id, key, displayName, storedHash string
-		identityProvider, status         int64
-		identitySubject, identityHandle  sql.NullString
-		email                            sql.NullString
-		claimedAt, lastSeenAt            sql.NullTime
+		agentID, agentKey, label, clientKey, agentAccount, agentHash string
+		clientKind                                                   sql.NullString
+		agentStatus                                                  int64
+		agentLastSeen                                                sql.NullTime
+		acct                                                         accountRow
 	)
 	err := db.QueryRowContext(ctx,
-		"SELECT `id`, `key`, `display_name`, `token_hash`, `identity_provider`, `identity_subject`, "+
-			"`identity_handle`, `email`, `claimed_at`, `status`, `last_seen_at` "+
-			"FROM `account` WHERE `token_hash` = ? LIMIT 1", hash).
-		Scan(&id, &key, &displayName, &storedHash, &identityProvider, &identitySubject,
-			&identityHandle, &email, &claimedAt, &status, &lastSeenAt)
-	if err != nil {
+		"SELECT a.`id`, a.`key`, a.`label`, a.`client_kind`, a.`client_key`, a.`status`, a.`last_seen_at`, "+
+			"a.`account_uuid`, a.`token_hash`, "+accountColumns("c")+" "+
+			"FROM `agent` a JOIN `account` c ON c.`id` = a.`account_uuid` "+
+			"WHERE a.`token_hash` = ? LIMIT 1", hash).
+		Scan(append([]any{&agentID, &agentKey, &label, &clientKind, &clientKey, &agentStatus, &agentLastSeen,
+			&agentAccount, &agentHash}, acct.dest()...)...)
+	switch {
+	case err == nil:
+		if !VerifyToken(token, agentHash) {
+			return Identity{}, ErrUnauthenticated
+		}
+		if enums.AgentStatus(agentStatus) != enums.AGENT_STATUS_ACTIVE {
+			return Identity{}, ErrUnauthenticated
+		}
+		account, err := acct.entity()
+		if err != nil {
+			return Identity{}, ErrUnauthenticated
+		}
+		ag := agent_entity.Agent{
+			Key:        agentKey,
+			Label:      label,
+			ClientKind: nullString(clientKind.String),
+			ClientKey:  clientKey,
+			Status:     enums.AgentStatus(agentStatus),
+			TokenHash:  nullString(agentHash),
+		}
+		if agentLastSeen.Valid {
+			ag.LastSeenAt = nullTime(agentLastSeen.Time)
+		}
+		if ag.ID, err = uuid.FromString(agentID); err != nil {
+			return Identity{}, ErrUnauthenticated
+		}
+		if ag.AccountUUID, err = uuid.FromString(agentAccount); err != nil || ag.AccountUUID != account.ID {
+			return Identity{}, ErrUnauthenticated
+		}
+		return Identity{Account: account, Agent: &ag}, nil
+	case errors.Is(err, sql.ErrNoRows):
+		// Not an agent token. Fall through to the legacy account lookup.
+	default:
 		// Never distinguish "no such token" from a database problem in the
 		// message that reaches the caller — one of them is a probe.
-		return account_entity.Account{}, ErrUnauthenticated
-	}
-	if !VerifyToken(token, storedHash) {
-		return account_entity.Account{}, ErrUnauthenticated
+		return Identity{}, ErrUnauthenticated
 	}
 
+	var legacy accountRow
+	if err := db.QueryRowContext(ctx,
+		"SELECT "+accountColumns("")+" FROM `account` WHERE `token_hash` = ? LIMIT 1", hash).
+		Scan(legacy.dest()...); err != nil {
+		return Identity{}, ErrUnauthenticated
+	}
+	if !VerifyToken(token, legacy.storedHash) {
+		return Identity{}, ErrUnauthenticated
+	}
+	account, err := legacy.entity()
+	if err != nil {
+		return Identity{}, ErrUnauthenticated
+	}
+	return Identity{Account: account}, nil
+}
+
+// AccountByToken resolves a presented bearer token to its ACCOUNT: the person
+// behind an agent token, or the account a legacy token names.
+//
+// It is a delegation to IdentityByToken and nothing more, so the board gate
+// inherits every rule there — including that a retired agent's token resolves
+// to nobody — without app/authz having to know agents exist.
+func AccountByToken(ctx context.Context, db *sql.DB, token string) (account_entity.Account, error) {
+	id, err := IdentityByToken(ctx, db, token)
+	if err != nil {
+		return account_entity.Account{}, err
+	}
+	return id.Account, nil
+}
+
+// accountRow is the scan target for the account columns both lookups read.
+type accountRow struct {
+	id, key, displayName, storedHash       string
+	identityProvider, status               int64
+	identitySubject, identityHandle, email sql.NullString
+	claimedAt, lastSeenAt                  sql.NullTime
+}
+
+// accountColumns lists, in dest() order, the account columns the lookups read,
+// qualified by alias when one is given.
+func accountColumns(alias string) string {
+	cols := []string{"id", "key", "display_name", "token_hash", "identity_provider", "identity_subject",
+		"identity_handle", "email", "claimed_at", "status", "last_seen_at"}
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	for i, c := range cols {
+		cols[i] = prefix + "`" + c + "`"
+	}
+	return strings.Join(cols, ", ")
+}
+
+func (r *accountRow) dest() []any {
+	return []any{&r.id, &r.key, &r.displayName, &r.storedHash, &r.identityProvider, &r.identitySubject,
+		&r.identityHandle, &r.email, &r.claimedAt, &r.status, &r.lastSeenAt}
+}
+
+func (r *accountRow) entity() (account_entity.Account, error) {
 	a := account_entity.Account{
-		Key:              key,
-		DisplayName:      displayName,
-		TokenHash:        storedHash,
-		IdentityProvider: enums.IdentityProvider(identityProvider),
-		IdentitySubject:  nullString(identitySubject.String),
-		IdentityHandle:   nullString(identityHandle.String),
-		Email:            nullString(email.String),
-		Status:           enums.RecordStatus(status),
+		Key:              r.key,
+		DisplayName:      r.displayName,
+		TokenHash:        r.storedHash,
+		IdentityProvider: enums.IdentityProvider(r.identityProvider),
+		IdentitySubject:  nullString(r.identitySubject.String),
+		IdentityHandle:   nullString(r.identityHandle.String),
+		Email:            nullString(r.email.String),
+		Status:           enums.RecordStatus(r.status),
 	}
-	if claimedAt.Valid {
-		a.ClaimedAt = nullTime(claimedAt.Time)
+	if r.claimedAt.Valid {
+		a.ClaimedAt = nullTime(r.claimedAt.Time)
 	}
-	if lastSeenAt.Valid {
-		a.LastSeenAt = nullTime(lastSeenAt.Time)
+	if r.lastSeenAt.Valid {
+		a.LastSeenAt = nullTime(r.lastSeenAt.Time)
 	}
-	if a.ID, err = uuid.FromString(id); err != nil {
-		return account_entity.Account{}, ErrUnauthenticated
+	id, err := uuid.FromString(r.id)
+	if err != nil {
+		return account_entity.Account{}, err
 	}
+	a.ID = id
 	return a, nil
 }
 
-// ── the agent's own identity, carried by the connection ──────────────────────
+// ── the client_key override, carried by the connection ───────────────────────
 
 // clientKeyKey is the context key for X-Metiche-Client-Key.
 type clientKeyKey struct{}
@@ -130,23 +242,17 @@ func WithClientKey(ctx context.Context, key string) context.Context {
 
 // ClientKeyFromContext returns the client_key this connection declared, if any.
 //
-// WHY THIS EXISTS. The token identifies the PERSON, deliberately: one
-// credential covers every team you are on and every agent you run. The cost of
-// that choice is that a person with three agents sends three identical-looking
-// requests, and the server cannot tell which agent is calling.
+// SINCE v4 THIS IS AN OVERRIDE PATH, NOT THE MECHANISM. An agent token already
+// says which agent is calling, and for such a token a client_key that names a
+// DIFFERENT agent is refused (RequireAgent). The header matters only for a
+// legacy account token, which names a person who may run several agents.
 //
-// The obvious answer -- make the agent pass client_key -- turned out not to
-// work, because AN AGENT HAS NO WAY TO LEARN ITS OWN client_key. It is chosen
-// by the installer and then thrown away; it is not in the MCP config, the
-// environment, or the repository. Asked for it, a model guesses: "backend",
-// "ui", "codex". Every guess is rejected, and a guess that happened to hit
-// would be worse -- it would file the work under someone else's agent on a
-// board other people are reading.
-//
-// So the connection carries it, the same way it carries the token. The
-// installer knows exactly which agent it is configuring, and writes the header
-// alongside the Authorization one. The agent never has to know its own name,
-// which is the only arrangement that cannot be guessed wrong.
+// History, because it explains why the token had to change: the header was
+// the fix for "an agent cannot learn its own client_key" — the installer chose
+// it and threw it away, and a model asked for it guessed. Then the server log
+// showed that Claude Code drops custom headers from a plugin's .mcp.json, so
+// the header never arrived. Authorization is the one header every MCP client
+// reliably forwards, which is why identity now rides on it.
 //
 // It is NOT a credential and grants nothing on its own: it only selects among
 // agents that already belong to the authenticated account, and an unknown

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -16,27 +17,45 @@ import (
 // board other people read. It was right to refuse, and that is the point: the
 // information genuinely was not available to it.
 //
-// The connection now carries it. These tests run through the same resolver
-// the tools use.
+// v4 removed the failure at its root: the token names the agent, so with agent
+// tokens "several agents and no argument" is not a state that can arise. What
+// is left is the LEGACY path, an account token from before v4, which still
+// names only the person. These tests pin that path through hs.legacyCtx, an
+// account-only context, and the first one also shows the failure is gone for
+// agent tokens.
 func TestIntegrationSeveralAgentsAndNoArgument(t *testing.T) {
 	hs := newHarness(t)
 
 	first := hs.join(t, "Maykel", "claude-1")
-	_ = hs.rejoin(t, first, "Maykel", "codex-1")
+	second := hs.rejoin(t, first, "Maykel", "codex-1")
 
-	base := hs.ctxForToken(t, first.token)
-
-	// The failure as it actually happened: several agents, no client_key.
-	if _, err := hs.h.RequireAgent(base, "", ""); err == nil {
-		t.Fatal("two agents and no way to tell them apart should be an error")
-	} else {
-		// The message has to point at the permanent fix, not just this call.
-		if !strings.Contains(err.Error(), "X-Metiche-Client-Key") {
-			t.Errorf("the error should name the header that fixes this for good, got: %v", err)
+	// With agent tokens there is nothing to disambiguate: each token IS its
+	// agent, with no argument and no header.
+	for _, c := range []struct {
+		ctx  context.Context
+		want string
+	}{{first.ctx, "claude-1"}, {second.ctx, "codex-1"}} {
+		res, err := hs.h.RequireAgent(c.ctx, "", "")
+		if err != nil {
+			t.Fatalf("agent token for %q, no client_key anywhere: %v", c.want, err)
+		}
+		if res.Agent.ClientKey != c.want {
+			t.Fatalf("agent token resolved %q, want %q", res.Agent.ClientKey, c.want)
 		}
 	}
 
-	// With the connection declaring who it is, it simply works.
+	base := hs.legacyCtx(t, first)
+
+	// The failure as it actually happened, on the one kind of token that can
+	// still produce it: several agents, no client_key.
+	if _, err := hs.h.RequireAgent(base, "", ""); err == nil {
+		t.Fatal("two agents and no way to tell them apart should be an error")
+	} else if !strings.Contains(err.Error(), "Re-run the metiche installer") {
+		// The message has to point at the permanent fix, not just this call.
+		t.Errorf("the error should point at the installer, which gives each client its own token, got: %v", err)
+	}
+
+	// With the connection declaring who it is, the legacy path works.
 	for _, want := range []string{"claude-1", "codex-1"} {
 		res, err := hs.h.RequireAgent(WithClientKey(base, want), "", "")
 		if err != nil {
@@ -48,14 +67,14 @@ func TestIntegrationSeveralAgentsAndNoArgument(t *testing.T) {
 	}
 }
 
-// An explicit argument still wins, for a caller deliberately driving several
-// of its own agents over one connection.
+// An explicit argument still wins, for a legacy caller deliberately driving
+// several of its own agents over one connection.
 func TestIntegrationExplicitClientKeyBeatsTheHeader(t *testing.T) {
 	hs := newHarness(t)
 	first := hs.join(t, "Maykel", "claude-1")
 	_ = hs.rejoin(t, first, "Maykel", "codex-1")
 
-	ctx := WithClientKey(hs.ctxForToken(t, first.token), "claude-1")
+	ctx := WithClientKey(hs.legacyCtx(t, first), "claude-1")
 	res, err := hs.h.RequireAgent(ctx, "", "codex-1")
 	if err != nil {
 		t.Fatalf("explicit client_key: %v", err)
@@ -72,19 +91,19 @@ func TestIntegrationUnknownClientKeyHeaderIsRefused(t *testing.T) {
 	hs := newHarness(t)
 	c := hs.join(t, "Maykel", "claude-1")
 
-	ctx := WithClientKey(hs.ctxForToken(t, c.token), "not-an-agent")
+	ctx := WithClientKey(hs.legacyCtx(t, c), "not-an-agent")
 	if _, err := hs.h.RequireAgent(ctx, "", ""); err == nil {
 		t.Fatal("an unknown client_key in the header was accepted; it must be refused")
 	}
 }
 
-// One agent and no header is still fine: the single-agent case must not have
-// been made harder by fixing the multi-agent one.
+// One agent and no header is still fine on the legacy path: the single-agent
+// case must not have been made harder by fixing the multi-agent one.
 func TestIntegrationOneAgentStillNeedsNothing(t *testing.T) {
 	hs := newHarness(t)
 	c := hs.join(t, "Maykel", "only-one")
 
-	res, err := hs.h.RequireAgent(hs.ctxForToken(t, c.token), "", "")
+	res, err := hs.h.RequireAgent(hs.legacyCtx(t, c), "", "")
 	if err != nil {
 		t.Fatalf("one agent, no client_key anywhere: %v", err)
 	}

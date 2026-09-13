@@ -41,15 +41,40 @@ import (
 // credential required to run the server" is a constraint on DEPENDENCIES, not
 // a licence to leave the door open: a team's board is not public.
 //
-// The scheme, end to end, on schema v3:
+// ── WHERE IDENTITY COMES FROM ───────────────────────────────────────────────
+//
+// Identity comes from the bearer credential on the call being served — the
+// Authorization header of THIS request (X-Metiche-Token is accepted as the
+// same credential under a fallback name, for clients that cannot set
+// Authorization) — and from nothing else on the transport.
+//
+//   - Mcp-Session-Id is transport state. The SDK chooses it and a reconnect
+//     regenerates it; it is never consulted for identity.
+//   - The context of the `initialize` request is not identity either: the SDK
+//     reuses it for every later call, which is why authTool re-reads the
+//     header on each one.
+//   - X-Metiche-Client-Key is not identity. It is a selector among a LEGACY
+//     account token's agents, and it is refused when it contradicts an agent
+//     token.
+//
+// The scheme, end to end, on schema v4:
 //
 //   - a PERSON is an `account`. It is created anonymously on first contact —
 //     no email, no signup, no OAuth — and may be claimed later;
-//   - the bearer token is minted from crypto/rand, shown exactly once, and
-//     only sha256(token) is stored, on account.token_hash. A dump of the
-//     database yields nothing anyone can authenticate with;
-//   - an `agent` is one client process belonging to that person, unique on
-//     (account_uuid, client_key), so a restarted agent re-attaches to itself;
+//   - an `agent` is one client install belonging to that person (Claude Code
+//     on this laptop), unique on (account_uuid, client_key), so a restarted
+//     agent re-attaches to itself;
+//   - the bearer token names the AGENT. It is minted from crypto/rand, shown
+//     exactly once, and only sha256(token) is stored, on agent.token_hash. A
+//     dump of the database yields nothing anyone can authenticate with. A
+//     retired agent's token resolves to nobody;
+//   - account.token_hash is the legacy anchor. Accounts from before v4
+//     authenticate with it and name no agent; new accounts carry the hash of a
+//     token that was discarded the moment it was minted, so nothing can
+//     authenticate with it;
+//   - several terminals of one client share that client's token and are
+//     several SESSIONS of one agent. Nothing above the session layer
+//     distinguishes terminals, and nothing needs to;
 //   - a `member` is the JOIN of an account and a team, with revoked_at;
 //   - an `invite` is the credential that admits an account to a team:
 //     time-boxed, use-capped and revocable, replacing the single rotatable
@@ -105,8 +130,9 @@ var ErrUnauthenticated = errors.New(
 // MintToken returns a fresh bearer token and the sha256 hex digest that is the
 // only part of it the server keeps.
 //
-// The digest is 64 hex characters, which is exactly account.token_hash's
-// width — not a coincidence, the column was sized for it.
+// The digest is 64 hex characters, which is exactly agent.token_hash's (and
+// account.token_hash's) width — not a coincidence, the columns were sized for
+// it.
 func MintToken() (token string, hash string, err error) {
 	buf := make([]byte, tokenEntropyBytes)
 	if _, err := rand.Read(buf); err != nil {
@@ -186,18 +212,35 @@ func BearerFromHeader(h string) string {
 // Request context
 // ─────────────────────────────────────────────
 
-type accountCtxKey struct{}
+type identityCtxKey struct{}
 
-// WithAccount puts the authenticated account on the context. Exported so a
-// test can drive a tool handler directly without an HTTP round trip.
-func WithAccount(ctx context.Context, a account_entity.Account) context.Context {
-	return context.WithValue(ctx, accountCtxKey{}, a)
+// WithIdentity puts the identity the token on this call resolved to on the
+// context. Exported so a test can drive a tool handler directly without an
+// HTTP round trip.
+func WithIdentity(ctx context.Context, id Identity) context.Context {
+	return context.WithValue(ctx, identityCtxKey{}, id)
 }
 
-// AccountFromContext returns the account the middleware resolved, if any.
+// IdentityFromContext returns the identity authTool or authMiddleware
+// resolved, if any. Identity.Agent is nil for a legacy account token.
+func IdentityFromContext(ctx context.Context) (Identity, bool) {
+	id, ok := ctx.Value(identityCtxKey{}).(Identity)
+	return id, ok
+}
+
+// WithAccount puts an ACCOUNT-ONLY identity on the context: what a legacy
+// account token resolves to. A thin wrapper over WithIdentity, kept so tests
+// that only need "somebody" still read naturally — and so a test can build the
+// legacy case on purpose.
+func WithAccount(ctx context.Context, a account_entity.Account) context.Context {
+	return WithIdentity(ctx, Identity{Account: a})
+}
+
+// AccountFromContext returns the account behind the resolved identity, if any
+// — the person, whether the token named one of their agents or only them.
 func AccountFromContext(ctx context.Context) (account_entity.Account, bool) {
-	a, ok := ctx.Value(accountCtxKey{}).(account_entity.Account)
-	return a, ok
+	id, ok := IdentityFromContext(ctx)
+	return id.Account, ok
 }
 
 // AgentFromContext is the v1 spelling, kept because health.go asks it the
@@ -251,53 +294,45 @@ func (h *Handler) requireAccount(ctx context.Context) (account_entity.Account, e
 	return a, nil
 }
 
-// resolveToken turns a presented token into its ACCOUNT.
+// resolveToken turns a presented token into the Identity it names: an agent
+// and its account, or (legacy) an account alone.
 //
-// The lookup is by hash — the hash is the stored value, so it is the only
-// thing we can index on — and the match is then re-checked in constant time.
-// The SQL equality is not the security boundary; VerifyToken is.
+// One implementation, deliberately: this delegates to IdentityByToken, which
+// app/authz reaches through AccountByToken. Two copies of a credential check
+// is how one of them quietly loses its VerifyToken call — or its retired-agent
+// refusal — during some later edit.
 //
-// Raw SQL because account.token_hash has no generated fetch-by-index: it is
-// not a modelled index in nuzur, and adding one is a schema change that
-// belongs in nuzur rather than in Go. The fix when the table stops being
-// small is an index in the schema, not a cache here that would outlive a
-// revocation.
-func (h *Handler) resolveToken(ctx context.Context, token string) (account_entity.Account, error) {
-	// One implementation, deliberately. This used to be a second copy of the
-	// SELECT in export_authz.go, byte-identical to it. Two copies of a
-	// credential check is how one of them quietly loses its VerifyToken call
-	// during some later edit and starts trusting a hash match on its own.
-	//
-	// AccountByToken takes a *sql.DB rather than hanging off the Handler,
-	// because that is all the lookup touches and it lets app/authz — the gate
-	// in front of the board — answer "whose token is this?" exactly the way
-	// the MCP surface does, without constructing a Handler.
-	//
-	// Every failure still collapses to the single opaque ErrUnauthenticated,
-	// and account.Status is still NOT checked here: "who is this" and "are
-	// they still active" are two questions, and each caller answers the
-	// second for itself.
-	return AccountByToken(ctx, h.core.DB(), token)
+// Every failure collapses to the single opaque ErrUnauthenticated, including
+// a Handler with no core: a handler built without a database (the tool-surface
+// tests build one) must refuse a bearer token, not dereference nil on it.
+// account.Status is NOT checked here; requireAccount does that.
+func (h *Handler) resolveToken(ctx context.Context, token string) (Identity, error) {
+	if h == nil || h.core == nil {
+		return Identity{}, ErrUnauthenticated
+	}
+	return IdentityByToken(ctx, h.core.DB(), token)
 }
 
-// mintAccount creates an anonymous person and hands back their one-time token.
+// mintAccount creates an anonymous person.
 //
 // THIS IS THE WHOLE SIGNUP. There is no email, no password and no OAuth: a
-// coding agent's first contact with metiche mints an identity, gets a token,
-// and is a person from then on. account.identity_provider stays `none` until
-// somebody claims the account, which is a later, optional step — the point of
-// splitting `account` out of `agent` in v3 is that the same person can be on
-// several teams with one credential, not that they must sign up.
+// coding agent's first contact with metiche mints an identity and is a person
+// from then on. account.identity_provider stays `none` until somebody claims
+// the account, which is a later, optional step.
 //
-// The token is returned once, here, and only its sha256 is stored.
-func (h *Handler) mintAccount(ctx context.Context, displayName string) (account_entity.Account, string, error) {
-	token, hash, err := MintToken()
+// NO TOKEN COMES BACK. Since v4 the credential belongs to the agent, and
+// joinAs mints that. account.token_hash is NOT NULL, so the account still gets
+// a hash — of a token that is generated here and discarded on the next line.
+// Nobody ever held the plaintext, so nothing can authenticate with it; it is a
+// legacy anchor column, not a second credential.
+func (h *Handler) mintAccount(ctx context.Context, displayName string) (account_entity.Account, error) {
+	_, hash, err := MintToken()
 	if err != nil {
-		return account_entity.Account{}, "", err
+		return account_entity.Account{}, err
 	}
 	id, err := uuid.NewV4()
 	if err != nil {
-		return account_entity.Account{}, "", err
+		return account_entity.Account{}, err
 	}
 	name := truncate(displayName, 120)
 	if name == "" {
@@ -315,9 +350,9 @@ func (h *Handler) mintAccount(ctx context.Context, displayName string) (account_
 	}
 	if _, err := h.core.Account().Insert(ctx,
 		account_types.UpsertRequest{Account: acct}, accountmod.WithSkipCache()); err != nil {
-		return account_entity.Account{}, "", retryable(err, "creating your metiche account")
+		return account_entity.Account{}, retryable(err, "creating your metiche account")
 	}
-	return acct, token, nil
+	return acct, nil
 }
 
 // accountKey is the account's stable public handle: account.key is
@@ -431,6 +466,13 @@ type Resolved struct {
 // both the ownership check v1 had on sessionByKey and the disambiguator for
 // the case v3 introduced — session keys are short and per-team (S-7), and one
 // person can now be on two teams that each have an S-7.
+//
+// v4 narrows it one step further. When the token names an AGENT, the session
+// must be that agent's own: one of a person's clients may not end, heartbeat or
+// claim through another client's session. Two terminals of the SAME client
+// share a token and can still reach each other's sessions — by design, since
+// nothing above the session layer tells terminals apart. A legacy account
+// token names no agent and keeps the account-wide reach it always had.
 func (h *Handler) RequireSession(ctx context.Context, sessionKey string) (Resolved, error) {
 	acct, err := h.requireAccount(ctx)
 	if err != nil {
@@ -500,6 +542,11 @@ func (h *Handler) RequireSession(ctx context.Context, sessionKey string) (Resolv
 	sess, err := h.sessionByID(ctx, mine[0].session)
 	if err != nil {
 		return Resolved{}, err
+	}
+	if id, ok := IdentityFromContext(ctx); ok && id.Agent != nil && sess.AgentUUID != id.Agent.ID {
+		return Resolved{}, fmt.Errorf(
+			"session %q belongs to another of your agents, not the one this connection's token names; "+
+				"each client acts only on its own sessions — call start_session for this one", key)
 	}
 	ag, err := h.agentByID(ctx, sess.AgentUUID)
 	if err != nil {
@@ -588,26 +635,48 @@ func (h *Handler) RequireTeamByID(ctx context.Context, teamUUID uuid.UUID) (Reso
 
 // RequireAgent is RequireTeam plus "which of my running agents is calling".
 //
-// v1 never had to ask: the token WAS the agent. v3's token is the person, and
-// a person can have a backend agent, a ui agent and a tests agent all alive at
-// once, so the caller identifies itself with the same stable client_key it
-// joined with. An empty client_key is allowed when the account has exactly one
-// agent, for the same reason an empty team_slug is.
+// v4: when the token names an agent, that is the answer. No argument, no
+// header — the Authorization header already said it. The agent is re-read so
+// a retirement since the token resolved is honoured, and a client_key (argument
+// or header) naming a DIFFERENT agent is refused rather than obeyed: a token
+// for one client must not be able to act as another.
+//
+// A legacy account token names only the person, so the old chain still
+// applies: explicit client_key argument, then the X-Metiche-Client-Key header,
+// then "the account has exactly one active agent", then an error that points
+// at the permanent fix.
 func (h *Handler) RequireAgent(ctx context.Context, teamRef, clientKey string) (Resolved, error) {
 	res, err := h.RequireTeam(ctx, teamRef)
 	if err != nil {
 		return Resolved{}, err
 	}
 
-	// The connection can name the agent, and that is strictly better than the
-	// argument. See ClientKeyFromContext: the installer knows which agent it
-	// is configuring and writes X-Metiche-Client-Key into the client's own
-	// config, so the agent identifies itself the same way it authenticates --
-	// by the connection -- rather than by remembering a string it was never
-	// told. An explicit argument still wins, for a caller that genuinely
-	// manages several agents over one connection.
+	// An explicit argument wins over the header, for a legacy caller that
+	// genuinely manages several agents over one connection.
 	if clientKey == "" {
 		clientKey = ClientKeyFromContext(ctx)
+	}
+
+	if id, ok := IdentityFromContext(ctx); ok && id.Agent != nil {
+		ag, err := h.agentByID(ctx, id.Agent.ID)
+		if err != nil {
+			return Resolved{}, err
+		}
+		if ag.AccountUUID != res.Account.ID {
+			// Unreachable while IdentityByToken checks the join, and refused
+			// opaquely if that ever stops being true.
+			return Resolved{}, ErrUnauthenticated
+		}
+		if ag.Status != enums.AGENT_STATUS_ACTIVE {
+			return Resolved{}, errors.New("this agent has been retired; call join_team again to reconnect it")
+		}
+		if key := truncate(clientKey, 120); key != "" && key != ag.ClientKey {
+			return Resolved{}, fmt.Errorf(
+				"this connection is agent %q (client_key %q), and its token cannot act as client_key %q. "+
+					"Omit client_key: your token already says which agent you are", ag.Key, ag.ClientKey, key)
+		}
+		res.Agent = ag
+		return res, nil
 	}
 
 	if key := truncate(clientKey, 120); key != "" {
@@ -640,9 +709,9 @@ func (h *Handler) RequireAgent(ctx context.Context, teamRef, clientKey string) (
 		return res, nil
 	default:
 		return Resolved{}, fmt.Errorf(
-			"you have %d active agents and this connection does not say which one you are. "+
-				"Pass client_key, or better: re-run the metiche installer so your MCP config "+
-				"sends an X-Metiche-Client-Key header and you never have to know", len(agents))
+			"you have %d active agents and this token names none of them: it identifies the person, from before "+
+				"per-agent tokens. Re-run the metiche installer so each client gets its own token and never has to "+
+				"say which agent it is; until then, pass client_key", len(agents))
 	}
 }
 
@@ -772,7 +841,7 @@ func (h *Handler) sessionByID(ctx context.Context, id uuid.UUID) (session_entity
 // ─────────────────────────────────────────────
 
 // authMiddleware resolves the bearer token on every MCP request and puts the
-// ACCOUNT on the request context.
+// Identity it names on the request context.
 //
 // It RESOLVES rather than rejects when no token is present, because the tools
 // that hand out tokens live on this endpoint, and one tool exists to answer
@@ -803,7 +872,7 @@ func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		acct, err := h.resolveToken(ctx, token)
+		id, err := h.resolveToken(ctx, token)
 		if err != nil {
 			// The token itself is never logged — only that a rejection
 			// happened, and from where.
@@ -816,6 +885,6 @@ func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 			_, _ = w.Write([]byte(`{"error":"unauthorized","detail":"that metiche token is not valid; call join_team with your team's join code to get a new one"}`))
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(WithAccount(ctx, acct)))
+		next.ServeHTTP(w, r.WithContext(WithIdentity(ctx, id)))
 	})
 }

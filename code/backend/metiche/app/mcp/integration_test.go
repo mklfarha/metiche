@@ -217,6 +217,9 @@ type caller struct {
 	account account_entity.Account
 	member  member_entity.Member
 	agent   agent_entity.Agent
+	// joined is the join_team response that produced this caller, so a test
+	// can assert on token_kept and friends.
+	joined JoinTeamResult
 }
 
 // join runs the real join_team tool as a BRAND NEW anonymous person and
@@ -230,11 +233,13 @@ func (hs *harness) join(t *testing.T, memberName, clientKey string) *caller {
 	return hs.joinAsCtx(t, context.Background(), "", memberName, clientKey)
 }
 
-// rejoin re-runs join_team carrying an existing person's token, which is how
-// a restarted agent comes back as itself.
+// rejoin re-runs join_team carrying an existing caller's token, resolved the
+// way authTool resolves it. With the same client_key that is a restarted agent
+// coming back as itself (the token is kept); with a different one it is the
+// same person attaching another client, which gets a token of its own.
 func (hs *harness) rejoin(t *testing.T, prev *caller, memberName, clientKey string) *caller {
 	t.Helper()
-	return hs.joinAsCtx(t, WithAccount(context.Background(), prev.account), prev.token, memberName, clientKey)
+	return hs.joinAsCtx(t, hs.ctxForToken(t, prev.token), prev.token, memberName, clientKey)
 }
 
 func (hs *harness) joinAsCtx(t *testing.T, base context.Context, carried, memberName, clientKey string) *caller {
@@ -250,52 +255,83 @@ func (hs *harness) joinAsCtx(t *testing.T, base context.Context, carried, member
 	}
 	var out JoinTeamResult
 	decodeResult(t, res, &out)
+	if out.TokenScope != "agent" {
+		t.Fatalf("token_scope = %q, want agent", out.TokenScope)
+	}
 
 	token := out.Token
 	switch {
 	case carried == "" && token == "":
 		t.Fatal("a first contact must mint a token")
-	case carried != "" && token != "":
-		t.Fatal("join_team minted a second token for a caller that already had one")
-	case token == "":
+	case out.TokenKept && token != "":
+		t.Fatal("join_team reported token_kept and still returned a token")
+	case out.TokenKept:
 		token = carried
+	case token == "":
+		t.Fatal("join_team neither kept the carried token nor minted one")
+	case token == carried:
+		t.Fatal("join_team handed back the carried token as if it were new")
 	}
-	return hs.callerFor(t, token, out.AgentKey)
+	c := hs.callerFor(t, token, out.AgentKey)
+	c.joined = out
+	return c
 }
 
 // ctxForToken is the cheap half of callerFor: an authenticated context and
-// nothing else, for the calls that only need to be somebody.
+// nothing else, carrying exactly the Identity authTool would put there.
 func (hs *harness) ctxForToken(t *testing.T, token string) context.Context {
 	t.Helper()
-	acct, err := hs.h.resolveToken(context.Background(), token)
+	id, err := hs.h.resolveToken(context.Background(), token)
 	if err != nil {
 		t.Fatalf("the token does not resolve: %v", err)
 	}
-	return WithAccount(context.Background(), acct)
+	return WithIdentity(context.Background(), id)
+}
+
+// legacyCtx is the world before v4: an ACCOUNT-ONLY identity, which is what a
+// legacy account token resolves to. It is how the client_key chain is still
+// exercised now that an agent token makes that chain unnecessary.
+func (hs *harness) legacyCtx(t *testing.T, c *caller) context.Context {
+	t.Helper()
+	return WithAccount(context.Background(), c.account)
 }
 
 // callerFor resolves a token all the way to the three identities behind it.
 func (hs *harness) callerFor(t *testing.T, token, agentKey string) *caller {
 	t.Helper()
-	acct, err := hs.h.resolveToken(context.Background(), token)
+	id, err := hs.h.resolveToken(context.Background(), token)
 	if err != nil {
 		t.Fatalf("the token does not resolve: %v", err)
 	}
-	ctx := WithAccount(context.Background(), acct)
+	ctx := WithIdentity(context.Background(), id)
+	acct := id.Account
 
 	member, found, err := hs.h.memberByAccount(ctx, nil, acct.ID, hs.teamID)
 	if err != nil || !found {
 		t.Fatalf("no membership for the account that just joined: found=%v err=%v", found, err)
 	}
-	agents, err := hs.h.activeAgents(ctx, acct.ID)
-	if err != nil {
-		t.Fatalf("listing the account's agents: %v", err)
-	}
+
 	var ag agent_entity.Agent
-	for _, a := range agents {
-		if agentKey == "" || a.Key == agentKey {
-			ag = a
-			break
+	if id.Agent != nil {
+		// An agent token names its agent; the harness must not second-guess it
+		// by picking one out of the account's list.
+		ag, err = hs.h.agentByID(ctx, id.Agent.ID)
+		if err != nil {
+			t.Fatalf("reading the agent the token names: %v", err)
+		}
+		if agentKey != "" && ag.Key != agentKey {
+			t.Fatalf("the token names agent %q but join_team answered agent %q", ag.Key, agentKey)
+		}
+	} else {
+		agents, err := hs.h.activeAgents(ctx, acct.ID)
+		if err != nil {
+			t.Fatalf("listing the account's agents: %v", err)
+		}
+		for _, a := range agents {
+			if agentKey == "" || a.Key == agentKey {
+				ag = a
+				break
+			}
 		}
 	}
 	if ag.ID.IsNil() {
@@ -408,10 +444,54 @@ func TestIntegrationIdempotentReplay(t *testing.T) {
 
 // TestIntegrationJoinTeamNeverPersistsAToken is the security half of the same
 // mechanism. A replayable response is a persisted response, so join_team
-// deliberately opts out — and this proves the opt-out actually holds.
+// deliberately opts out — and this proves the opt-out actually holds, and that
+// the only stored form of the token is its hash, on the AGENT row.
+//
+// Inverted for v4. Under v3 this asserted that agent.token_hash did NOT exist,
+// so that a regeneration bringing it back would be caught. v4 brought it back
+// on purpose: the token names the agent. What must still hold is everything
+// that made the old assertion worth having — only a digest is stored, the
+// digest is of THIS token, the account does not carry the same credential, and
+// neither the plaintext nor its digest ever reaches the event log.
 func TestIntegrationJoinTeamNeverPersistsAToken(t *testing.T) {
 	hs := newHarness(t)
 	ana := hs.join(t, "Ana", "client-a")
+	if !strings.HasPrefix(ana.token, tokenPrefix) {
+		t.Fatalf("join_team returned a token without the %q prefix", tokenPrefix)
+	}
+
+	var agentHash sql.NullString
+	if err := hs.core.DB().QueryRow("SELECT `token_hash` FROM `agent` WHERE `id` = ?", ana.agent.ID.String()).
+		Scan(&agentHash); err != nil {
+		t.Fatalf("reading agent.token_hash (is deploy/sql/2026-09-agent-token-hash.sql applied?): %v", err)
+	}
+	if !agentHash.Valid {
+		t.Fatal("agent.token_hash is NULL for an agent that joined on v4")
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(agentHash.String) {
+		t.Errorf("agent.token_hash = %q, want 64 lowercase hex characters", agentHash.String)
+	}
+	if agentHash.String != HashToken(ana.token) {
+		t.Error("agent.token_hash is not HashToken(the token join_team returned)")
+	}
+	if strings.Contains(agentHash.String, tokenPrefix) || strings.Contains(agentHash.String, ana.token) {
+		t.Error("agent.token_hash carries the plaintext token")
+	}
+
+	var accountHash string
+	if err := hs.core.DB().QueryRow("SELECT `token_hash` FROM `account` WHERE `id` = ?", ana.account.ID.String()).
+		Scan(&accountHash); err != nil {
+		t.Fatal(err)
+	}
+	if accountHash == agentHash.String {
+		t.Error("account.token_hash equals the agent's; the account must carry an unusable hash, not the agent's credential")
+	}
+	if len(accountHash) != 64 || strings.HasPrefix(accountHash, tokenPrefix) {
+		t.Errorf("account.token_hash = %q, want a 64-character sha256 digest", accountHash)
+	}
+
+	// Neither the plaintext nor its digest, in any column the event log has.
+	assertNoSecretsInEventLog(t, hs, ana.token, agentHash.String)
 
 	rows, err := hs.core.DB().Query("SELECT COALESCE(`response_snapshot`, ''), COALESCE(`summary`, ''), COALESCE(CAST(`payload` AS CHAR), '') FROM `team_event`")
 	if err != nil {
@@ -430,40 +510,33 @@ func TestIntegrationJoinTeamNeverPersistsAToken(t *testing.T) {
 		}
 	}
 
-	// v3 moved the hash off the agent and onto the ACCOUNT, and it is still
-	// only ever a hash. The agent table no longer has the column at all,
-	// which is asserted here so a regeneration that brought it back would be
-	// caught rather than quietly re-splitting the credential.
-	var stored string
-	if err := hs.core.DB().QueryRow("SELECT `token_hash` FROM `account` WHERE `id` = ?", ana.account.ID.String()).Scan(&stored); err != nil {
+	if err := rows.Err(); err != nil {
 		t.Fatal(err)
-	}
-	if len(stored) != 64 || strings.HasPrefix(stored, tokenPrefix) {
-		t.Errorf("account.token_hash = %q, want a 64-character sha256 digest", stored)
-	}
-	var cols int
-	if err := hs.core.DB().QueryRow(
-		"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() " +
-			"AND table_name = 'agent' AND column_name = 'token_hash'").Scan(&cols); err != nil {
-		t.Fatal(err)
-	}
-	if cols != 0 {
-		t.Error("agent.token_hash is back; the token belongs to the account in v3")
 	}
 }
 
 // TestIntegrationRejoinIsSameAgent: uq_agent_account_client is what keeps a
 // restarted agent from appearing twice on the board.
 //
-// v3 changed both halves of this. The uniqueness moved from
-// (member, client_key) to (account, client_key), and the token no longer
-// rotates on a re-join — it lives on the ACCOUNT now, one per person, and
-// rotating it because one of that person's three agents restarted would log
-// the other two out.
+// v4: the token lives on the AGENT, and a re-join that carries that agent's
+// own token KEEPS it — token_kept, no token in the response, the stored hash
+// untouched. A restart must never log the client out.
 func TestIntegrationRejoinIsSameAgent(t *testing.T) {
 	hs := newHarness(t)
 	first := hs.join(t, "Ana", "client-a")
+	hashBefore := agentTokenHash(t, hs, first.agent.ID)
 	second := hs.rejoin(t, first, "Ana", "client-a")
+
+	if !second.joined.TokenKept || second.joined.Token != "" {
+		t.Errorf("a re-join carrying the agent's own token must keep it: token_kept=%v, returned a token=%v",
+			second.joined.TokenKept, second.joined.Token != "")
+	}
+	if hashAfter := agentTokenHash(t, hs, first.agent.ID); hashAfter != hashBefore || hashAfter == "" {
+		t.Errorf("re-joining with the agent's own token changed agent.token_hash (%q -> %q)", hashBefore, hashAfter)
+	}
+	if second.token != first.token {
+		t.Error("the harness resolved the kept re-join to a different token")
+	}
 
 	if first.agent.ID != second.agent.ID {
 		t.Errorf("re-joining created a second agent: %s then %s", first.agent.ID, second.agent.ID)
@@ -489,7 +562,7 @@ func TestIntegrationRejoinIsSameAgent(t *testing.T) {
 		t.Errorf("re-joining invalidated the caller's own token: %v", err)
 	}
 	if first.account.TokenHash != second.account.TokenHash {
-		t.Error("re-joining rotated the account token; that would log the person's other agents out")
+		t.Error("re-joining changed the account's token hash")
 	}
 }
 
