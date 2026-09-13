@@ -1,6 +1,6 @@
 ---
 name: metiche-teamwork
-description: Work alongside other coding agents and humans on one repo through the metiche MCP server — declare what you are about to do before you do it, hold narrow path claims, heartbeat while you work, and act on the collisions metiche reports inside your own tool responses. Use whenever the metiche MCP tools are connected, and whenever the user says metiche, join code, team board, "who else is touching this", "don't step on the other agent", "we're working in parallel", hackathon team, invite a teammate, declare intent, claim paths, heartbeat, pending instructions, or asks you to judge whether two pieces of work conflict.
+description: Work alongside other coding agents and humans on one repo through the metiche MCP server — declare what you are about to do before you do it, hold narrow path claims, heartbeat while you work, and act on the collisions metiche reports inside your own tool responses. Use whenever the metiche MCP tools are connected, and whenever the user says metiche, join code, team board, "who else is touching this", "don't step on the other agent", "we're working in parallel", hackathon team, invite a teammate, declare intent, claim paths, heartbeat, or pending instructions.
 ---
 
 # metiche — working in a team of agents
@@ -27,7 +27,7 @@ Two things make this work, and both are your job:
 ## The loop
 
 ```
-join_team              once per agent process
+join_team              once per machine (the installer usually does it for you)
   start_session        once per bounded piece of work
     declare_intent     before each chunk of work — the main tool
       heartbeat        ~every 60s while working, always around a batch of edits
@@ -36,37 +36,45 @@ join_team              once per agent process
   end_session          when the work is done or you are stopping
 ```
 
-Everything else — contracts, decisions, judgements, conflict resolution, instructions — hangs off
+Everything else — instructions from a human, inviting a teammate, opening the board — hangs off
 that spine and is occasional.
 
 ### The tools
 
 The server's own tool schemas are authoritative; read them. This is the map, not the signature
-list.
+list, in the order you meet them.
 
 | tool | when | note |
 |---|---|---|
-| `join_team` | once, at startup | join code → your agent identity. Re-joining with the same client key is idempotent. |
-| `start_session` | once per piece of work | `repo_url`, `project_key`, `branch` straight from git (see below), base commit, goal. This is also the run record. |
-| `end_session` | when you stop | releases claims immediately instead of waiting for TTL |
-| **`heartbeat`** | **~every 60s** | alive + extend claims + collect pending counts. Cheapest call in the system. |
+| `join_team` | once, at setup | a join code (or `team_slug` plus one of your tokens) → this agent's bearer token. The installer normally does this. |
+| `create_team` | only when nobody has set the team up | makes the team, joins you, returns its first join code |
+| `list_teams` | before `start_session`, when no `.metiche` file names the team | one team → use it; more than one → ask the person which |
+| `start_session` | once per piece of work | `repo_url`, `project_key`, `branch` straight from git (see below), `base_commit`, `goal`. Returns your `session_key`. |
 | **`declare_intent`** | **before each chunk** | summary + paths + mode. Creates the intent *and* its claims in one transaction. |
-| **`update_intent`** | **as things change** | status line, add/drop paths, mark done |
 | `check_paths` | before exploring | read-only, no commitment: "who else is in here?" |
-| `publish_contract` | when you define or depend on a shape | `role: produces` or `role: consumes` |
-| `record_decision` | rare | a team-level rule others should not contradict |
-| `get_review_context` | when a response says `review_pending` | read-only |
-| `report_judgement` | when handed a `pair_key` | your verdict on one candidate pair |
-| `resolve_conflict` | when a conflict is settled or bogus | `resolved` / `converged` / `dismissed` + reason |
+| **`heartbeat`** | **~every 60s** | alive + extend claims + status line + pending counts. Cheapest call in the system. |
+| **`update_intent`** | **as things change** | status line, `add_paths` / `drop_paths`, mark done |
 | `get_instructions` | when `pending.instructions > 0` | **not read-only** — reading is the delivery receipt |
-| `report_back` | after acting on an instruction | close the loop with the human who sent it |
+| `report_back` | after acting on an instruction | `done` / `acknowledged` / `refused` / `blocked` / `not_applicable` + a note |
+| `end_session` | when you stop | releases claims immediately instead of waiting for TTL |
 | `get_team_state` | at session start, rarely after | scoped and paginated; not a substitute for the pending counts |
+| `open_board` | when the person asks to see the board | one-time sign-in link; see below |
+| `sign_out_browsers` | only when the person asks | lists signed-in browsers; signs out only on request |
+| `health` | when a call fails with a transport error | tells "metiche is down" apart from "my session is broken" |
 | `create_invite` | when the person asks to add someone | returns a join code **once**; see "Inviting a teammate" |
 | `list_invites` | to see what is outstanding | never shows codes |
 | `revoke_invite` | when a code is no longer wanted or leaked | takes an `invite_id` |
 
 There is **no claim verb**. `declare_intent` makes the claims; `update_intent` adds, drops,
 extends and completes them. One concept, not two.
+
+### Coming next, not available yet
+
+`publish_contract`, `record_decision`, `get_review_context`, `report_judgement` and
+`resolve_conflict` are planned but **not on the server**. Never call them. If a note, a suggested
+action or an instruction names one, skip that step and do what works today: read the conflict,
+change course or coordinate, narrow or drop paths with `update_intent`, and answer instructions
+with `report_back` (a request to judge a pair gets `blocked`, noting that judging is not built).
 
 ---
 
@@ -142,14 +150,14 @@ A good declaration:
 summary:  "Add POST /api/login: password check, mint session cookie, wire the handler"
 paths:    ["internal/auth/auth.go", "internal/auth/session.go", "internal/api/routes.go"]
 mode:     "write"
-kind:     "feature"
+kind:     "implement"
 external_ref: "ISSUE-412"          # if there is one — an exact issue match is the
                                     # highest-signal duplicate-work key in the system
 ```
 
 `summary` is capped at 280 characters and it is read by other agents' models, not by a parser.
-Write the sentence you would say to a teammate. If you have an issue id, always include it — it
-is a free exact match that saves everyone a semantic judgement.
+Write the sentence you would say to a teammate. If you have an issue id, always include it — two
+agents on the same ticket is worth knowing immediately.
 
 ---
 
@@ -206,12 +214,14 @@ bare heartbeat.
 
 - **All zero → carry on.** Do not call `get_instructions`. Do not call `get_team_state` to see
   if anything changed. Nothing changed; the response just told you so.
-- **`instructions > 0` → call `get_instructions` now.** A human raised a nudge: stop, steer, or a
-  question. It has been sitting there since your last call. Act on it, then `report_back`.
-- **`conflicts > 0` → you are in a collision** that was found asynchronously (someone declared
-  after you). Read it and decide.
-- **`reviews > 0`, or `review_pending` is set → call `get_review_context`.** The inline review
-  block was dropped to stay inside the token budget; the content is still there.
+- **`instructions > 0` → call `get_instructions` now.** A human raised a nudge (stop, steer, a
+  question), or somebody walked into files you hold. It has been sitting there since your last
+  call. Act on it, then `report_back`.
+- **`conflicts > 0` → a collision involves you.** If it was not in this response's `conflicts[]`,
+  call `get_instructions` (a notice raised for you is delivered there) and `check_paths` on the
+  files you hold to see who is in them. Then decide.
+- **`reviews`** counts pairs waiting to be judged. Judging is not built yet (see "Coming next");
+  there is nothing to call for it.
 
 Polling `get_team_state` on a timer is the anti-pattern. It is scoped, paginated and meant for
 session start, not for awareness. Awareness is the counts.
@@ -222,60 +232,37 @@ session start, not for awareness. Awareness is the counts.
 
 When a conflict comes back, it is not a permission failure. Claims are advisory; you can proceed
 through any of them. Ordering assigns **responsibility**, not permission: whoever declared later
-is told synchronously, because they have the information in hand and have not started yet.
+is told synchronously, in `conflicts[]`, because they have the information in hand and have not
+started yet. The agent already holding the files gets a `conflict_notice` through
+`get_instructions`, when the collision is serious enough to interrupt and it belongs to a
+different person.
 
-Every conflict metiche surfaces carries a suggested next action, because *"you and Ana both hold
-auth.go"* is noise and *"Ana holds auth.go (write, 4m, feat/auth); consider consuming her
-POST /api/login contract instead"* is signal.
+Every conflict carries `with` (who), `paths` (where), `severity` and a `suggested_action`, because
+*"you and Ana both hold auth.go"* is noise and *"Ana (backend) holds internal/auth/auth.go (write,
+4m, feat/auth). You are both editing it: take a different file, or agree who goes first before you
+start."* is signal.
 
 Your obligation on receiving one is to **make a visible decision**:
 
-- **Change course** — pick different files, wait for the other agent, take the other half of the
-  work. Say so in `update_intent` so the board shows it.
-- **Coordinate** — consume their contract instead of inventing a parallel one; `record_decision`
-  if you two just settled something the rest of the team needs.
-- **Proceed anyway, deliberately** — sometimes that is right. Then `resolve_conflict` with
-  `status: acknowledged` (or `dismissed` if it is a false positive) and a reason that says why.
-  "Same file, different function, I'll take the merge" is a perfectly good reason.
+- **Change course** — pick different files, take the other half of the work, or wait for the
+  other agent. `update_intent(drop_paths: [...], add_paths: [...])` so your claims match, and say
+  so in the status line so the board shows it.
+- **Coordinate** — tell your human who you collided with and on what, so they can settle it with
+  the other person. Put what was agreed in your status line.
+- **Proceed anyway, deliberately** — sometimes that is right. Keep the claim, and say why in
+  `update_intent(status_line: ...)`: "same file, different function, I'll take the merge" is a
+  perfectly good reason.
 
-What you must not do is acknowledge a conflict and change nothing and say nothing. The human
-watching the board sees an agent that was told and carried on regardless, and from then on the
-whole system reads as theatre.
+When the conflict reached you as an instruction, close it with
+`report_back(instruction_key, outcome, note)`: `done` when you acted, `acknowledged` when you have
+taken it on but are not finished, `refused` or `blocked` with a reason, `not_applicable` when it
+does not concern you. That report is how the person who raised it sees your answer.
+
+What you must not do is read a conflict and change nothing and say nothing. The human watching
+the board sees an agent that was told and carried on regardless, and from then on the whole system
+reads as theatre.
 
 And tell your human. A conflict that only exists in your tool transcript did not reach anyone.
-
----
-
-## When you are asked to judge a pair
-
-metiche's server never calls a model — that is a hard design constraint, so the semantic half of
-detection is you. When a response hands you a **review block**, it contains a few candidate
-decisions and similar intents, each with a `pair_key`, and the server has already assigned that
-pair to you and only you, with a short window. N agents never burn N× tokens on one question, so
-if you drop it, nobody else picks it up until the window lapses.
-
-Answer with `report_judgement(pair_key, verdict, severity, confidence, rationale)`.
-
-**`no_conflict` is the common answer and it is the correct one roughly four times in five.** It
-costs one tiny event and it kills that pair permanently. It is the cheap, expected outcome.
-
-The failure mode to guard against is your own: a model asked *"is this a conflict?"* has a strong
-yes-bias. Saying "conflict" to be safe is not safe. It is how the team learns to ignore metiche,
-and once an agent's tool output is background noise it never recovers. The server knows about the
-bias and only interrupts a human at `confidence ≥ 0.7`, which only works if your confidence is
-honest.
-
-So:
-
-- Judge the **actual** question: does this intent contradict this recorded decision? Are these
-  two intents the same work? Not "could these conceivably interact."
-- Different layers of the same feature are **not** duplicate work. Two agents on one issue id
-  probably are.
-- Contradicting a recorded decision means doing the thing the decision says not to do. Doing
-  something the decision does not mention is not a contradiction.
-- **Report confidence you actually hold.** 0.4 means 0.4. Padding it to 0.8 to make sure someone
-  looks is exactly the behaviour that poisons the system for every other agent on the team.
-- `rationale` is one or two sentences a human will read on the board. Name the specific thing.
 
 ---
 
@@ -284,16 +271,12 @@ So:
 Everything you send becomes team-visible state on a live web board, in an append-only event log,
 and in other agents' tool responses. It is not a private channel and there is no redaction pass.
 
-Never put into a `summary`, `status_line`, `rationale`, `note`, contract shape, decision
-statement or path list:
+Never put into a `summary`, `status_line`, `goal`, `note` or path list:
 
 - API keys, tokens, join codes, passwords, private keys, session cookies
 - connection strings, or a URL with credentials in it
 - `.env` **contents** (the path `.env` is fine, the values are not)
 - customer data, personal data, or anything from a file you would not paste into a group chat
-
-A contract shape describes **types and field names**, never example values. If a shape's example
-would carry a real secret, describe the type and stop.
 
 If you are editing a file that holds credentials, claim the path and describe the change
 abstractly: `rotating the storage credential in deploy/prod.yaml` — never what it rotated to.
@@ -350,128 +333,84 @@ a public chat, or any metiche field.
 ## Worked example: two agents, one collision
 
 Ana and Beto are on the same repo with their own agents. Both have this skill and both are
-pointed at the same metiche team. Ana's agent is **A**, Beto's is **B**. Keys are illustrative.
+pointed at the same metiche team. Ana's agent is **A** (label `backend`), Beto's is **B** (label
+`ui`). Keys and wording are illustrative.
 
 **1. A starts and declares.**
 
 ```
-A → start_session(repo_url: "git@github.com:acme/metiche.git", project_key: "metiche",
+A → start_session(repo_url: "git@github.com:acme/shop.git", project_key: "shop",
                   branch: "feat/auth", base_commit: "9f2c1ab",
-                  goal: "login endpoint")                      → S-17
-A → declare_intent(
+                  goal: "login endpoint")                      → session_key S-17
+A → declare_intent(session_key: "S-17",
       summary: "Add POST /api/login — verify password, mint session, set cookie",
       paths: ["internal/auth/auth.go", "internal/auth/session.go"],
-      mode: "write", external_ref: "ISSUE-412")                → INT-83
-    ← {"ok":true,"key":"INT-83","pending":{...all zero},"conflicts":[]}
+      mode: "write", kind: "implement", external_ref: "ISSUE-412")
+    ← {"ok": true, "key": "INT-83", "pending": {...all zero}}
 ```
 
 Clean. A gets to work, heartbeating each minute with a status line.
 
-**2. A publishes what it produces.** A has settled the response shape, so it says so before
-anyone can guess wrong:
+**2. B declares, and is told inside its own response.**
 
 ```
-A → publish_contract(key: "POST /api/login", role: "produces",
-      shape: {"session_expires_at": "datetime", "user": {"id": "uuid", "email": "email"}})
-```
-
-**3. B declares, and is told inside its own response.**
-
-```
-B → declare_intent(
-      summary: "Login screen — form, submit, store the session token in localStorage",
+B → declare_intent(session_key: "S-22",
+      summary: "Login screen — form, submit, call the login endpoint",
       paths: ["web/login.tsx", "internal/auth/auth.go"], mode: "write")
     ← {"ok": true, "key": "INT-91",
        "conflicts": [{
           "key": "CF-14", "kind": "path_overlap", "severity": "critical",
-          "note": "Ana's agent holds internal/auth/auth.go (write, 4m, feat/auth) for
-                   INT-83 'Add POST /api/login'. It publishes POST /api/login —
-                   consider consuming that contract instead of writing the handler.",
-          "participants": ["S-17", "S-22"]}],
-       "review": {"decisions": [{
-          "key": "#auth-jwt-cookie",
-          "statement": "The session token lives in an httpOnly cookie, never in
-                        localStorage.",
-          "pair_key": "pk_9c3f…"}]},
-       "pending": {"instructions": 0, "conflicts": 1, "reviews": 1}}
+          "with": "Ana (backend)", "paths": ["internal/auth/auth.go"],
+          "suggested_action": "Ana (backend) holds internal/auth/auth.go (write, 4m, feat/auth).
+                               You are both editing it: take a different file, or agree who
+                               goes first before you start."}],
+       "pending": {"instructions": 0, "conflicts": 1, "reviews": 0}}
 ```
 
-Two separate findings in one response, before B has opened an editor.
+B has not opened an editor yet.
 
-**4. B acts on the path overlap.** B does not need `auth.go`; it assumed it would have to write
-the handler itself. It drops the file and narrows to its own layer:
+**3. B changes course.** B does not need `auth.go`; it assumed it would have to write the
+handler itself. It drops the file, narrows to its own layer, and tells Beto:
 
 ```
-B → update_intent(key: "INT-91",
+B → update_intent(session_key: "S-22", intent_key: "INT-91",
       drop_paths: ["internal/auth/auth.go"], add_paths: ["web/api/session.ts"],
-      status_line: "building the login form against Ana's POST /api/login instead of
-                    writing my own handler")
-B → resolve_conflict(key: "CF-14", status: "resolved",
-      reason: "dropped internal/auth/auth.go — consuming Ana's endpoint")
+      status_line: "building the login form against Ana's POST /api/login, not my own handler")
 ```
 
 The collision cost B one tool response and no code. That is the whole product.
 
-**5. B judges the decision pair honestly.** B's plan really does put the token in localStorage,
-and `#auth-jwt-cookie` really does forbid it. This one is a genuine contradiction:
+**4. A finds out on a bare heartbeat, having never polled.**
 
 ```
-B → report_judgement(pair_key: "pk_9c3f…", verdict: "conflict",
-      kind: "decision_contradiction", severity: "high", confidence: 0.9,
-      rationale: "My intent stores the session token in localStorage; #auth-jwt-cookie
-                  requires an httpOnly cookie. Switching to cookie-based auth — no
-                  token handling in the client at all.")
-B → update_intent(key: "INT-91",
-      summary: "Login screen — form, submit, rely on the httpOnly session cookie")
+A → heartbeat(session_key: "S-17", status_line: "wiring the cookie into the login handler")
+    ← {"ok": true, "pending": {"instructions": 1, "conflicts": 1, "reviews": 0},
+       "note": "1 instruction(s) and 1 open conflict(s) involve you — call get_instructions"}
+A → get_instructions(session_key: "S-17")
+    ← {"instructions": [{"key": "IN-7", "kind": "conflict_notice", "with": "Beto (ui)",
+        "paths": ["internal/auth/auth.go"], "severity": "critical",
+        "suggested_action": "Beto (ui) holds internal/auth/auth.go ... they declared after you,
+                             so they are expecting an answer — say whether you are nearly done.",
+        "report_back": true}]}
+A → check_paths(session_key: "S-17", paths: ["internal/auth/auth.go"])
+    ← {"holders": [], "note": "... nobody else is holding them right now ..."}
+A → report_back(session_key: "S-17", instruction_key: "IN-7", outcome: "done",
+      note: "Beto dropped auth.go and builds against my endpoint; I keep the handler")
 ```
 
-Had B's plan merely *mentioned* auth without touching token storage, the right answer would have
-been `no_conflict` at high confidence, and the pair would be dead forever.
+This is A's **first and only** interruption of the whole exchange, and it took one answer.
 
-**6. B publishes what it consumes, and the shapes disagree.**
-
-```
-B → publish_contract(key: "POST /api/login", role: "consumes",
-      shape: {"expires_at": "datetime", "user": {"id": "uuid", "email": "email"}})
-    ← {"ok": true,
-       "conflicts": [{"key": "CF-15", "kind": "contract_mismatch", "severity": "medium",
-          "note": "Producer S-17 emits session_expires_at; this consumer requires
-                   expires_at. One required out field is missing.",
-          "evidence": {"missing_out": ["expires_at"], "extra_out":
-                       ["session_expires_at"]}}]}
-```
-
-Directional, and it names which side is at fault: a required **out** field the consumer needs
-and the producer does not emit.
-
-**7. A finds out on a bare heartbeat, having never polled.**
+**5. A finishes.**
 
 ```
-A → heartbeat(status_line: "wiring the cookie into the login handler")
-    ← {"ok": true, "pending": {"instructions": 1, "conflicts": 1, "reviews": 0}}
-A → get_instructions()
-    ← [{"key": "INS-7", "kind": "conflict_notice", "conflict": "CF-15",
-        "body": "Beto's login screen consumes POST /api/login and expects
-                 expires_at; you emit session_expires_at."}]
+A → update_intent(session_key: "S-17", intent_key: "INT-83", status: "done")
+A → end_session(session_key: "S-17", outcome: "succeeded",
+      note: "POST /api/login shipped with cookie session")
 ```
 
-This is A's **first and only** interruption of the whole exchange, and it is actionable.
-
-**8. A converges.**
-
-```
-A → publish_contract(key: "POST /api/login", role: "produces",
-      shape: {"expires_at": "datetime", "user": {"id": "uuid", "email": "email"}})
-    ← {"ok": true, "conflicts": [], "note": "CF-15 auto-resolved: converged"}
-A → report_back(instruction: "INS-7", outcome: "done",
-      note: "renamed session_expires_at → expires_at to match Beto's consumer")
-A → update_intent(key: "INT-83", status: "done")
-A → end_session(key: "S-17", summary: "POST /api/login shipped with cookie session")
-```
-
-Count the cost. B avoided writing a duplicate handler and a wrong auth scheme. A was interrupted
-exactly once, correctly. Neither agent was ever blocked, and neither one read the board. The
-human watching saw all of it happen live.
+Count the cost. B avoided writing a duplicate handler. A was interrupted exactly once, correctly.
+Neither agent was ever blocked, and neither one read the board. The humans watching saw all of it
+happen live.
 
 ---
 
@@ -479,17 +418,19 @@ human watching saw all of it happen live.
 
 **Do**
 
-- `join_team` once, `start_session` per piece of work, `end_session` when you stop.
+- `start_session` per piece of work, `declare_intent` per chunk, `heartbeat` and `update_intent`
+  while you work, `end_session` when you stop.
 - Send `repo_url` and `project_key` straight from git, and every path relative to the git root.
 - `declare_intent` **before** you touch anything, with the specific files and a real sentence.
 - `heartbeat` every ~60s and around every batch of edits, with a status line that says *why*.
 - Drop paths as soon as you are done with them.
 - Read `pending` on every response. Act when non-zero, do nothing when zero.
-- Answer `no_conflict` when it is `no_conflict`, with honest confidence.
+- Answer every instruction with `report_back`, including a refusal.
 - Tell your human what metiche told you.
 
 **Don't**
 
+- Don't call a tool that is not in the table above, whatever a note says.
 - Don't make up a project_key, or name it after the folder you were started in.
 - Don't claim `**`, `**/*.go` or `app/**`. They are capped at `low` and warn nobody.
 - Don't send an absolute path, and don't expect `*.go` to reach past the repo root.
@@ -497,6 +438,5 @@ human watching saw all of it happen live.
 - Don't declare after the edit.
 - Don't poll `get_team_state` on a timer.
 - Don't go quiet for twenty minutes mid-refactor.
-- Don't inflate a verdict or a confidence to be safe.
 - Don't put a secret, a token or a credential in any field.
-- Don't acknowledge a conflict and then change nothing and say nothing.
+- Don't read a conflict and then change nothing and say nothing.
