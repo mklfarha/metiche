@@ -175,7 +175,12 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 
 /* ---------------------------------------------------------------- chrome */
 
-.app { display: grid; grid-template-rows: auto 1fr; height: 100vh; overflow: hidden; }
+/* minmax(0, 1fr), not the implicit auto column: an auto track grows to the
+ * topbar's min-content width (~1150px with six tabs, the pace picker and both
+ * cursors), and overflow:hidden then silently clipped every page to the left
+ * third of a phone. The document never scrolled sideways; it just lost the
+ * right-hand side of everything. */
+.app { display: grid; grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); height: 100vh; overflow: hidden; }
 
 .topbar {
   display: flex; align-items: center; gap: 18px;
@@ -197,7 +202,11 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .brand .team { font-size: 13px; color: var(--ink-2); }
 .brand .team b { color: var(--ink); font-weight: 600; }
 
-nav.tabs { display: flex; gap: 2px; height: 100%; align-items: stretch; }
+nav.tabs {
+  display: flex; gap: 2px; height: 100%; align-items: stretch;
+  min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+nav.tabs::-webkit-scrollbar { display: none; }
 nav.tabs a {
   display: flex; align-items: center; padding: 0 13px;
   color: var(--ink-3); font-size: 12.5px; font-weight: 500;
@@ -276,9 +285,12 @@ nav.tabs a .n.hot { background: var(--violet); color: #fff; font-weight: 700; }
   grid-auto-columns: minmax(310px, 1fr); gap: 12px; align-items: start;
 }
 @media (max-width: 1100px) {
-  .lanes { grid-auto-flow: row; grid-auto-columns: auto; }
-  .main { grid-template-columns: 1fr; }
+  .lanes { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: minmax(0, 1fr); }
+  .main { grid-template-columns: minmax(0, 1fr); }
 }
+/* Grid children default to min-width:auto, so one long status line or path
+ * would push a lane wider than its column. They truncate or wrap instead. */
+.lanes > *, .lane-body > *, .main > *, .stage > *, .grid2 > *, .runrow > * { min-width: 0; }
 
 .lane { background: var(--bg-rail); border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; }
 .lane.sev-high { border-color: var(--sev-high-line); }
@@ -315,7 +327,18 @@ nav.tabs a .n.hot { background: var(--violet); color: #fff; font-weight: 700; }
 .agent.idle { background: var(--quiet-bg); }
 
 .agent-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
-.agent-head .label { font-family: var(--mono); font-size: 11.5px; font-weight: 600; letter-spacing: -0.2px; }
+.agent-head .label {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600; letter-spacing: -0.2px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Shown only when one agent has several live sessions: the key is the one
+ * thing that tells two terminals of the same client apart. Secondary, and
+ * the first thing to give way when the head is short on room. */
+.agent-head .session-key, .session-key {
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
 .agent-head .branch {
   margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
   max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -350,6 +373,7 @@ nav.tabs a .n.hot { background: var(--violet); color: #fff; font-weight: 700; }
   padding: 1px 5px 1px 4px; border-left: 2px solid var(--line);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.path > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .path .mode { font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); flex: none; width: 22px; }
 /* A contested path is violet: it is literally the overlap in the mark. */
 .path.hot-low      { border-left-color: var(--sev-low);    color: var(--sev-low); }
@@ -549,7 +573,10 @@ tr.r-unconsumed td:first-child { box-shadow: inset 3px 0 0 var(--idle); }
 .join .teamlink:hover { border-color: var(--accent); background: var(--panel-2); }
 .join .teamlink .nm { font-weight: 600; font-size: 14px; }
 .join .teamlink .sl { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
-.join .teamlink .st { margin-left: auto; text-align: right; }
+.join .teamlink .st { margin-left: auto; text-align: right; flex: none; }
+.join .teamlink > span:first-child { min-width: 0; }
+.join .teamlink .sl { overflow-wrap: anywhere; }
+.join .teamlink .st .sl { white-space: nowrap; }
 .join form { display: flex; gap: 8px; margin-top: 18px; }
 .join input {
   flex: 1; font: inherit; font-family: var(--mono); font-size: 13px; padding: 9px 12px;
@@ -560,8 +587,8 @@ tr.r-unconsumed td:first-child { box-shadow: inset 3px 0 0 var(--idle); }
 
 /* ---------------------------------------------------------------- misc */
 
-.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
-.kv { display: flex; gap: 6px; font-size: 11.5px; color: var(--ink-3); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr)); gap: 10px; }
+.kv { display: flex; flex-wrap: wrap; gap: 2px 6px; font-size: 11.5px; color: var(--ink-3); }
 .kv b { color: var(--ink-2); font-weight: 500; font-family: var(--mono); }
 .runlist { display: grid; gap: 6px; }
 .runrow {
@@ -647,3 +674,100 @@ svg.graph { display: block; min-width: 720px; }
 .legend .sw.b     { background: var(--indigo-bg); border-color: var(--indigo-ink); border-radius: 3px; }
 .legend .sw.cross { background: var(--violet); border-color: var(--violet); box-shadow: 0 0 0 2px var(--coral); }
 .legend .sw.alert { background: var(--cyan);   border-color: var(--cyan); }
+
+/* ---------------------------------------------------------------- narrow
+ *
+ * Phones and tablets. Same surfaces, same colours; what changes is flow.
+ * Rules: the page never scrolls sideways, wide evidence (the contracts matrix,
+ * the graph, a long path) scrolls or truncates inside its own box, lanes are
+ * one column, and anything tappable is at least 40px tall.
+ */
+
+/* long unbroken strings — paths, keys, URLs in a status line — wrap rather
+ * than widen their card */
+.statusline, .goal, .intent .summary, .card .detail, .suggest .text,
+.alertstrip .why, .ev .line, .page h2, .page .sub, .empty .title, .empty .hint,
+.party, .runrow, .kv { overflow-wrap: anywhere; }
+.intent .chip { flex: none; }
+.intent .summary { min-width: 0; }
+.card-head { flex-wrap: wrap; row-gap: 6px; }
+.card-head .right { flex-wrap: wrap; }
+.parties .party { flex-wrap: wrap; max-width: 100%; }
+.actions { flex-wrap: wrap; }
+.diffs li { flex-wrap: wrap; }
+.calmstrip { flex-wrap: wrap; row-gap: 4px; }
+.badge { max-width: 100%; }
+
+/* The header: one row on a wide screen. Below that the tabs drop to a row of
+ * their own and scroll sideways inside it, instead of dragging the page. */
+@media (max-width: 1180px) {
+  .topbar { flex-wrap: wrap; height: auto; column-gap: 14px; row-gap: 0; padding: 0 16px; }
+  .brand { height: 48px; }
+  .topbar .cadence, .topbar .cursors, .topbar .conn { align-self: center; }
+  nav.tabs {
+    order: 10; flex: 1 0 100%; height: 44px;
+    margin: 0 -16px; padding: 0 8px; border-top: 1px solid var(--line-soft);
+  }
+}
+
+/* One scrolling page instead of two scrolling panes. Once the timeline rail
+ * stacks under the board, a fixed-height app splits a phone screen into two
+ * small scroll areas; the document should scroll, and the timeline keeps its
+ * own capped box so it can stay pinned to the newest row. */
+@media (max-width: 1100px) {
+  .app { display: block; height: auto; min-height: 100vh; overflow: visible; }
+  .main { display: block; overflow: visible; }
+  .stage { overflow: visible; padding: 14px 16px 24px; }
+  .rail { display: block; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .rail-head { height: auto; min-height: 34px; padding: 6px 16px; flex-wrap: wrap; }
+  #timeline { max-height: 60vh; }
+}
+
+@media (max-width: 760px) {
+  .alertstrip { flex-wrap: wrap; row-gap: 6px; padding: 9px 12px; }
+  .alertstrip .what { white-space: normal; }
+  .alertstrip .why { flex: 1 0 100%; }
+  .alertstrip .go { margin-left: 0; }
+
+  .badge { white-space: normal; }
+  .card { padding: 12px; }
+  .empty { padding: 36px 16px; }
+  .join { padding: 24px 16px; }
+
+  .runrow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+
+  /* The two leading columns carry inline min-widths sized for a desktop
+   * table; on a phone they would leave no room for the session columns.
+   * The table still scrolls inside .matrix-wrap. */
+  table.matrix thead th[style] { min-width: 150px !important; }
+  /* badge above its sentence, so the sentence gets the column's full width */
+  .verdict { flex-wrap: wrap; row-gap: 4px; }
+
+  /* At 720px a 1060-wide drawing put its labels near 7px. Wider, and the
+   * graph scrolls sideways inside .gwrap as it already did. */
+  svg.graph { min-width: 900px; }
+}
+
+@media (max-width: 600px) {
+  .brand { flex: 1 0 100%; border-right: 0; padding-right: 0; min-width: 0; }
+  .brand .team { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar { row-gap: 4px; }
+  .topbar .spacer { display: none; }
+  .topbar .cursors { margin-left: auto; }
+  .topbar .conn { padding-left: 10px; }
+  .rail-head .hint { margin-left: 0; }
+}
+
+/* Tap targets. Touch screens and anything narrow enough to be one. */
+@media (max-width: 1180px), (pointer: coarse) {
+  .brand .logo { min-height: 44px; }
+  nav.tabs a { min-height: 44px; }
+  .cadence { min-height: 40px; padding-top: 0; padding-bottom: 0; }
+  .cadence select { min-height: 40px; }
+  .btn { min-height: 40px; padding: 0 14px; }
+  .alertstrip .go { display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; }
+  .badges { gap: 6px; }
+  a.badge, button.badge { min-height: 40px; padding: 0 10px; }
+  .join input, .join .btn { min-height: 44px; }
+  .empty .hint a { display: inline-flex; align-items: center; min-height: 40px; }
+}

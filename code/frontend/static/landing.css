@@ -184,7 +184,14 @@ body.lp {
   padding: 6px 11px; border-radius: 6px; font-size: 13.5px; color: var(--ink-3); font-weight: 500;
 }
 .lp-nav .links a:hover { color: var(--ink); background: var(--panel-2); }
-@media (max-width: 720px) { .lp-nav .links { display: none; } }
+.lp-nav .links a, .lp-nav .btn { white-space: nowrap; }
+/* Five links, the wordmark and the call to action need ~960px; below that the
+ * links wrapped two words to a line and squeezed the button onto two lines. */
+@media (max-width: 960px) { .lp-nav .links { display: none; } }
+@media (max-width: 960px), (pointer: coarse) {
+  .brandbar { min-height: 44px; }
+  .lp-nav .btn.small { min-height: 40px; }
+}
 
 /* ---------------------------------------------------------------- buttons */
 
@@ -201,6 +208,10 @@ body.lp {
 .btn.primary:hover { background: var(--violet); border-color: var(--violet); }
 .btn .arw { opacity: .7; font-family: var(--mono); }
 .btn.small { font-size: 13px; padding: 8px 14px; }
+@media (max-width: 480px) {
+  /* thumb-width calls to action, stacked */
+  .cta-row .btn { flex: 1 1 100%; justify-content: center; min-height: 48px; }
+}
 
 /* ---------------------------------------------------------------- hero */
 
@@ -221,6 +232,8 @@ body.lp {
   background: var(--panel);
 }
 .eyebrow .sq { width: 7px; height: 7px; border-radius: 2px; background: var(--coral); flex: none; }
+/* at phone width the tracked caps wrapped the pill onto two lines */
+@media (max-width: 480px) { .eyebrow { font-size: 10.5px; letter-spacing: .06em; margin-bottom: 14px; } }
 
 .headline { font-size: clamp(30px, 5.2vw, 48px); line-height: 1.03; letter-spacing: -0.035em; }
 .headline .b { display: block; }
@@ -239,6 +252,9 @@ body.lp {
 
 .hero-art { display: grid; place-items: center; }
 .mark { width: 100%; max-width: 400px; height: auto; aspect-ratio: 1 / 1; display: block; }
+/* Below the copy on a phone the full-width mark was a 330px interstitial
+ * between the calls to action and the first section. Smaller, same drawing. */
+@media (max-width: 480px) { .hero .mark { max-width: 200px; } }
 
 .mark .stroke-a { stroke: var(--coral); }
 .mark .stroke-b { stroke: var(--mark-indigo); }
@@ -352,6 +368,7 @@ body.lp {
   font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
   color: var(--ink-3); background: #ffffff08;
 }
+.code .code-head { flex-wrap: wrap; row-gap: 0; }
 .code .code-head .fn { color: var(--ink-2); text-transform: none; letter-spacing: 0; font-size: 11.5px; }
 .code pre {
   margin: 0; padding: 13px 15px; overflow-x: auto;
@@ -541,7 +558,17 @@ body.lp {
 }
 .jstep h3 { font-size: 16px; margin-bottom: 5px; }
 .jstep p { font-size: 14px; color: var(--ink-2); margin-bottom: 0; }
+/* three paragraphs with no gap read as one wall of text */
+.jstep p + p, .jstep .code + p { margin-top: 12px; }
 .jstep .code { margin-top: 11px; }
+/* The install line is the one thing on this page a phone reader has to see
+ * whole. Scrolled sideways it showed "…metiche.xyz/instal" and stopped, so it
+ * wraps instead; copying it still yields one line. */
+.jstep .code pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .jstep { padding-left: 0; }
+  .jstep::before { position: static; margin-bottom: 10px; }
+}
 .jstep .soon {
   display: inline-block; margin-left: 7px; vertical-align: 2px;
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
@@ -556,6 +583,7 @@ body.lp {
 .codeform p { font-size: 13.5px; color: var(--ink-3); }
 .codeform form { display: flex; gap: 8px; margin-top: 14px; }
 @media (max-width: 420px) { .codeform form { flex-direction: column; } }
+.codeform input, .codeform .btn { min-height: 44px; }
 .codeform input {
   flex: 1; min-width: 0; font: inherit; font-family: var(--mono); font-size: 13.5px;
   padding: 10px 12px; border-radius: 7px; background: var(--bg);
@@ -578,7 +606,8 @@ body.lp {
 .lp-foot .wrap { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: center; }
 .lp-foot .brandbar { margin-right: auto; }
 .lp-foot .said { font-size: 12.5px; color: var(--ink-3); max-width: 46em; }
-.lp-foot .links { display: flex; gap: 16px; font-size: 13px; color: var(--ink-3); }
+.lp-foot .links { display: flex; flex-wrap: wrap; gap: 0 18px; font-size: 13px; color: var(--ink-3); }
+.lp-foot .links a { display: inline-flex; align-items: center; min-height: 40px; }
 .lp-foot .links a:hover { color: var(--ink); }
 
 .visually-hidden {
