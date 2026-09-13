@@ -146,6 +146,11 @@ func ProvideCustomRoutes(coreImpl *core.Implementation, logger *zap.Logger) rest
 			// exchange, the session check, sign out and the "your teams"
 			// list. In-cluster only, like the two above; see AllowedRoutes.
 			browser.Register(r, coreImpl, logger) // /v1/browser/sessions, /session, /sessions/{key}, /teams
+			// Invite management for a signed-in member (docs/BOARD_LOGIN.md
+			// §10.10). It is handed the MCP endpoint's own Handler, so the
+			// rules are create_invite's, and the per-account create budget is
+			// ONE budget whichever surface spends it. In-cluster only.
+			webapi.RegisterInvites(r, coreImpl, handler, logger) // /v1/teams/{slug}/invites, /invites/{invite_id}
 		}
 
 		// MUST STAY LAST: it only allows what is already registered, and it
@@ -195,6 +200,11 @@ var AllowedRoutes = map[string]string{
 	browser.PathSession:    "board: current browser session (GET), sign out (DELETE)",
 	browser.PathSessionKey: "board: revoke one browser session of the caller's account (DELETE)",
 	browser.PathTeams:      "board: the signed-in viewer's teams (GET)",
+	// Board invites (§10.10). Same footing as the four above: board only, not
+	// routed by any ingress, a browser session in X-Metiche-Browser-Session
+	// and never a bearer, and every refusal the same 404 as an unknown team.
+	webapi.PathInvites: "board: a signed-in member's invites (GET list, POST create)",
+	webapi.PathInvite:  "board: revoke one invite (DELETE)",
 
 	// app/stream.Register — role api, behind app/authz.
 	stream.StreamPath: "board SSE stream",

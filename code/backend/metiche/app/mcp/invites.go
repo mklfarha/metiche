@@ -15,6 +15,9 @@ import (
 
 	invitemod "github.com/mklfarha/metiche/backend/core/module/invite"
 	invite_types "github.com/mklfarha/metiche/backend/core/module/invite/types"
+	teammod "github.com/mklfarha/metiche/backend/core/module/team"
+	team_types "github.com/mklfarha/metiche/backend/core/module/team/types"
+	account_entity "github.com/mklfarha/metiche/backend/entity/account"
 	invite_entity "github.com/mklfarha/metiche/backend/entity/invite"
 	member_entity "github.com/mklfarha/metiche/backend/entity/member"
 	"github.com/mklfarha/metiche/backend/enums"
@@ -46,6 +49,23 @@ import (
 //     word, so the tool cannot be used to discover invites.
 //   - BOUNDED. Members are capped (§10 Q1), owners have a hard ceiling, and
 //     creation is rate limited per account (createInvite, ratelimit.go).
+//
+// # One source of truth, two surfaces
+//
+// The rules live in CreateInviteAs, ListInvitesAs and RevokeInviteAs, which
+// take a caller already pinned to a team (a Resolved: the account, its live
+// membership and the team). The MCP tools below are thin: RequireTeam, then
+// the shared function. The board's REST routes (app/webapi/invites.go) are the
+// other caller: they authenticate a browser session, pin the team with
+// InviteScope, and call the same three functions on the same Handler — so the
+// defaults, the caps, the scope, the not_found and the per-account rate limit
+// are the same values, and the budget is one budget whichever surface spends
+// it.
+//
+// A refusal is an *InviteRefusal. Its Error() is the exact text the tools have
+// always returned, so an MCP client sees the same bytes; Code lets the REST
+// surface pick a status without parsing that text. Every other error is an
+// infrastructure failure (retryable wraps it), never a verdict.
 
 // createInviteNamespace derives an invite's uuid from (member, idempotency
 // key). A sibling of createTeamNamespace, never the same value.
@@ -83,10 +103,89 @@ const (
 	installerCommand = "curl -fsSL https://metiche.xyz/install.sh | sh"
 )
 
+// Invite bounds, exported for the board's form: what it shows as the defaults
+// and the caps. The server enforces them either way (inviteBounds).
+const (
+	InviteDefaultMaxUses = defaultInviteMaxUses
+	InviteDefaultHours   = defaultInviteHours
+	InviteOwnerMaxUses   = ownerInviteMaxUses
+	InviteOwnerMaxHours  = ownerInviteMaxHours
+	InviteMemberMaxUses  = memberInviteMaxUses
+	InviteMemberMaxHours = memberInviteMaxHours
+	InviteLabelMax       = inviteLabelMax
+)
+
 // mintInviteCode is MintJoinCode, the generator ensureFirstInvite uses. A
 // variable only so a test can draw a known canary and prove where it never
 // ends up.
 var mintInviteCode = MintJoinCode
+
+// ─────────────────────────────────────────────
+// Refusals
+// ─────────────────────────────────────────────
+
+// Refusal codes: the machine prefix every refusal's text starts with.
+const (
+	InviteInvalidArgument = "invalid_argument"
+	InviteNotPermitted    = "not_permitted"
+	InviteRateLimited     = "rate_limited"
+	InviteNotFound        = "not_found"
+)
+
+// InviteRefusal is a verdict about the request, as opposed to a failure to
+// decide. Error() is the whole caller-facing text, unchanged from what the MCP
+// tools returned before the rules were shared.
+type InviteRefusal struct {
+	// Code is one of the Invite* refusal codes above.
+	Code string
+	// RetryAfter is set for InviteRateLimited: how long until the window
+	// resets.
+	RetryAfter time.Duration
+
+	text string
+}
+
+func (e *InviteRefusal) Error() string { return e.text }
+
+func inviteRefusal(code, format string, args ...any) *InviteRefusal {
+	return &InviteRefusal{Code: code, text: fmt.Sprintf(format, args...)}
+}
+
+// ErrNoInviteScope is InviteScope's one refusal: no active team with that
+// slug, no membership, a revoked or inactive one, or an inactive account. One
+// error for all of them, so the REST surface can answer all of them with the
+// same bytes as an unknown team.
+var ErrNoInviteScope = errors.New("not a live member of that team")
+
+// InviteScope pins an already-authenticated ACCOUNT to a team by slug, the way
+// RequireTeam does for a token: the team must be active and the account a live
+// member of it. It is the board's entry point; the MCP tools use RequireTeam.
+//
+// Every refusal is ErrNoInviteScope. Any other error means the answer is
+// unknown (the database failed) and must not be rendered as a refusal.
+func (h *Handler) InviteScope(ctx context.Context, account account_entity.Account, teamSlug string) (Resolved, error) {
+	slug := strings.ToLower(strings.TrimSpace(teamSlug))
+	if slug == "" || account.ID.IsNil() || account.Status != enums.RECORD_STATUS_ACTIVE {
+		return Resolved{}, ErrNoInviteScope
+	}
+	res, err := h.core.Team().FetchTeamBySlug(ctx,
+		team_types.FetchTeamBySlugRequest{Slug: slug, Limit: 1}, teammod.WithSkipCache())
+	if err != nil {
+		return Resolved{}, fmt.Errorf("looking up the team: %w", err)
+	}
+	if len(res.Results) == 0 || res.Results[0].Status != enums.RECORD_STATUS_ACTIVE {
+		return Resolved{}, ErrNoInviteScope
+	}
+	team := res.Results[0]
+	member, found, err := h.memberByAccount(ctx, nil, account.ID, team.ID)
+	if err != nil {
+		return Resolved{}, err
+	}
+	if !found || member.RevokedAt.Valid || member.Status != enums.RECORD_STATUS_ACTIVE {
+		return Resolved{}, ErrNoInviteScope
+	}
+	return Resolved{Account: account, Member: member, Team: team}, nil
+}
 
 // ─────────────────────────────────────────────
 // create_invite
@@ -116,25 +215,49 @@ type CreateInviteResult struct {
 	ShareNote string    `json:"share_note"`
 }
 
+// InviteRequest is what creating an invite takes, on every surface. Zero means
+// "not given" for both numbers.
+type InviteRequest struct {
+	Label          string
+	MaxUses        int
+	ExpiresInHours int
+	IdempotencyKey string
+}
+
 // CreateInvite mints an invite on the caller's team.
 func (h *Handler) CreateInvite(ctx context.Context, _ *mcp.CallToolRequest, in CreateInviteParams) (*mcp.CallToolResult, any, error) {
 	rs, err := h.RequireTeam(ctx, in.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}
+	out, err := h.CreateInviteAs(ctx, rs, InviteRequest{
+		Label: in.Label, MaxUses: in.MaxUses, ExpiresInHours: in.ExpiresInHours, IdempotencyKey: in.IdempotencyKey,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return jsonValue(out)
+}
+
+// CreateInviteAs mints an invite for a caller already pinned to a team: the
+// rate limit, the bounds, the idempotency key and the insert, in that order.
+func (h *Handler) CreateInviteAs(ctx context.Context, rs Resolved, in InviteRequest) (CreateInviteResult, error) {
 	if ok, wait := h.accountLimiters().createInvite.Allow(rs.Account.ID.String()); !ok {
-		return nil, nil, fmt.Errorf("rate_limited: too many invites created by this account in the last hour; try again in %s", wait)
+		r := inviteRefusal(InviteRateLimited,
+			"rate_limited: too many invites created by this account in the last hour; try again in %s", wait)
+		r.RetryAfter = wait
+		return CreateInviteResult{}, r
 	}
 
 	maxUses, hours, err := inviteBounds(rs.Member.Role == enums.MEMBER_ROLE_OWNER, in.MaxUses, in.ExpiresInHours)
 	if err != nil {
-		return nil, nil, err
+		return CreateInviteResult{}, err
 	}
 
 	id := uuid.Must(uuid.NewV4())
 	if idem := strings.TrimSpace(in.IdempotencyKey); idem != "" {
 		if len(idem) < minIdempotencyKeyLength {
-			return nil, nil, fmt.Errorf(
+			return CreateInviteResult{}, inviteRefusal(InviteInvalidArgument,
 				"invalid_argument: idempotency_key must be at least %d characters (a uuid is ideal), or omitted", minIdempotencyKeyLength)
 		}
 		// The member id is per team, so one person's key on two teams, or two
@@ -142,10 +265,10 @@ func (h *Handler) CreateInvite(ctx context.Context, _ *mcp.CallToolRequest, in C
 		id = uuid.NewV5(createInviteNamespace, "create_invite:"+rs.Member.ID.String()+"|"+idem)
 		existing, found, err := h.inviteByID(ctx, id)
 		if err != nil {
-			return nil, nil, err
+			return CreateInviteResult{}, err
 		}
 		if found {
-			return jsonValue(inviteReplay(rs.Team.Slug, existing))
+			return inviteReplay(rs.Team.Slug, existing), nil
 		}
 	}
 
@@ -167,12 +290,12 @@ func (h *Handler) CreateInvite(ctx context.Context, _ *mcp.CallToolRequest, in C
 	for attempt := 0; attempt < inviteMintAttempts; attempt++ {
 		code, err := mintInviteCode()
 		if err != nil {
-			return nil, nil, err
+			return CreateInviteResult{}, err
 		}
 		inv.Code = code
 		_, err = h.core.Invite().Insert(ctx, invite_types.UpsertRequest{Invite: inv}, invitemod.WithSkipCache())
 		if err == nil {
-			return jsonValue(CreateInviteResult{
+			return CreateInviteResult{
 				OK:        true,
 				TeamSlug:  rs.Team.Slug,
 				InviteID:  inv.ID.String(),
@@ -183,12 +306,12 @@ func (h *Handler) CreateInvite(ctx context.Context, _ *mcp.CallToolRequest, in C
 				State:     "active",
 				Created:   true,
 				ShareNote: inviteShareNote(rs.Team.Slug, int64(maxUses), inv.ExpiresAt.Time),
-			})
+			}, nil
 		}
 		// A concurrent retry with the same idempotency_key won the primary
 		// key: the row that exists is the answer, without its code.
 		if existing, found, lookupErr := h.inviteByID(ctx, id); lookupErr == nil && found {
-			return jsonValue(inviteReplay(rs.Team.Slug, existing))
+			return inviteReplay(rs.Team.Slug, existing), nil
 		}
 		// The driver's duplicate-key message quotes the value, which is a
 		// live code — this draw's, and so somebody's door key if it collided.
@@ -199,14 +322,14 @@ func (h *Handler) CreateInvite(ctx context.Context, _ *mcp.CallToolRequest, in C
 			break
 		}
 	}
-	return nil, nil, retryable(lastErr, "creating the invite")
+	return CreateInviteResult{}, retryable(lastErr, "creating the invite")
 }
 
 // inviteBounds applies the defaults, the hard ceiling and the member caps.
 // Zero means "not given": the params are omitempty ints.
 func inviteBounds(owner bool, maxUses, hours int) (int, int, error) {
 	if maxUses < 0 || hours < 0 {
-		return 0, 0, fmt.Errorf(
+		return 0, 0, inviteRefusal(InviteInvalidArgument,
 			"invalid_argument: max_uses and expires_in_hours must be positive; omit them for the defaults (%d use, %d hours)",
 			defaultInviteMaxUses, defaultInviteHours)
 	}
@@ -217,13 +340,13 @@ func inviteBounds(owner bool, maxUses, hours int) (int, int, error) {
 		hours = defaultInviteHours
 	}
 	if maxUses > ownerInviteMaxUses {
-		return 0, 0, fmt.Errorf("invalid_argument: max_uses may be at most %d", ownerInviteMaxUses)
+		return 0, 0, inviteRefusal(InviteInvalidArgument, "invalid_argument: max_uses may be at most %d", ownerInviteMaxUses)
 	}
 	if hours > ownerInviteMaxHours {
-		return 0, 0, fmt.Errorf("invalid_argument: expires_in_hours may be at most %d (30 days)", ownerInviteMaxHours)
+		return 0, 0, inviteRefusal(InviteInvalidArgument, "invalid_argument: expires_in_hours may be at most %d (30 days)", ownerInviteMaxHours)
 	}
 	if !owner && (maxUses > memberInviteMaxUses || hours > memberInviteMaxHours) {
-		return 0, 0, fmt.Errorf(
+		return 0, 0, inviteRefusal(InviteNotPermitted,
 			"not_permitted: members may create invites with at most %d uses and %d hours (7 days); the team's owner can make larger ones",
 			memberInviteMaxUses, memberInviteMaxHours)
 	}
@@ -322,6 +445,16 @@ func (h *Handler) ListInvites(ctx context.Context, _ *mcp.CallToolRequest, in Li
 	if err != nil {
 		return nil, nil, err
 	}
+	out, err := h.ListInvitesAs(ctx, rs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return jsonValue(out)
+}
+
+// ListInvitesAs lists the invites a caller pinned to a team may act on: every
+// invite of the team for its owner, only the ones they created for a member.
+func (h *Handler) ListInvitesAs(ctx context.Context, rs Resolved) (ListInvitesResult, error) {
 	owner := rs.Member.Role == enums.MEMBER_ROLE_OWNER
 
 	// `code` is deliberately absent from this SELECT.
@@ -339,7 +472,7 @@ func (h *Handler) ListInvites(ctx context.Context, _ *mcp.CallToolRequest, in Li
 
 	rows, err := h.core.DB().QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, nil, retryable(err, "listing the team's invites")
+		return ListInvitesResult{}, retryable(err, "listing the team's invites")
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -356,7 +489,7 @@ func (h *Handler) ListInvites(ctx context.Context, _ *mcp.CallToolRequest, in Li
 		)
 		if err := rows.Scan(&id, &label, &createdBy, &name, &uses, &maxUses,
 			&expires, &revoked, &status, &lastUsed, &createdAt); err != nil {
-			return nil, nil, retryable(err, "reading the team's invites")
+			return ListInvitesResult{}, retryable(err, "reading the team's invites")
 		}
 		if len(out.Invites) == listInvitesMax {
 			out.More = true
@@ -387,7 +520,7 @@ func (h *Handler) ListInvites(ctx context.Context, _ *mcp.CallToolRequest, in Li
 		out.Invites = append(out.Invites, info)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, retryable(err, "listing the team's invites")
+		return ListInvitesResult{}, retryable(err, "listing the team's invites")
 	}
 
 	out.Note = "Codes are shown only by create_invite, once. To share a code you no longer have, create a new invite and revoke the old one."
@@ -397,7 +530,7 @@ func (h *Handler) ListInvites(ctx context.Context, _ *mcp.CallToolRequest, in Li
 		out.Scope = "created_by_you"
 		out.Note = "You see only the invites you created. " + out.Note
 	}
-	return jsonValue(out)
+	return out, nil
 }
 
 // inviteState is the EFFECTIVE state, by the same predicate redeemInvite
@@ -445,27 +578,36 @@ func (h *Handler) RevokeInvite(ctx context.Context, _ *mcp.CallToolRequest, in R
 	if err != nil {
 		return nil, nil, err
 	}
-	raw := strings.TrimSpace(in.InviteID)
+	out, err := h.RevokeInviteAs(ctx, rs, in.InviteID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return jsonValue(out)
+}
+
+// RevokeInviteAs ends one invite of the caller's team, if the caller may.
+func (h *Handler) RevokeInviteAs(ctx context.Context, rs Resolved, inviteID string) (RevokeInviteResult, error) {
+	raw := strings.TrimSpace(inviteID)
 	if raw == "" {
-		return nil, nil, errors.New("invalid_argument: invite_id is required; call list_invites to find it")
+		return RevokeInviteResult{}, inviteRefusal(InviteInvalidArgument, "invalid_argument: invite_id is required; call list_invites to find it")
 	}
 	// One answer for every invite the caller may not act on. It names neither
 	// the id nor why, so it cannot tell "another team's" from "another
 	// member's" from "never existed".
-	notFound := fmt.Errorf(
+	notFound := inviteRefusal(InviteNotFound,
 		"not_found: no invite with that invite_id on team %s that you can revoke. Call list_invites to see the invites you can revoke",
 		rs.Team.Slug)
 
 	id, err := uuid.FromString(raw)
 	if err != nil {
-		return nil, nil, notFound
+		return RevokeInviteResult{}, notFound
 	}
 	inv, found, err := h.inviteByID(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return RevokeInviteResult{}, err
 	}
 	if !found || inv.TeamUUID != rs.Team.ID || !mayRevokeInvite(rs.Member, inv) {
-		return nil, nil, notFound
+		return RevokeInviteResult{}, notFound
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -474,16 +616,16 @@ func (h *Handler) RevokeInvite(ctx context.Context, _ *mcp.CallToolRequest, in R
 			"WHERE `id` = ? AND `team_uuid` = ? AND `revoked_at` IS NULL",
 		enums.INVITE_STATUS_REVOKED, now, rs.Member.ID.String(), now, inv.ID.String(), rs.Team.ID.String())
 	if err != nil {
-		return nil, nil, retryable(err, "revoking the invite")
+		return RevokeInviteResult{}, retryable(err, "revoking the invite")
 	}
 	n, _ := res.RowsAffected()
 
 	after, found, err := h.inviteByID(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return RevokeInviteResult{}, err
 	}
 	if !found {
-		return nil, nil, notFound
+		return RevokeInviteResult{}, notFound
 	}
 	out := RevokeInviteResult{
 		OK:             true,
@@ -505,7 +647,7 @@ func (h *Handler) RevokeInvite(ctx context.Context, _ *mcp.CallToolRequest, in R
 	if out.AlreadyRevoked {
 		out.Note = "This invite was already revoked; nothing changed. People who already joined with it keep their access."
 	}
-	return jsonValue(out)
+	return out, nil
 }
 
 // mayRevokeInvite: the team's owner may revoke any of its invites, a member

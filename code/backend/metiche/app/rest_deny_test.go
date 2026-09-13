@@ -344,6 +344,9 @@ var boardOnlyRoutes = map[string][]string{
 	browser.PathSession:    {http.MethodGet, http.MethodDelete},
 	browser.PathSessionKey: {http.MethodDelete},
 	browser.PathTeams:      {http.MethodGet},
+	// Board invites (§10.10): a signed-in member only, never a bearer.
+	webapi.PathInvites: {http.MethodGet, http.MethodPost},
+	webapi.PathInvite:  {http.MethodDelete},
 }
 
 // TestBrowserRoutesAnswerOnlyRegisteredMethods: each new board route is on the
