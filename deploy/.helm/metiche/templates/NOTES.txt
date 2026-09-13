@@ -1,7 +1,7 @@
 metiche backend deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
 
   role          METICHE_ROLE={{ .Values.role }}
-  image         {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }} (pullPolicy {{ .Values.image.pullPolicy }})
+  image         {{ .Values.image.repository }}:{{ include "metiche.imageTag" . }} (pullPolicy {{ .Values.image.pullPolicy }})
   config        {{ include "metiche.configPath" . }}
                 the second path is Secret/{{ .Values.config.secretName }}, key {{ .Values.config.key }}
 {{ if .Values.ingress.enabled }}

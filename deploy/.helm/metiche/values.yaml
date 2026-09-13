@@ -45,7 +45,13 @@ image:
   # is why pullPolicy is Never. Point repository at a registry and set
   # pullPolicy: IfNotPresent to use one instead.
   repository: metiche
-  tag: ""            # "" → .Chart.AppVersion
+  # "" → .Chart.AppVersion. ALWAYS A QUOTED STRING, and pass it with
+  # --set-string (deploy/scripts/helm-deploy.sh does). Tags are timestamps like
+  # 20260912213026; Helm reads an unquoted one as a number, and --reuse-values
+  # round-trips it through JSON as 2.0260912213026e+13 → InvalidImageName.
+  # templates/_helpers.tpl "metiche.imageTag" recovers an integral number and
+  # fails the render on anything it cannot recover exactly.
+  tag: ""
   pullPolicy: Never
 imagePullSecrets: []
 
@@ -193,11 +199,28 @@ ingress:
 
   # One entry → one Ingress resource, so api and mcp get their own certificate
   # and can be moved to separate releases without re-cutting a shared object.
+  #
+  # `paths` IS AN ALLOWLIST AND HAS NO DEFAULT. Never route "/" to this
+  # Service: the generated REST server behind it serves unauthenticated CRUD
+  # for every entity under /v1, and a `path: /` published accounts, invites
+  # (join codes) and sessions to the internet. The backend denies those routes
+  # itself now (app/rest.go, DenyUnlisted); the ingress is the second layer and
+  # must hold on its own. The template refuses "/" Prefix and the old
+  # single `path:` key.
+  #
+  # Why the board API (/v1/teams/{slug}, /stream, ...) is NOT public: its only
+  # consumer is metiche-web, which reaches this Service in-cluster
+  # (metiche-web backend.serviceName → http://metiche.<ns>.svc.cluster.local).
+  # Browsers talk to metiche.xyz, never to api.metiche.xyz. Publishing it would
+  # add attack surface and serve nobody. To run a local board against a real
+  # backend, `kubectl port-forward svc/metiche 8080:8080` instead.
   hosts:
     - name: api
       host: api.metiche.xyz
-      path: /
-      pathType: Prefix
+      paths:
+        # The lock-hold histogram: timings only, no identifiers.
+        - path: /v1/metrics/mcp
+          pathType: Exact
       # Which roles serve this host. An entry is rendered only if `role` above
       # is in this list, so values-mcp.yaml does not accidentally claim
       # api.metiche.xyz and take the hostname away from the api release.
@@ -207,8 +230,12 @@ ingress:
         secretName: metiche-api-tls
     - name: mcp
       host: mcp.metiche.xyz
-      path: /
-      pathType: Prefix
+      paths:
+        # The MCP endpoint, /v1/mcp and everything under it. Prefix matching
+        # in networking.k8s.io/v1 is per path element, so /v1/mcpx is not
+        # included.
+        - path: /v1/mcp
+          pathType: Prefix
       roles: [all, mcp]
       tls:
         enabled: true

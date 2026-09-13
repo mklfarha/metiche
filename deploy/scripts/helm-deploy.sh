@@ -4,7 +4,12 @@
 #   deploy/scripts/helm-deploy.sh [mysql|backend|web|all] [--dry-run]
 #
 # Environment:
-#   METICHE_TAG           image tag to deploy (required for backend and web)
+#   METICHE_TAG           image tag to deploy (required for backend and web).
+#                         Passed with --set-string, never --set: tags are
+#                         timestamps (20260912213026) and Helm types an
+#                         unquoted number as one. Do not `helm upgrade
+#                         --reuse-values` by hand either — the stored number
+#                         comes back as 2.0260912213026e+13 (InvalidImageName).
 #   METICHE_NAMESPACE     default: metiche
 #   METICHE_INGRESS_CLASS override ingress.className on every chart
 #   METICHE_ISSUER        override ingress.clusterIssuer on every chart
@@ -88,7 +93,7 @@ deploy_backend() {
     # shellcheck disable=SC2046,SC2086
     ${HELM} upgrade --install metiche "${METICHE_CHART_DIR}/metiche" \
         $(common_flags) \
-        --set image.tag="${METICHE_TAG}" \
+        --set-string image.tag="${METICHE_TAG}" \
         --set config.secretName="${METICHE_CONFIG_SECRET}" \
         ${METICHE_VALUES_BACKEND:+-f ${METICHE_VALUES_BACKEND}} \
         --wait --timeout 5m ${DRY}
@@ -103,7 +108,7 @@ deploy_web() {
     # shellcheck disable=SC2046,SC2086
     ${HELM} upgrade --install metiche-web "${METICHE_CHART_DIR}/metiche-web" \
         $(common_flags) \
-        --set image.tag="${METICHE_TAG}" \
+        --set-string image.tag="${METICHE_TAG}" \
         --set backend.serviceName=metiche \
         ${METICHE_VALUES_WEB:+-f ${METICHE_VALUES_WEB}} \
         --wait --timeout 5m ${DRY}

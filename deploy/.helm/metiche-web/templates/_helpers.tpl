@@ -81,3 +81,30 @@ nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.sse.readTimeout | quo
 nginx.ingress.kubernetes.io/proxy-send-timeout: {{ .Values.sse.sendTimeout | quote }}
 {{- end }}
 {{- end -}}
+
+{{/*
+The image tag as the exact string that was built.
+
+Tags are timestamps (20260912213026). Helm types an unquoted number as one, and
+a release upgraded with --reuse-values round-trips its stored values through
+JSON, so the tag comes back as float64 2.0260912213026e+13 — which renders into
+the image reference as-is and fails as InvalidImageName. toString, quote and
+printf "%v" all print that float the same broken way.
+
+An integral float below 2^53 still holds the exact digits, so it is printed as
+an integer. Anything else numeric cannot be recovered and fails the render:
+pass tags with --set-string (deploy/scripts/helm-deploy.sh does).
+*/}}
+{{- define "metiche-web.imageTag" -}}
+{{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
+{{- if or (kindIs "float64" $tag) (kindIs "float32" $tag) -}}
+{{- if or (ge (float64 $tag) 9007199254740992.0) (lt (float64 $tag) 0.0) (ne (float64 (int64 $tag)) (float64 $tag)) -}}
+{{- fail (printf "image.tag was parsed as the number %v and its original spelling is lost. Pass it with --set-string image.tag=... and do not use --reuse-values." $tag) -}}
+{{- end -}}
+{{- printf "%d" (int64 $tag) -}}
+{{- else if kindIs "string" $tag -}}
+{{- $tag -}}
+{{- else -}}
+{{- printf "%d" (int64 $tag) -}}
+{{- end -}}
+{{- end -}}

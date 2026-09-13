@@ -14,6 +14,9 @@ image:
   # --default-authentication-plugin and changed several defaults; an unpinned
   # tag turns that into an outage on whatever day the box next pulls.
   repository: mysql
+  # QUOTED, always. Unquoted, YAML reads 8.0 as the number 8 and the image
+  # becomes mysql:8 — exactly the unpinned tag the comment above forbids.
+  # "metiche-mysql.imageTag" in _helpers.tpl refuses any non-string tag.
   tag: "8.0"
   # The only image here that comes from a registry, so IfNotPresent rather
   # than Never. build-images.sh pre-pulls and imports it so a deploy does not

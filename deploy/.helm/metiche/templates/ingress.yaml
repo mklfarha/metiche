@@ -2,7 +2,29 @@
 {{- $root := . -}}
 {{- $fullname := include "metiche.fullname" . -}}
 {{- range .Values.ingress.hosts }}
+{{- $h := . -}}
 {{- if has $root.Values.role (.roles | default (list "all")) }}
+{{- /*
+  THE INGRESS IS AN ALLOWLIST. Each host routes only the paths listed in
+  ingress.hosts[].paths, and there is no default. The generated REST server
+  behind this Service answers unauthenticated CRUD for every entity under /v1,
+  and a single `path: /` once published all of it (accounts, invites with join
+  codes, sessions) to the internet. The backend now denies those routes itself
+  (app/rest.go, DenyUnlisted); this is the second, independent layer.
+
+  The old single `path:` key fails the render rather than being honoured: a
+  release upgraded with --reuse-values carries the old `path: /` in its stored
+  values, and silently re-opening "/" is the failure this guard exists for.
+*/}}
+{{- if hasKey $h "path" }}
+{{- fail (printf "ingress.hosts[%s].path is no longer supported (it used to default to \"/\", which exposed the whole backend). Use ingress.hosts[%s].paths, see values.yaml. If this came from --reuse-values, deploy with deploy/scripts/helm-deploy.sh instead." $h.name $h.name) }}
+{{- end }}
+{{- $paths := required (printf "ingress.hosts[%s].paths must list the public paths for %s" $h.name $h.host) $h.paths }}
+{{- range $paths }}
+{{- if and (eq (toString .path) "/") (ne (toString .pathType) "Exact") }}
+{{- fail (printf "ingress.hosts[%s]: path \"/\" with pathType %v routes the ENTIRE backend, including generated CRUD. List specific paths instead." $h.name .pathType) }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -38,13 +60,15 @@ spec:
     - host: {{ .host | quote }}
       http:
         paths:
-          - path: {{ .path | default "/" }}
-            pathType: {{ .pathType | default "Prefix" }}
+          {{- range $paths }}
+          - path: {{ required (printf "ingress.hosts[%s].paths[].path is required" $h.name) .path | toString | quote }}
+            pathType: {{ required (printf "ingress.hosts[%s].paths[].pathType is required (Exact or Prefix)" $h.name) .pathType }}
             backend:
               service:
                 name: {{ $fullname }}
                 port:
                   number: {{ $root.Values.service.port }}
+          {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

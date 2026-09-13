@@ -1,7 +1,7 @@
 {{- $backendURL := include "metiche-web.backendURL" . -}}
 metiche board deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
 
-  image     {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }} (pullPolicy {{ .Values.image.pullPolicy }})
+  image     {{ .Values.image.repository }}:{{ include "metiche-web.imageTag" . }} (pullPolicy {{ .Values.image.pullPolicy }})
 {{ if $backendURL }}  backend   {{ $backendURL }}  (teams: {{ .Values.backend.teams }})
 {{- else }}  backend   NONE — replaying the recordings embedded in the image.
             Set backend.serviceName or backend.url to go live.

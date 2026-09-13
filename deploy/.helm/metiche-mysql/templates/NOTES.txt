@@ -1,4 +1,4 @@
-MySQL {{ .Values.image.tag }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+MySQL {{ include "metiche-mysql.imageTag" . }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
 
   service    {{ include "metiche-mysql.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
   database   {{ .Values.db.name }}

@@ -24,7 +24,11 @@ image:
   # then imported straight into microk8s's containerd. No registry, hence
   # pullPolicy: Never.
   repository: metiche-web
-  tag: ""            # "" → .Chart.AppVersion
+  # "" → .Chart.AppVersion. ALWAYS A QUOTED STRING, passed with --set-string
+  # (helm-deploy.sh does). A numeric-looking tag such as 20260912213026 is read
+  # as a number and --reuse-values turns it into 2.0260912213026e+13 →
+  # InvalidImageName. "metiche-web.imageTag" in _helpers.tpl guards the render.
+  tag: ""
   pullPolicy: Never
 imagePullSecrets: []
 

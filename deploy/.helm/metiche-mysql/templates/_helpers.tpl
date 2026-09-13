@@ -54,3 +54,18 @@ it otherwise.
 - -c
 - 'export MYSQL_PWD="$(cat {{ .Values.probes.secretMountPath }}/root-password)"; exec mysqladmin ping -h 127.0.0.1 -u root --silent'
 {{- end -}}
+
+{{/*
+The mysql image tag, which must be a string.
+
+Unlike the app images, a numeric mysql tag cannot be repaired: `tag: 8.0`
+unquoted is the number 8, and "mysql:8" is precisely the unpinned tag
+values.yaml forbids. Refuse the render instead of guessing.
+*/}}
+{{- define "metiche-mysql.imageTag" -}}
+{{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
+{{- if not (kindIs "string" $tag) -}}
+{{- fail (printf "image.tag must be a quoted string, got the %s %v. Quote it in values or pass --set-string image.tag=..." (kindOf $tag) $tag) -}}
+{{- end -}}
+{{- $tag -}}
+{{- end -}}
