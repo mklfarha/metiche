@@ -19,6 +19,14 @@ import templruntime "github.com/a-h/templ/runtime"
 // web.Server.landing); pass "" and the link is left out rather than pointing
 // somewhere that does not exist.
 //
+// It says only what is deployed. Path overlap is the one detection that runs
+// today (app/mcp/detector.go); contract, decision and duplicate-work
+// detection need tools that do not exist yet (publish_contract,
+// record_decision, report_judgement, resolve_conflict), so those cards carry
+// a "Coming next" badge and are written in the future tense. landing_test.go
+// fails if one of them is rendered without it. The tool list is described by
+// group, never by count, because the count moves.
+//
 // Everything visual here is inline SVG and one stylesheet. The only script is
 // static/landing.js, a copy button the page works without. No framework, no
 // CDN, no webfont, no build step past templ.
@@ -43,7 +51,7 @@ func Landing(boardURL string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>metiche — what everyone&#39;s agents are about to do</title><meta name=\"description\" content=\"An MCP server every teammate&#39;s coding agent connects to. Agents report what they are about to do; metiche spots the collisions and tells the other agents in their own tool responses, while there is still time to change course.\"><meta name=\"color-scheme\" content=\"dark light\"><link rel=\"icon\" href=\"/static/metiche-icon.png\" type=\"image/png\"><link rel=\"stylesheet\" href=\"/static/landing.css\"><script src=\"/static/landing.js\" defer></script></head><body class=\"lp\"><a class=\"skip\" href=\"#what\">Skip to what it does</a>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>metiche — what everyone&#39;s agents are about to do</title><meta name=\"description\" content=\"An MCP server every teammate&#39;s coding agent connects to. Agents report what they are about to do; when two are about to write the same files, metiche tells both in their own tool responses, while there is still time to change course.\"><meta name=\"color-scheme\" content=\"dark light\"><link rel=\"icon\" href=\"/static/metiche-icon.png\" type=\"image/png\"><link rel=\"stylesheet\" href=\"/static/landing.css\"><script src=\"/static/landing.js\" defer></script></head><body class=\"lp\"><a class=\"skip\" href=\"#what\">Skip to what it does</a>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -113,7 +121,7 @@ func landingNav(boardURL string) templ.Component {
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<nav class=\"lp-nav\"><div class=\"wrap\"><a class=\"brandbar\" href=\"#top\" aria-label=\"metiche, home\"><img src=\"/static/metiche-icon.png\" alt=\"\" width=\"26\" height=\"26\"> <span class=\"word\">metiche<span class=\"dot\">.</span></span></a><div class=\"links\"><a href=\"#what\">What it catches</a> <a href=\"#how\">How it works</a> <a href=\"#board\">The board</a> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<nav class=\"lp-nav\"><div class=\"wrap\"><a class=\"brandbar\" href=\"#top\" aria-label=\"metiche, home\"><img src=\"/static/metiche-icon.png\" alt=\"\" width=\"26\" height=\"26\"> <span class=\"word\">metiche<span class=\"dot\">.</span></span></a><div class=\"links\"><a href=\"#what\">What it catches</a> <a href=\"#how\">How it works</a> <a href=\"#board\">The board</a> <a href=\"#join\">Join</a> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -125,7 +133,7 @@ func landingNav(boardURL string) templ.Component {
 			var templ_7745c5c3_Var3 templ.SafeURL
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 60, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 69, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -166,7 +174,7 @@ func landingHero(boardURL string) templ.Component {
 			templ_7745c5c3_Var4 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<header class=\"hero\" id=\"top\"><div class=\"wrap\"><div class=\"hero-copy\"><div class=\"eyebrow\"><span class=\"sq\"></span> MCP server for teams of coding agents</div><h1 class=\"headline\"><span class=\"b\">The work is parallel.</span> <span class=\"b b2\">The awareness is not.</span></h1><p class=\"lede\">When two of your team&#39;s agents are about to collide, both are told inside their own tool responses, while changing course is still cheap.</p><p class=\"def\"><b>An MCP server every teammate&#39;s coding agent connects to.</b> Each one says what it is about to do, before it does it.</p><div class=\"cta-row\"><a class=\"btn primary\" href=\"#join\">Get your team on it <span class=\"arw\">→</span></a> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<header class=\"hero\" id=\"top\"><div class=\"wrap\"><div class=\"hero-copy\"><div class=\"eyebrow\"><span class=\"sq\"></span> MCP server for teams of coding agents</div><h1 class=\"headline\"><span class=\"b\">The work is parallel.</span> <span class=\"b b2\">The awareness is not.</span></h1><p class=\"lede\">When two of your team&#39;s agents are about to write the same files, both are told inside their own tool responses, while changing course is still cheap.</p><p class=\"def\"><b>An MCP server every teammate&#39;s coding agent connects to.</b> Each one says what it is about to do, before it does it.</p><div class=\"cta-row\"><a class=\"btn primary\" href=\"#join\">Get your team on it <span class=\"arw\">→</span></a> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -178,7 +186,7 @@ func landingHero(boardURL string) templ.Component {
 			var templ_7745c5c3_Var5 templ.SafeURL
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 91, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 100, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -300,7 +308,7 @@ func landingHow() templ.Component {
 			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<section class=\"section alt\" id=\"how\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">How it works</div><h2>One server, one shared picture, and findings delivered in the call the agent was already making.</h2><p class=\"sub\">One person with three agents, or five people with two each. Both from day one.</p></div><div class=\"steps\"><div class=\"step\"><div class=\"num\">1</div><h3>Every agent declares</h3><p>Before it edits, your agent calls <code>declare_intent</code> with one sentence and the paths it is about to touch. It calls <code>update_intent</code> as the work moves and <code>heartbeat</code> about once a minute.</p><p>That is the whole obligation. No CLI, no git hooks, no clone of your repo.</p></div><div class=\"step\"><div class=\"num\">2</div><h3>The server keeps it as live state</h3><p>Intents, claims, published contracts, recorded decisions — per team, per repo. Detection runs <b>inside the same transaction</b> that records the claim, so there is no window in which two agents both see a clean world and both proceed.</p><p>Mechanical checks run server-side. Semantic ones are judged by the calling agent&#39;s own model — which is why metiche needs no API key.</p></div><div class=\"step\"><div class=\"num\">3</div><h3>The other agents are told</h3><p>MCP has no push, so metiche does not pretend to. Findings ride back on the next call an agent makes — including a bare heartbeat. The agent that caused the collision is told <b>synchronously</b>, before it has started.</p></div></div><div class=\"two-up\" style=\"margin-top:14px\"><div class=\"code\"><div class=\"code-head\">what comes back <span class=\"fn\">· every tool, every time</span></div><pre>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<section class=\"section alt\" id=\"how\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">How it works</div><h2>One server, one shared picture, and findings delivered in the call the agent was already making.</h2><p class=\"sub\">One person with three agents, or five people with two each. Both from day one.</p></div><div class=\"steps\"><div class=\"step\"><div class=\"num\">1</div><h3>Every agent declares</h3><p>Before it edits, your agent calls <code>declare_intent</code> with one sentence and the paths it is about to touch. It calls <code>update_intent</code> as the work moves and <code>heartbeat</code> about once a minute.</p><p>That is the whole obligation. No CLI, no git hooks, no clone of your repo.</p></div><div class=\"step\"><div class=\"num\">2</div><h3>The server keeps it as live state</h3><p>Sessions, intents and the paths each one claims — per team, per repo. Detection runs <b>inside the same transaction</b> that records the claim, so there is no window in which two agents both see a clean world and both proceed.</p><p>The path check is mechanical and runs on the server, which is why metiche needs no API key.</p></div><div class=\"step\"><div class=\"num\">3</div><h3>The other agents are told</h3><p>MCP has no push, so metiche does not pretend to. Findings ride back on the next call an agent makes — including a bare heartbeat. The agent that caused the collision is told <b>synchronously</b>, before it has started.</p></div></div><div class=\"two-up\" style=\"margin-top:14px\"><div class=\"code\"><div class=\"code-head\">what comes back <span class=\"fn\">· every tool, every time</span></div><pre>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -316,7 +324,7 @@ func landingHow() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</pre></div><p style=\"font-size:14px;color:var(--ink-2);margin:0\">Fifteen tools. Three of them are the ones you will notice:</p><div class=\"tools\"><code class=\"hot\">declare_intent</code> <code class=\"hot\">update_intent</code> <code class=\"hot\">heartbeat</code> <code>check_paths</code> <code>publish_contract</code> <code>record_decision</code> <code>report_judgement</code> <code>resolve_conflict</code> <code>get_team_state</code></div></div></div></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</pre></div><p class=\"tools-lead\">The tools come in five groups. The three highlighted are the ones you will notice your agent calling:</p><dl class=\"toolgroups\"><div><dt>session</dt><dd><code>start_session</code><code class=\"hot\">heartbeat</code><code>end_session</code></dd></div><div><dt>claims</dt><dd><code class=\"hot\">declare_intent</code><code class=\"hot\">update_intent</code><code>check_paths</code></dd></div><div><dt>team</dt><dd><code>create_team</code><code>join_team</code><code>list_teams</code><code>create_invite</code><code>list_invites</code><code>revoke_invite</code></dd></div><div><dt>board</dt><dd><code>open_board</code><code>sign_out_browsers</code></dd></div><div><dt>instructions</dt><dd><code>get_instructions</code><code>report_back</code></dd></div></dl><p class=\"tools-next\"><span class=\"soon-badge\">Coming next</span> Tools to publish contracts and record decisions.</p></div></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -325,6 +333,11 @@ func landingHow() templ.Component {
 }
 
 // ---------------------------------------------------------------- collisions
+
+// landingCollisions shows the one detection that is live, then the three that
+// are not built yet. Every card for an unbuilt kind is .cc.soon and carries a
+// "Coming next" badge; nothing in those cards shows a tool response, because
+// a response that cannot happen today would read as one that does.
 func landingCollisions() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -346,7 +359,7 @@ func landingCollisions() templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<section class=\"section\" id=\"what\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">Four ways to collide</div><h2>What it actually catches</h2><p class=\"sub\">All four are happening on your team already. The only question is whether anyone finds out in thirty seconds or three hours.</p></div><div class=\"collide\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<section class=\"section\" id=\"what\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">What it catches</div><h2>What it actually catches today</h2><p class=\"sub\">Today it catches one thing: two agents about to write the same file. Three more kinds of collision are coming next, and they are labelled that way below.</p></div><div class=\"collide\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -354,7 +367,7 @@ func landingCollisions() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = collideDecision().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><h3 class=\"soon-head\"><span class=\"soon-badge\">Coming next</span> Not built yet</h3><div class=\"collide-soon\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -362,11 +375,15 @@ func landingCollisions() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		templ_7745c5c3_Err = collideDecision().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = collideDuplicate().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -395,36 +412,7 @@ func collidePath() templ.Component {
 			templ_7745c5c3_Var10 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<article class=\"cc k-path\"><div class=\"kind\">path overlap</div><h3>Two agents about to write the same file</h3><p class=\"scene\">Mara&#39;s agent holds <span class=\"inline-code\">api/router.go</span> open for a rewrite of the middleware chain. Forty seconds later Devesh&#39;s agent declares an intent that adds a route to the same file. Neither of them knows, and neither of them is wrong.</p><div class=\"resp\"><div class=\"rh\">in Devesh&#39;s agent&#39;s tool response</div><div class=\"rb\"><div class=\"row\"><span class=\"sev high\">▲ high</span> <span class=\"dim\">CF-14 · path overlap</span></div><div class=\"row\"><span class=\"you\">api/router.go</span> <span class=\"dim\">— held by</span> <span class=\"them\">Mara/api</span> <span class=\"dim\">(write, 4m, feat/booking-api)</span></div><div class=\"row\"><span class=\"act\">→ Take api/bookings.go and let the router land first,</span></div><div class=\"row\"><span class=\"act\">&nbsp;&nbsp; or rebase on her branch before you start.</span></div></div></div><details class=\"why\"><summary>How severity is decided</summary><p>Identical exact paths are critical, glob against glob is high, a read against a write is a notice, and two reads are never a conflict at all. Generated code never enters the index, so nobody collides on the files a code generator owns.</p></details></article>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		return nil
-	})
-}
-
-func collideDecision() templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
-		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<article class=\"cc k-decision\"><div class=\"kind\">decision contradiction</div><h3>A plan that contradicts what the team already settled</h3><p class=\"scene\">At nine the team recorded <span class=\"inline-code\">#auth-jwt-cookie</span>: the session token lives in an httpOnly cookie. At eleven an agent that was never in that conversation declares a plan to keep the token in local storage so the fetch wrapper can read it.</p><div class=\"resp\"><div class=\"rh\">in that agent&#39;s tool response</div><div class=\"rb\"><div class=\"row\"><span class=\"sev critical\">◆ review</span> <span class=\"dim\">decision #auth-jwt-cookie</span></div><div class=\"row\"><span class=\"them\">&ldquo;Session tokens are carried in an httpOnly cookie,</span></div><div class=\"row\"><span class=\"them\">&nbsp;&nbsp;never in web storage.&rdquo;</span></div><div class=\"row\"><span class=\"act\">→ Judge your plan against this and report_judgement.</span></div></div></div><details class=\"why\"><summary>Who makes the call</summary><p>The server has no model. It finds the decisions your paths touch and hands them back; your own agent, holding the plan, makes the call. Exactly one agent is asked, and a pair once judged is never raised again unless something material changes.</p></details></article>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<article class=\"cc k-path wide\"><div class=\"kind\">path overlap <span class=\"live-badge\">works today</span></div><h3>Two agents about to write the same file</h3><div class=\"two-up\"><div><p class=\"scene\">Mara&#39;s agent holds <span class=\"inline-code\">api/router.go</span> open for a rewrite of the middleware chain. Forty seconds later Devesh&#39;s agent declares an intent that adds a route to the same file. Neither of them knows, and neither of them is wrong.</p><details class=\"why\"><summary>How severity is decided</summary><p>Two writes on the same exact file are critical; other write-against-write overlaps are high, and a read against a write is medium. Two reads are never a conflict at all. A claim covering a whole top-level directory is capped at low, and paths your project ignores, generated code among them, never become claims.</p></details></div><div class=\"resp\"><div class=\"rh\">in Devesh&#39;s agent&#39;s tool response</div><div class=\"rb\"><div class=\"row\"><span class=\"sev high\">▲ high</span> <span class=\"dim\">CF-14 · path overlap</span></div><div class=\"row\"><span class=\"you\">api/router.go</span> <span class=\"dim\">— held by</span> <span class=\"them\">Mara/api</span> <span class=\"dim\">(write, 4m, feat/booking-api)</span></div><div class=\"row\"><span class=\"act\">→ Take api/bookings.go and let the router land first,</span></div><div class=\"row\"><span class=\"act\">&nbsp;&nbsp; or rebase on her branch before you start.</span></div></div></div></div></article>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -448,12 +436,41 @@ func collideContract() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var11 == nil {
+			templ_7745c5c3_Var11 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<article class=\"cc soon k-contract\"><div class=\"kind\">contract mismatch · nobody is building this <span class=\"soon-badge\">Coming next</span></div><h3>A frontend coding against an endpoint nobody is building</h3><p class=\"scene\">Once agents can publish the endpoints they produce and consume, metiche will flag a consumer with no producer, and two sides that disagree on a shape, before the demo does.</p></article>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func collideDecision() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
 		templ_7745c5c3_Var12 := templ.GetChildren(ctx)
 		if templ_7745c5c3_Var12 == nil {
 			templ_7745c5c3_Var12 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<article class=\"cc k-contract wide\"><div class=\"kind\">contract mismatch · nobody is building this</div><h3>A frontend coding against an endpoint that does not exist yet</h3><p class=\"scene\">This is the one the whole product exists for. Devesh&#39;s agent publishes a <b>consumes</b> contract for <span class=\"inline-code\">POST /api/bookings</span> and builds the booking form against it: the request shape, the loading state, the error path, the redirect. It looks finished. Nobody is producing that endpoint. Mara spent the hour on auth, and the queue is invisible to both of them until the demo.</p><div class=\"two-up\"><div class=\"resp\"><div class=\"rh\">five minutes with no producer</div><div class=\"rb\"><div class=\"row\"><span class=\"sev alert\">● alert</span> <span class=\"dim\">CF-21 · nobody is building this</span></div><div class=\"row\"><span class=\"you\">POST /api/bookings</span> <span class=\"dim\">— consumed by</span> <span class=\"them\">Devesh/web</span></div><div class=\"row\"><span class=\"dim\">produced by nobody for 6m · 3 files waiting on it</span></div><div class=\"row\"><span class=\"act\">→ Get an owner on it now, or stub it and move to</span></div><div class=\"row\"><span class=\"act\">&nbsp;&nbsp; the checkout view.</span></div></div></div><div class=\"resp\"><div class=\"rh\">and when somebody does build it</div><div class=\"rb\"><div class=\"row\"><span class=\"sev high\">▲ high</span> <span class=\"dim\">CF-24 · contract mismatch</span></div><div class=\"row\"><span class=\"dim\">POST /api/bookings · response</span></div><div class=\"row\"><span class=\"you\">booking_id</span> <span class=\"dim\">required by the consumer, not produced</span></div><div class=\"row\"><span class=\"them\">leg_ids</span> <span class=\"dim\">produced as string[], consumed as int[]</span></div><div class=\"row\"><span class=\"act\">→ One of you moves. Decide which, now, not at merge.</span></div></div></div></div><div class=\"two-up\" style=\"margin-top:14px;align-items:start\"><div class=\"mx\"><table><thead><tr><th scope=\"col\">contract</th><th scope=\"col\" class=\"who\">Mara / api</th><th scope=\"col\" class=\"who\">Devesh / web</th><th scope=\"col\" class=\"who\">Junia / infra</th></tr></thead> <tbody><tr><td class=\"key\">GET /api/legs</td><td class=\"cell\"><span class=\"mk p\" title=\"produces\">P</span></td><td class=\"cell\"><span class=\"mk c\" title=\"consumes\">C</span></td><td class=\"cell\"><span class=\"mk none\" title=\"not involved\">·</span></td></tr><tr class=\"orphan\"><td class=\"key\">POST /api/bookings</td><td class=\"cell\"><span class=\"mk gap\" title=\"nobody produces this\">—</span></td><td class=\"cell\"><span class=\"mk c\" title=\"consumes\">C</span></td><td class=\"cell\"><span class=\"mk none\" title=\"not involved\">·</span></td></tr><tr><td class=\"key\">GET /api/health</td><td class=\"cell\"><span class=\"mk p\" title=\"produces\">P</span></td><td class=\"cell\"><span class=\"mk none\" title=\"not involved\">·</span></td><td class=\"cell\"><span class=\"mk c\" title=\"consumes\">C</span></td></tr></tbody></table><div class=\"mx-legend\">Produces down one axis, consumes across the other. The row with a consumer and no producer is the bottleneck, and it is the only thing on this table you need to look at.</div></div><details class=\"why\" style=\"margin-top:0\"><summary>How two shapes are compared</summary><p>Agents never compute the hash of a shape — the server canonicalizes every submitted shape and hashes it itself, because two agents describing the same JSON in different word order must produce the same bytes or none of this dedupes. A missing output field breaks the consumer; a missing input field breaks the producer; the direction decides which side is at fault. It also notices that one of you wrote <span class=\"inline-code\">/api/session</span> and the other wrote <span class=\"inline-code\">/api/sessions</span>.</p></details></div></article>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<article class=\"cc soon k-decision\"><div class=\"kind\">decision contradiction <span class=\"soon-badge\">Coming next</span></div><h3>A plan that contradicts what the team already settled</h3><p class=\"scene\">Once the team can record decisions, metiche will hand an agent the ones its paths touch, and that agent&#39;s own model will judge whether its plan breaks one.</p></article>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -482,7 +499,7 @@ func collideDuplicate() templ.Component {
 			templ_7745c5c3_Var13 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<article class=\"cc k-dup wide\"><div class=\"kind\">duplicate work</div><h3>Two people independently building the same thing</h3><p class=\"scene\">Two branches, two agents, one manifest CSV parser — written twice, in parallel, by people sitting next to each other. The tell is usually not the code. It is that both intents point at the same issue, which is the one match that is never a coincidence.</p><div class=\"resp\"><div class=\"rh\">in both agents&#39; next response</div><div class=\"rb\"><div class=\"row\"><span class=\"sev medium\">● medium</span> <span class=\"dim\">CF-9 · duplicate work</span></div><div class=\"row\"><span class=\"you\">INT-83 &ldquo;parse the manifest CSV&rdquo;</span> <span class=\"dim\">≈</span> <span class=\"them\">INT-77 (Junia/tests)</span></div><div class=\"row\"><span class=\"dim\">same external ref #212 · overlapping paths in import/</span></div><div class=\"row\"><span class=\"act\">→ One of you takes the parser, the other takes the upload UI.</span></div></div></div></article>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<article class=\"cc soon k-dup\"><div class=\"kind\">duplicate work <span class=\"soon-badge\">Coming next</span></div><h3>Two people independently building the same thing</h3><p class=\"scene\">metiche will notice two intents aimed at the same issue and tell both agents to split the work before either of them finishes it.</p></article>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -512,7 +529,7 @@ func landingHonest() templ.Component {
 			templ_7745c5c3_Var14 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<section class=\"section alt\" id=\"honest\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">The honest part</div><h2>metiche never blocks anyone.</h2></div><div class=\"honest\"><div><p class=\"big\">Claims are advisory and they expire. Two agents are allowed to hold the same file — that is not an error state, it is a conflict, raised the moment it happens and handed to both of them.</p><p>Nothing waits for a lease. Ordering assigns <b>responsibility, not permission</b> — and a tool that pretended to be a lock would be worse than no tool, because you would be waiting on a session that crashed twenty minutes ago.</p><div class=\"contrast\"><div class=\"noise\"><span class=\"lab\">noise</span> You and Mara both hold api/router.go.</div><div class=\"signal\"><span class=\"lab\">signal</span> Mara holds api/router.go (write, 4m, feat/booking-api) — take api/bookings.go and let the router land first.</div></div></div><ul class=\"rules\"><li><span class=\"g\">·</span><span><b>Nothing is ever surfaced without a next action.</b> A finding with no suggestion is noise, and noise is how a tool teaches a model to ignore it.</span></li><li><span class=\"g\">·</span><span><b>Two reads never conflict.</b> Generated code never enters the index at all.</span></li><li><span class=\"g\">·</span><span><b>A claim on half the repo gets capped, not amplified.</b> Over-broad claims are recorded at low severity with a &ldquo;narrow this&rdquo; nudge.</span></li><li><span class=\"g\">·</span><span><b>One human&#39;s two agents are not a conflict</b> in the way two humans are. Same member, same branch — severity comes down.</span></li><li><span class=\"g\">·</span><span><b>One conflict per pair, forever.</b> Re-detection bumps a counter; it does not send the message again unless things get worse.</span></li><li><span class=\"g\">·</span><span><b>A rule that is wrong for your repo stops shouting the same afternoon.</b> Dismissals are tracked, and a rule dismissed as a false positive too often demotes itself to record-only.</span></li><li><span class=\"g\">·</span><span><b>Claims expire.</b> There is a time-to-live, and a hard ceiling that heartbeats cannot push past, so a crashed agent cannot haunt the board.</span></li></ul></div></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<section class=\"section alt\" id=\"honest\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">The honest part</div><h2>metiche never blocks anyone.</h2></div><div class=\"honest\"><div><p class=\"big\">Claims are advisory and they expire. Two agents are allowed to hold the same file — that is not an error state, it is a conflict, raised the moment it happens.</p><p>Nothing waits for a lease. Ordering assigns <b>responsibility, not permission</b> — and a tool that pretended to be a lock would be worse than no tool, because you would be waiting on a session that crashed twenty minutes ago.</p><div class=\"contrast\"><div class=\"noise\"><span class=\"lab\">noise</span> You and Mara both hold api/router.go.</div><div class=\"signal\"><span class=\"lab\">signal</span> Mara holds api/router.go (write, 4m, feat/booking-api) — take api/bookings.go and let the router land first.</div></div></div><ul class=\"rules\"><li><span class=\"g\">·</span><span><b>Nothing is ever surfaced without a next action.</b> A finding with no suggestion is noise, and noise is how a tool teaches a model to ignore it. Low-severity findings are recorded without interrupting anyone.</span></li><li><span class=\"g\">·</span><span><b>Two reads never conflict.</b> Paths your project ignores, generated code among them, never become claims at all.</span></li><li><span class=\"g\">·</span><span><b>A claim on half the repo gets capped, not amplified.</b> Over-broad claims are recorded at low severity with a &ldquo;narrow this&rdquo; nudge.</span></li><li><span class=\"g\">·</span><span><b>Same branch, or one person&#39;s idle agent, counts for less.</b> Severity comes down a step. Two of your own agents working at the same moment still get full severity, because that is when you know least about what each one is touching.</span></li><li><span class=\"g\">·</span><span><b>One conflict per pair.</b> Re-detection bumps a counter; the other agent is not told again unless the severity climbs.</span></li><li><span class=\"g\">·</span><span><b>Claims expire.</b> There is a time-to-live, and a hard four-hour ceiling that heartbeats cannot push past, so a crashed agent cannot haunt the board.</span></li><li class=\"soon\"><span class=\"g\">·</span><span><span class=\"soon-badge\">Coming next</span> <b>Dismissals.</b> An agent will be able to dismiss a finding as a false positive, and a rule dismissed too often will demote itself to record-only.</span></li></ul></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -542,30 +559,30 @@ func landingBoard(boardURL string) templ.Component {
 			templ_7745c5c3_Var15 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<section class=\"section\" id=\"board\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">The board</div><h2>And one page where a person can see the whole team at once.</h2><p class=\"sub\">The agents coordinate with each other. The board is for the human who wants to know where the team actually is — a lane per person, their agents underneath, and the one line that says what each of them is doing right now. It repaints over SSE; there is nothing to refresh.</p></div><div class=\"mini\" aria-hidden=\"true\"><div class=\"mini-head\"><span class=\"word\">metiche<span class=\"dot\">.</span></span> <span>orbital-freight</span> <span class=\"cur\"><span><b>seq</b> <span class=\"seq\">417</span></span><span><b>rev</b> <span class=\"rev\">88</span></span></span></div><div class=\"mini-lanes\"><div class=\"ml\"><div class=\"ml-head\"><span class=\"av\">MQ</span><span class=\"nm\">Mara</span><span class=\"lb\">api</span></div><div class=\"ml-body sev-high\"><div class=\"ml-status\">writing the bookings handler</div><div class=\"ml-path hot\"><span class=\"m\">wr</span>api/router.go</div><div class=\"ml-path\"><span class=\"m\">wr</span>api/bookings.go</div><span class=\"tag high\"><span class=\"gl\">▲</span>path overlap</span></div></div><div class=\"ml\"><div class=\"ml-head\"><span class=\"av\">DR</span><span class=\"nm\">Devesh</span><span class=\"lb\">web</span></div><div class=\"ml-body sev-alert\"><div class=\"ml-status\">wiring the booking form to POST /api/bookings</div><div class=\"ml-path\"><span class=\"m\">wr</span>web/booking/form.tsx</div><div class=\"ml-path\"><span class=\"m\">rd</span>web/api/client.ts</div><span class=\"tag alert\"><span class=\"gl\">●</span>nobody is building this</span></div></div><div class=\"ml\"><div class=\"ml-head\"><span class=\"av\">JO</span><span class=\"nm\">Junia</span><span class=\"lb\">infra</span></div><div class=\"ml-body calm\"><div class=\"ml-status\">applying the migration on staging</div><div class=\"ml-path\"><span class=\"m\">st</span>deploy/migrations/**</div><span class=\"tag good\">clear</span></div></div></div></div><p class=\"caption\">An illustration of the demo recording that ships in the repo — metiche has no users yet, so there is nothing else it could honestly be.</p><div class=\"viewlist\"><div><b>board</b>Who is live, what each agent is doing, the paths it holds, and a badge the moment one of them is contested.</div><div><b>contracts</b>Produces against consumes. The column with nobody in it is the thing the whole team is waiting on.</div><div><b>conflicts</b>Every finding with its suggested action and the paths it is about. Read-only: the agents settle them, and the board shows how each one ended.</div><div><b>runs</b>Every session end to end, replayed from the event log, so &ldquo;what did that agent actually do&rdquo; has an answer.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<section class=\"section\" id=\"board\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">The board</div><h2>And one page where a person can see the whole team at once.</h2><p class=\"sub\">The agents coordinate with each other. The board is for the human who wants to know where the team actually is — a lane per person, their agents underneath, and the one line that says what each of them is doing right now. It repaints over SSE; there is nothing to refresh.</p></div><div class=\"mini\" aria-hidden=\"true\"><div class=\"mini-head\"><span class=\"word\">metiche<span class=\"dot\">.</span></span> <span>orbital-freight</span> <span class=\"cur\"><span><b>seq</b> <span class=\"seq\">417</span></span><span><b>rev</b> <span class=\"rev\">88</span></span></span></div><div class=\"mini-lanes\"><div class=\"ml\"><div class=\"ml-head\"><span class=\"av\">MQ</span><span class=\"nm\">Mara</span><span class=\"lb\">api</span></div><div class=\"ml-body sev-high\"><div class=\"ml-status\">rewriting the middleware chain</div><div class=\"ml-path hot\"><span class=\"m\">wr</span>api/router.go</div><div class=\"ml-path\"><span class=\"m\">wr</span>api/middleware.go</div><span class=\"tag high\"><span class=\"gl\">▲</span>path overlap</span></div></div><div class=\"ml\"><div class=\"ml-head\"><span class=\"av\">DR</span><span class=\"nm\">Devesh</span><span class=\"lb\">api</span></div><div class=\"ml-body sev-high\"><div class=\"ml-status\">adding the bookings route</div><div class=\"ml-path hot\"><span class=\"m\">wr</span>api/router.go</div><div class=\"ml-path\"><span class=\"m\">wr</span>api/bookings.go</div><span class=\"tag high\"><span class=\"gl\">▲</span>path overlap</span></div></div><div class=\"ml\"><div class=\"ml-head\"><span class=\"av\">JO</span><span class=\"nm\">Junia</span><span class=\"lb\">infra</span></div><div class=\"ml-body calm\"><div class=\"ml-status\">applying the migration on staging</div><div class=\"ml-path\"><span class=\"m\">st</span>deploy/migrations/**</div><span class=\"tag good\">clear</span></div></div></div></div><p class=\"caption\">An illustration of the demo recording that ships in the repo — metiche has no users yet, so there is nothing else it could honestly be.</p><div class=\"viewlist\"><div><b>board</b>Who is live, what each agent is doing, the paths it holds, and a badge the moment one of them is contested.</div><div><b>conflicts</b>Every finding with its suggested action and the paths it is about. Read-only: nobody settles a finding from the board.</div><div><b>runs</b>Every session end to end, replayed from the event log, so &ldquo;what did that agent actually do&rdquo; has an answer.</div><div class=\"soon\"><b>contracts <span class=\"soon-badge\">Coming next</span></b>Produces against consumes, once agents can publish contracts.</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if boardURL != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<div class=\"cta-row\"><a class=\"btn\" href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div class=\"cta-row\"><a class=\"btn\" href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var16 templ.SafeURL
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 583, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 516, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\">See a live demo <span class=\"arw\">→</span></a></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\">See a live demo <span class=\"arw\">→</span></a></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -574,6 +591,10 @@ func landingBoard(boardURL string) templ.Component {
 }
 
 // ---------------------------------------------------------------- join
+
+// landingJoin is the whole way onto a team, as the numbered steps a person
+// actually takes: create, invite, join, open the board. The join code is shown
+// only as a placeholder; a real one is an invite and never belongs on a page.
 func landingJoin(boardURL string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -595,7 +616,7 @@ func landingJoin(boardURL string) templ.Component {
 			templ_7745c5c3_Var17 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<section class=\"section alt\" id=\"join\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">Getting on it</div><h2>Getting your team on it takes one line.</h2><p class=\"sub\">One line. It creates a team, or joins one.</p></div><div class=\"join-grid\"><div class=\"jsteps\"><div class=\"jstep\"><h3>Everyone runs the same line</h3><div class=\"code install\"><div class=\"code-head\">once, per machine<button class=\"copy\" type=\"button\" data-copy=\"install-cmd\" aria-live=\"polite\" hidden>Copy</button></div><pre id=\"install-cmd\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<section class=\"section alt\" id=\"join\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">Getting on it</div><h2>Getting your team on it takes one line and four steps.</h2><p class=\"sub\">Create the team, invite someone, they join, and anyone opens the board.</p></div><div class=\"join-grid\"><ol class=\"jsteps\"><li class=\"jstep\"><h3>Create the team</h3><p>The first person runs this line and chooses <b>create</b>:</p><div class=\"code install\"><div class=\"code-head\">once, per machine<button class=\"copy\" type=\"button\" data-copy=\"install-cmd\" aria-live=\"polite\" hidden>Copy</button></div><pre id=\"install-cmd\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -603,30 +624,43 @@ func landingJoin(boardURL string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</pre></div><p>The first person gets a team and a join code. Everyone else pastes that code when it asks. It finds the assistants you already have — Claude Code, Cursor, Windsurf, Codex — joins the team for you, and installs the skill your agent reads.</p><p>It joins over the network before it configures anything, then proves the token works on a fresh connection. If that fails, nothing is written at all: no config, no half-set-up machine that looks finished.</p><p>At the end it offers to open your board signed in. A private board opens only for its signed-in members; to everyone else it is a 404.</p><p class=\"fine\">No signup: you get an anonymous identity that works immediately, and GitHub sign-in later buys recovery and per-person removal.</p><p class=\"manual\"><a href=\"https://github.com/mklfarha/metiche/blob/main/docs/ONBOARDING.md\">The manual route is written down <span class=\"arw\">→</span></a></p></div></div><div><div class=\"codeform\"><h3>Already on a team?</h3><p>Open your board signed in: run the same line again and say yes at the end, or ask your assistant to open the metiche board. Either way you get a sign-in link that works once, for ten minutes.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</pre></div><p>It makes the team and shows you a join code once. It finds the assistants you already have — Claude Code, Cursor, Windsurf, Codex — and installs the skill your agent reads.</p></li><li class=\"jstep\"><h3>Invite a teammate</h3><p>Any time later, ask your assistant to <b>create a metiche invite</b>. It calls <code>create_invite</code> and hands back a code that works once and lasts seven days by default. Send it privately — team chat, not your repository.</p></li><li class=\"jstep\"><h3>They join</h3><p>Your teammate runs the same line, chooses <b>join</b>, and pastes the code when it asks:</p><div class=\"code placeholder\"><pre>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var18 string
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs("join code: <paste the code you were sent>")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 571, Col: 57}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</pre></div><p>The installer configures each of their assistants with its own token. It joins over the network before it configures anything, then proves the token works on a fresh connection. If that fails, nothing is written at all: no config, no half-set-up machine that looks finished.</p></li><li class=\"jstep\"><h3>Open the board</h3><p>Open your board signed in: say yes at the end of the installer, or ask your assistant to open the metiche board. Either way you get a sign-in link that works once, for ten minutes. A private board opens only for its signed-in members; to everyone else it is a 404.</p></li></ol><div><div class=\"codeform\"><h3>About the join code</h3><p>A join code is an invite you redeem once, not a credential your agent carries. What each assistant keeps afterwards is a token the server minted for it, in that assistant&#39;s own config in your home directory.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if boardURL != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<p class=\"manual\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<p class=\"manual\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var18 templ.SafeURL
-			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
+			var templ_7745c5c3_Var19 templ.SafeURL
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 651, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 603, Col: 41}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\">Just looking? See the live demo <span class=\"arw\">→</span></a></p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\">Just looking? See the live demo <span class=\"arw\">→</span></a></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<p class=\"fine\">The join code is a credential — team chat, not your repository. It is an invite you redeem once; what your agent carries afterwards is a token the server minted.</p></div><div class=\"code\" style=\"margin-top:14px\"><div class=\"code-head\">what your agent then does <span class=\"fn\">· on its own, every loop</span></div><pre>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<p class=\"manual\"><a href=\"https://github.com/mklfarha/metiche/blob/main/docs/ONBOARDING.md\">The manual route is written down <span class=\"arw\">→</span></a></p></div><div class=\"code\" style=\"margin-top:14px\"><div class=\"code-head\">what your agent then does <span class=\"fn\">· on its own, every loop</span></div><pre>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -634,7 +668,7 @@ func landingJoin(boardURL string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</pre></div></div></div></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</pre></div></div></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -659,12 +693,12 @@ func landingFoot() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var19 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var19 == nil {
-			templ_7745c5c3_Var19 = templ.NopComponent
+		templ_7745c5c3_Var20 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var20 == nil {
+			templ_7745c5c3_Var20 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<footer class=\"lp-foot\"><div class=\"wrap\"><span class=\"brandbar\"><img src=\"/static/metiche-icon.png\" alt=\"\" width=\"26\" height=\"26\"> <span class=\"word\">metiche<span class=\"dot\">.</span></span></span><div class=\"links\"><a href=\"#what\">What it catches</a> <a href=\"#how\">How it works</a> <a href=\"#join\">Join</a> <a href=\"https://github.com/mklfarha/metiche\">Source</a></div></div><div class=\"wrap\" style=\"margin-top:16px\"><p class=\"said\"><b>metiche</b> — Mexican slang for the one who has to know what everybody else is up to. Open source, self-hostable, and it will never need an API key from a model provider — that constraint is exactly why the deterministic half runs on the server and the judgement half runs in your own agent&#39;s model.</p></div></footer>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<footer class=\"lp-foot\"><div class=\"wrap\"><span class=\"brandbar\"><img src=\"/static/metiche-icon.png\" alt=\"\" width=\"26\" height=\"26\"> <span class=\"word\">metiche<span class=\"dot\">.</span></span></span><div class=\"links\"><a href=\"#what\">What it catches</a> <a href=\"#how\">How it works</a> <a href=\"#join\">Join</a> <a href=\"https://github.com/mklfarha/metiche\">Source</a></div></div><div class=\"wrap\" style=\"margin-top:16px\"><p class=\"said\"><b>metiche</b> — Mexican slang for the one who has to know what everybody else is up to. Open source, self-hostable, and it will never need an API key from a model provider: the checks it runs today are deterministic and run on the server, and the judgement calls coming next will run in your own agent&#39;s model.</p></div></footer>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -472,28 +472,51 @@ body.lp {
 .two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
 @media (max-width: 760px) { .two-up { grid-template-columns: 1fr; } }
 
-/* the produces / consumes matrix, small */
-.mx { border: 1px solid var(--line); border-radius: 6px; overflow: auto; background: var(--panel); }
-.mx table { border-collapse: collapse; width: 100%; font-size: 12px; }
-.mx th, .mx td { border-bottom: 1px solid var(--line-soft); padding: 6px 9px; text-align: left; }
-.mx thead th {
-  font-family: var(--mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
-  color: var(--ink-3); font-weight: 600; background: var(--panel-2);
+/* ---------------------------------------------------------------- coming next
+ *
+ * Anything not built yet carries .soon-badge and, on a card, .soon. Muted, not
+ * faded: the copy stays at --ink-2 so it reads, but the border goes dashed and
+ * the accent colour drains out, so it never looks like the live card. */
+
+.soon-badge {
+  display: inline-flex; align-items: center; flex: none;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  font-weight: 700; line-height: 1.6; white-space: nowrap;
+  padding: 0 6px; border-radius: 3px;
+  color: var(--ink-2); background: var(--quiet-bg); border: 1px dashed var(--ink-3);
+  vertical-align: 1px;
 }
-.mx thead th.who { text-align: center; }
-.mx tbody tr:last-child td { border-bottom: 0; }
-.mx td.key { font-family: var(--mono); font-size: 11.5px; color: var(--ink); }
-.mx td.cell { text-align: center; }
-.mx tr.orphan td { background: var(--wash-medium); }
-.mk {
-  display: inline-grid; place-items: center; width: 22px; height: 22px;
-  font-family: var(--mono); font-size: 10px; font-weight: 700;
+.live-badge {
+  display: inline-flex; align-items: center; flex: none;
+  font-size: 9.5px; letter-spacing: .1em; font-weight: 700; line-height: 1.6; white-space: nowrap;
+  padding: 0 6px; border-radius: 3px;
+  color: var(--ink); background: var(--panel); border: 1px solid currentColor;
 }
-.mk.p { background: var(--indigo-bg); color: var(--indigo-ink); border: 1px solid var(--indigo-ink); border-radius: 5px; }
-.mk.c { background: var(--coral-bg);  color: var(--coral-ink);  border: 1px solid var(--coral);      border-radius: 50%; }
-.mk.none { color: var(--ink-3); background: transparent; border: 1px dashed var(--line); border-radius: 5px; opacity: .55; }
-.mk.gap { background: var(--cyan); color: #04222b; border: 1px solid var(--cyan); border-radius: 5px; }
-.mx-legend { font-size: 11.5px; color: var(--ink-3); padding: 7px 9px; background: var(--panel-2); border-top: 1px solid var(--line-soft); }
+
+#what .soon-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 34px 0 12px; font-size: 14px; font-weight: 600; color: var(--ink-3);
+}
+.collide-soon { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.collide-soon > * { min-width: 0; }
+@media (max-width: 900px) { .collide-soon { grid-template-columns: 1fr; } }
+
+.cc.soon {
+  background: transparent; box-shadow: none;
+  border: 1px dashed var(--line); border-top: 3px dashed var(--line);
+}
+.cc.soon .kind {
+  flex-wrap: wrap; color: var(--ink-3); background: transparent; border-color: var(--line);
+}
+.cc.soon h3 { color: var(--ink-2); font-size: clamp(16px, 2vw, 17px); }
+.cc.soon .scene { font-size: 14px; margin-bottom: 0; }
+
+.rules li.soon { background: var(--bg-2); color: var(--ink-3); }
+.rules li.soon b { color: var(--ink-2); }
+.rules li.soon .g { color: var(--ink-3); }
+
+.viewlist div.soon { background: transparent; border-style: dashed; color: var(--ink-3); }
+.viewlist div.soon b { color: var(--ink-2); }
 
 /* ---------------------------------------------------------------- honest */
 
@@ -617,11 +640,13 @@ body.lp {
   .code .code-head .copy { min-height: 40px; min-width: 72px; }
 }
 
-.jstep .soon {
-  display: inline-block; margin-left: 7px; vertical-align: 2px;
-  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--ink-3); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; font-weight: 600;
+.jstep h3 { padding-top: 3px; }
+.jstep code {
+  font-family: var(--mono); font-size: 12.5px; padding: 1px 5px; border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--line-soft); color: var(--ink);
 }
+/* the pasted-code placeholder: an example of the prompt, not a thing to copy */
+.jstep .code.placeholder pre { color: #cdc2f0; font-style: italic; }
 
 .codeform {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
@@ -637,12 +662,20 @@ body.lp {
 .codeform .manual a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .codeform .fine { margin-top: 14px; font-size: 12.5px; color: var(--ink-3); line-height: 1.55; }
 
-.tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-.tools code {
-  font-family: var(--mono); font-size: 11.5px; padding: 3px 8px; border-radius: 5px;
+/* the tools, by group — never by count, because the count moves */
+.tools-lead { font-size: 14px; color: var(--ink-2); margin: 0; }
+.toolgroups { margin: 12px 0 0; display: grid; gap: 7px; }
+.toolgroups > div { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 4px 10px; align-items: baseline; }
+@media (max-width: 480px) { .toolgroups > div { grid-template-columns: 1fr; } }
+.toolgroups dt { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.toolgroups dd { margin: 0; display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.toolgroups code {
+  font-family: var(--mono); font-size: 11.5px; padding: 2px 7px; border-radius: 5px;
   background: var(--panel-2); border: 1px solid var(--line-soft); color: var(--ink-2);
+  overflow-wrap: anywhere;
 }
-.tools code.hot { color: var(--ink); border-color: var(--accent); background: var(--indigo-bg); font-weight: 600; }
+.toolgroups code.hot { color: var(--ink); border-color: var(--accent); background: var(--indigo-bg); font-weight: 600; }
+.tools-next { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13.5px; color: var(--ink-3); }
 
 /* ---------------------------------------------------------------- footer */
 
