@@ -11,8 +11,9 @@ import (
 
 // ---------------------------------------------------------------- lanes
 
-// AgentLane is one agent's column-within-a-column on the board: the agent, the
-// session it is currently running, and everything hanging off that session.
+// AgentLane is one session's column-within-a-column on the board: the agent,
+// one session it is running, and everything hanging off that session. An agent
+// with several live sessions gets one AgentLane per session.
 type AgentLane struct {
 	Agent     *model.Agent
 	Session   *model.Session
@@ -23,6 +24,10 @@ type AgentLane struct {
 	// Rendering them differently is the difference between "here are 9 paths"
 	// and "this one is the problem".
 	HotPaths map[string]string // path -> worst severity
+	// Multi is true when this agent has more than one live lane — several
+	// terminals of one client, each its own session. The view uses it to put
+	// the session key on the label, or the lanes are indistinguishable.
+	Multi bool
 }
 
 // Worst returns the highest severity among this lane's open conflicts.
@@ -57,33 +62,58 @@ func (l Lane) Worst() string {
 	return worst
 }
 
-// Active counts the member's agents that are actually working.
+// Active counts the member's distinct agents that are actually working. An
+// agent with two live sessions has two lanes but is one agent, so counting
+// lanes would put "3/2" in the header.
 func (l Lane) Active() int {
-	n := 0
+	seen := map[string]bool{}
 	for _, a := range l.Agents {
-		if !a.Idle() {
-			n++
+		if !a.Idle() && a.Agent != nil {
+			seen[a.Agent.Key] = true
 		}
 	}
-	return n
+	return len(seen)
 }
 
-// Lanes builds the board: a lane per member, their agents, and for each agent
-// the current session, intent, held paths and live conflicts.
-func (s Snapshot) Lanes() []Lane {
-	sessionByAgent := map[string]*model.Session{}
-	for _, sess := range s.Sessions {
-		prev, ok := sessionByAgent[sess.AgentKey]
-		// Prefer the live session; otherwise keep the most recently started, so
-		// a finished agent still shows what it last did instead of going blank.
-		switch {
-		case !ok:
-			sessionByAgent[sess.AgentKey] = sess
-		case sess.Live() && !prev.Live():
-			sessionByAgent[sess.AgentKey] = sess
-		case sess.Live() == prev.Live() && sess.StartedAt.After(prev.StartedAt):
-			sessionByAgent[sess.AgentKey] = sess
+// AgentCount counts the member's distinct agents. It is the header's
+// denominator: an agent with two live sessions has two lanes but is one agent,
+// so len(Agents) would read "1/3" for a member with two agents.
+func (l Lane) AgentCount() int {
+	seen := map[string]bool{}
+	for _, a := range l.Agents {
+		if a.Agent != nil {
+			seen[a.Agent.Key] = true
 		}
+	}
+	return len(seen)
+}
+
+// Lanes builds the board: a lane per member, an agent lane per live session
+// (or one for an idle agent), and for each the session, intent, held paths and
+// live conflicts.
+func (s Snapshot) Lanes() []Lane {
+	// Every live session gets its own lane: one agent can run several
+	// terminals at once, and keeping only one would hide the others. An agent
+	// with nothing live keeps its most recently started finished session, so
+	// it still shows what it last did instead of going blank.
+	liveByAgent := map[string][]*model.Session{}
+	lastByAgent := map[string]*model.Session{}
+	for _, sess := range s.Sessions {
+		if sess.Live() {
+			liveByAgent[sess.AgentKey] = append(liveByAgent[sess.AgentKey], sess)
+			continue
+		}
+		if prev, ok := lastByAgent[sess.AgentKey]; !ok || sess.StartedAt.After(prev.StartedAt) {
+			lastByAgent[sess.AgentKey] = sess
+		}
+	}
+	for _, list := range liveByAgent {
+		sort.SliceStable(list, func(i, j int) bool {
+			if !list[i].StartedAt.Equal(list[j].StartedAt) {
+				return list[i].StartedAt.Before(list[j].StartedAt)
+			}
+			return list[i].Key < list[j].Key
+		})
 	}
 
 	intentBySession := map[string]*model.Intent{}
@@ -127,15 +157,24 @@ func (s Snapshot) Lanes() []Lane {
 	for _, m := range s.Members {
 		lane := Lane{Member: m}
 		for _, a := range m.Agents {
-			al := AgentLane{Agent: a}
-			if sess := sessionByAgent[a.Key]; sess != nil {
-				al.Session = sess
-				al.Intent = intentBySession[sess.Key]
-				al.Claims = claimsBySession[sess.Key]
-				al.Conflicts = conflictsBySession[sess.Key]
-				al.HotPaths = hot[sess.Key]
+			sessions := liveByAgent[a.Key]
+			if len(sessions) == 0 {
+				// Idle agent: one lane, carrying its last finished session
+				// (or none at all).
+				sessions = []*model.Session{lastByAgent[a.Key]}
 			}
-			lane.Agents = append(lane.Agents, al)
+			multi := len(liveByAgent[a.Key]) > 1
+			for _, sess := range sessions {
+				al := AgentLane{Agent: a, Multi: multi}
+				if sess != nil {
+					al.Session = sess
+					al.Intent = intentBySession[sess.Key]
+					al.Claims = claimsBySession[sess.Key]
+					al.Conflicts = conflictsBySession[sess.Key]
+					al.HotPaths = hot[sess.Key]
+				}
+				lane.Agents = append(lane.Agents, al)
+			}
 		}
 		// Busy agents first: the lane's top line should be the live one.
 		sort.SliceStable(lane.Agents, func(i, j int) bool {

@@ -83,7 +83,7 @@ templ laneView(s state.Snapshot, lane state.Lane) {
 			<span class="avatar">{ initials(lane.Member.DisplayName) }</span>
 			<span class="name">{ lane.Member.DisplayName }</span>
 			<span class="meta">
-				{ fmt.Sprintf("%d/%d", lane.Active(), len(lane.Agents)) }
+				{ fmt.Sprintf("%d/%d", lane.Active(), lane.AgentCount()) }
 			</span>
 		</header>
 		<div class="lane-body">
@@ -102,6 +102,11 @@ templ agentCard(s state.Snapshot, l state.AgentLane) {
 		<div class="agent-head">
 			<span class={ pipClass(l.Session) }></span>
 			<span class="label">{ l.Agent.Label }</span>
+			if l.Multi && l.Session != nil {
+				// Two terminals of one client are two lanes of one agent; the
+				// session key is the only thing that tells them apart.
+				<span class="session-key">{ l.Session.Key }</span>
+			}
 			if l.Session != nil && l.Session.Branch != "" {
 				<span class="branch" title={ l.Session.BaseCommit }>{ l.Session.Branch }</span>
 			}
