@@ -439,6 +439,10 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	case resolveUnavailable, resolveFull:
 		http.Error(w, "board unavailable, try again shortly", http.StatusServiceUnavailable)
 		return
+	case resolveSessionOver:
+		s.login.clearCookie(w)
+		http.NotFound(w, r)
+		return
 	default:
 		http.NotFound(w, r)
 		return
@@ -586,6 +590,7 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) team(w http.ResponseWriter, r *http.Request) (*Team, state.Snapshot, *http.Request, bool) {
 	slug := chi.URLParam(r, "slug")
 	v, vs := s.viewer(w, r)
+	anon := r
 	r = s.withViewer(r, v)
 	t, res := s.resolveTeam(r.Context(), v, vs, slug)
 	switch res {
@@ -595,6 +600,14 @@ func (s *Server) team(w http.ResponseWriter, r *http.Request) (*Team, state.Snap
 		// Not a verdict about the team — the backend is unreachable or this
 		// process is at its cap — so it must not read as "no such team".
 		http.Error(w, "this board is unavailable right now; try again shortly", http.StatusServiceUnavailable)
+	case resolveSessionOver:
+		// The session ended between the cache's answer and this request: the
+		// cookie goes now, and the page is the one an anonymous request gets,
+		// as it is when viewer itself hears the 401.
+		s.login.clearCookie(w)
+		r = anon
+		w.WriteHeader(http.StatusNotFound)
+		s.render(w, r, view.NotFound(slug))
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		s.render(w, r, view.NotFound(slug))

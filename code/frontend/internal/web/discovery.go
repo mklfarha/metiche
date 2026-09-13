@@ -124,6 +124,7 @@ const (
 	resolveFound                            // registered (now, or already)
 	resolveUnavailable                      // the backend could not be asked
 	resolveFull                             // at the discovery cap
+	resolveSessionOver                      // a 404, and the viewer's session is over: clear the cookie
 )
 
 type remembered struct {
@@ -155,7 +156,8 @@ type discovery struct {
 //     confirming it: see unregister.
 //  2. A signed-in viewer: the backend's /access, uncached. Private and allowed
 //     → that viewer's own board; public → ordinary discovery; 404 → not
-//     found, remembered nowhere.
+//     found, remembered nowhere — after recheckRefused has ruled out that the
+//     session itself is over.
 //  3. A viewer whose session could not be checked: unavailable, not a 404.
 //  4. Anonymous: discovery, with its negative cache.
 func (s *Server) resolveTeam(ctx context.Context, v *Viewer, vs viewerStatus, slug string) (*Team, resolveResult) {
@@ -188,16 +190,19 @@ func (s *Server) resolveTeam(ctx context.Context, v *Viewer, vs viewerStatus, sl
 func (s *Server) resolveForViewer(ctx context.Context, v *Viewer, slug string) (*Team, resolveResult) {
 	acc, err := s.login.cfg.Backend.Access(ctx, v.secret, slug)
 	switch {
-	case errors.Is(err, feed.ErrNotFound):
-		return nil, resolveNotFound
-	case errors.Is(err, feed.ErrSessionInvalid):
-		s.login.sessionEnded(v.hash)
-		return nil, resolveNotFound
+	case errors.Is(err, feed.ErrNotFound), errors.Is(err, feed.ErrSessionInvalid):
+		return nil, s.refused(ctx, v, errors.Is(err, feed.ErrSessionInvalid))
 	case err != nil:
 		s.log.Warn("asking the backend about a viewer's access failed", "err", err)
 		return nil, resolveUnavailable
 	case acc.Private():
-		return s.login.boards.get(ctx, v, slug)
+		t, res := s.login.boards.get(ctx, v, slug)
+		if res == resolveNotFound {
+			// The board's own first read was refused (404, or 401 for the
+			// session): the same question as a refused /access.
+			return nil, s.refused(ctx, v, false)
+		}
+		return t, res
 	case s.disc == nil:
 		return nil, resolveNotFound
 	default:
@@ -205,6 +210,18 @@ func (s *Server) resolveForViewer(ctx context.Context, v *Viewer, slug string) (
 		// discovery makes is itself anonymous; this request only skips the
 		// negative cache, and teaches it nothing.
 		return s.disc.discover(ctx, s, slug, false)
+	}
+}
+
+// refused turns a backend refusal for a signed-in viewer into a result.
+func (s *Server) refused(ctx context.Context, v *Viewer, status401 bool) resolveResult {
+	switch s.recheckRefused(ctx, v, status401) {
+	case refusalSessionOver:
+		return resolveSessionOver
+	case refusalUnavailable:
+		return resolveUnavailable
+	default:
+		return resolveNotFound
 	}
 }
 

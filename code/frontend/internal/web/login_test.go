@@ -1148,3 +1148,157 @@ func TestCSRFToken(t *testing.T) {
 		t.Fatal("the token contains the secret")
 	}
 }
+
+// ---------------------------------------------------------------- refusals
+
+// signInCached signs a browser in with a link and loads the private board, so
+// the session is in the cache and the viewer has a private board open. It
+// returns the session checks made so far.
+func signInCached(t *testing.T, x *harness) int {
+	t.Helper()
+	x.backend.addLink(fakeLink, stubSession{secret: mintedSess, key: "BS-MINTED0001", account: memberAccount,
+		name: memberName, redirect: "/t/" + privSlug})
+	rec := signinPost(x, fakeLink)
+	if cs := setCookies(rec); rec.Code != 200 || jsonBody(t, rec)["redirect"] != "/t/"+privSlug || len(cs) != 1 || cs[0].value != mintedSess {
+		t.Fatalf("sign in: %d %+v", rec.Code, cs)
+	}
+	before, _, _ := x.backend.loginCounts()
+	if rec := x.getAs(mintedSess, "/t/"+privSlug); rec.Code != 200 {
+		t.Fatalf("private board after sign-in: %d", rec.Code)
+	}
+	if s, _, _ := x.backend.loginCounts(); s != before {
+		t.Fatalf("setup: the board was not served from the session cache (session checks %d -> %d)", before, s)
+	}
+	if x.boardCount() != 1 {
+		t.Fatalf("setup: private boards = %d", x.boardCount())
+	}
+	return before
+}
+
+// TestCachedViewerWhoseSessionEndedIsClearedAtOnce is smoke item 7: a viewer
+// signed in by the session cache whose session then ends (its minting agent
+// retired) is refused with a 404 by /access, not a 401. The very next request
+// — no clock advance, the cache entry still fresh — is a 404 that clears the
+// cookie, and the viewer's private board is closed. (Mutation: skip the cache
+// invalidation or the re-check in recheckRefused → no Set-Cookie until the
+// cache expires.)
+func TestCachedViewerWhoseSessionEndedIsClearedAtOnce(t *testing.T) {
+	for _, sub := range []string{"", "/graph", "/stream"} {
+		t.Run("page"+sub, func(t *testing.T) {
+			x := newLoginHarness(t, Discovery{}, Login{})
+			x.world(t)
+			checks := signInCached(t, x)
+			board := x.viewerTeam(t, privSlug)
+
+			x.backend.revoke(mintedSess) // session -> 401, /access -> 404
+			rec := x.getAs(mintedSess, "/t/"+privSlug+sub)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("the next request: %d, want 404", rec.Code)
+			}
+			assertCookieCleared(t, "the next request", rec)
+			if s, _, _ := x.backend.loginCounts(); s != checks+1 {
+				t.Fatalf("session checks %d, want %d (exactly one uncached re-check)", s, checks+1)
+			}
+			if x.boardCount() != 0 || !board.Hub.Closed() {
+				t.Fatalf("private boards = %d, board closed = %v; want the viewer's board closed", x.boardCount(), board.Hub.Closed())
+			}
+			if strings.Contains(rec.Body.String(), memberName) || strings.Contains(rec.Body.String(), privName) {
+				t.Fatal("the 404 still shows the viewer as signed in, or names the team")
+			}
+			// It is the page an anonymous request for an unknown slug gets.
+			if sub != "/stream" {
+				anon := x.getAs("", "/t/"+missing+sub)
+				na := strings.ReplaceAll(rec.Body.String(), privSlug, "SLUG")
+				nb := strings.ReplaceAll(anon.Body.String(), missing, "SLUG")
+				if anon.Code != 404 || na != nb {
+					t.Fatalf("the 404 differs from an anonymous unknown slug:\n%.300q\n%.300q", na, nb)
+				}
+			}
+			if _, ok := x.srv.Lookup(privSlug); ok {
+				t.Fatal("the private team is in the shared registry")
+			}
+		})
+	}
+}
+
+// TestCachedViewerRemovedFromTheTeamKeepsTheCookie: /access says 404 and the
+// uncached re-check says the session is fine — a member removed from the
+// team. The answer is the non-member 404, the cookie stays, and the re-check
+// is rated per session. (Mutation: clear the cookie on any refusal.)
+func TestCachedViewerRemovedFromTheTeamKeepsTheCookie(t *testing.T) {
+	x := newLoginHarness(t, Discovery{}, Login{RefusalRecheck: 5 * time.Second})
+	x.world(t)
+	checks := signInCached(t, x)
+
+	x.backend.removeMember(privSlug, memberAccount)
+	rec := x.getAs(mintedSess, "/t/"+privSlug)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("removed member: %d, want 404", rec.Code)
+	}
+	assertNoSetCookie(t, "removed member", rec)
+	if s, _, _ := x.backend.loginCounts(); s != checks+1 {
+		t.Fatalf("session checks %d, want %d", s, checks+1)
+	}
+	if !strings.Contains(rec.Body.String(), memberName) {
+		t.Fatal("the removed member's 404 no longer shows them signed in")
+	}
+	// The same page a signed-in viewer gets for a slug that does not exist.
+	other := x.getAs(mintedSess, "/t/"+missing)
+	na := strings.ReplaceAll(rec.Body.String(), privSlug, "SLUG")
+	nb := strings.ReplaceAll(other.Body.String(), missing, "SLUG")
+	if other.Code != 404 || na != nb {
+		t.Fatalf("removed member's 404 differs from an unknown slug:\n%.300q\n%.300q", na, nb)
+	}
+	assertNoSetCookie(t, "unknown slug", other)
+
+	// Rated: hammering refused slugs inside the window costs /access only.
+	s0, a0, _ := x.backend.loginCounts()
+	for i := 0; i < 20; i++ {
+		if rec := x.getAs(mintedSess, "/t/"+privSlug); rec.Code != 404 {
+			t.Fatalf("hammer %d: %d", i, rec.Code)
+		}
+	}
+	if s, a, _ := x.backend.loginCounts(); s != s0 || a != a0+20 {
+		t.Fatalf("inside the window: session checks +%d (want 0), access checks +%d (want 20)", s-s0, a-a0)
+	}
+	x.advance(5 * time.Second)
+	x.getAs(mintedSess, "/t/"+privSlug)
+	x.getAs(mintedSess, "/t/"+privSlug)
+	if s, _, _ := x.backend.loginCounts(); s != s0+1 {
+		t.Fatalf("after the window: session checks +%d, want 1", s-s0)
+	}
+	// And a session that ends inside a window is still caught by the next
+	// window's re-check, well inside the 15s cache.
+	x.backend.revoke(mintedSess)
+	x.advance(5 * time.Second)
+	rec = x.getAs(mintedSess, "/t/"+privSlug)
+	if rec.Code != 404 {
+		t.Fatalf("revoked in a later window: %d", rec.Code)
+	}
+	assertCookieCleared(t, "revoked in a later window", rec)
+}
+
+// TestRecheckOutageIs503AndKeepsTheCookie: the uncached re-check cannot reach
+// the session API. That is no verdict: 503, the cookie kept.
+func TestRecheckOutageIs503AndKeepsTheCookie(t *testing.T) {
+	x := newLoginHarness(t, Discovery{}, Login{})
+	x.world(t)
+	checks := signInCached(t, x)
+
+	x.backend.removeMember(privSlug, memberAccount) // /access -> 404
+	x.backend.setSessionDown(true)                  // the re-check -> 503
+	rec := x.getAs(mintedSess, "/t/"+privSlug)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("re-check outage: %d, want 503", rec.Code)
+	}
+	assertNoSetCookie(t, "re-check outage", rec)
+	if s, _, _ := x.backend.loginCounts(); s != checks+1 {
+		t.Fatalf("session checks %d, want %d", s, checks+1)
+	}
+	// Still down, the cache entry gone: the ordinary outage answer.
+	rec = x.getAs(mintedSess, "/t/"+privSlug)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("still down: %d, want 503", rec.Code)
+	}
+	assertNoSetCookie(t, "still down", rec)
+}

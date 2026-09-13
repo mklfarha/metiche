@@ -21,7 +21,8 @@ type stubLogin struct {
 	sessions map[string]*stubSession    // by secret
 	links    map[string]*stubSession    // link secret -> the session it mints; deleted once used
 
-	down bool // /v1/browser/* and /access answer 503
+	down        bool // /v1/browser/* and /access answer 503
+	sessionDown bool // GET /v1/browser/session alone answers 503
 
 	sessionChecks int
 	accessChecks  int
@@ -122,6 +123,12 @@ func (b *stubBackend) setDown(down bool) {
 	b.login.down = down
 }
 
+func (b *stubBackend) setSessionDown(down bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.login.sessionDown = down
+}
+
 func (b *stubBackend) loginCounts() (sessionChecks, accessChecks, exchanges int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -204,6 +211,10 @@ func (b *stubBackend) serveBrowser(w http.ResponseWriter, r *http.Request) {
 		})
 	case r.Method == http.MethodGet && path == "/v1/browser/session":
 		b.login.sessionChecks++
+		if b.login.sessionDown {
+			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if !valid {
 			unauthorized()
 			return

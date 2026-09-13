@@ -48,6 +48,10 @@ type Login struct {
 	// SessionCacheTTL is how long a positive session check is believed.
 	// Default 15s. Access to a team is never cached.
 	SessionCacheTTL time.Duration
+	// RefusalRecheck is the least time between two uncached re-validations of
+	// one session made because the backend refused a viewer the cache had
+	// signed in (see recheckRefused). Default 5s.
+	RefusalRecheck time.Duration
 	// MaxViewerBoards caps private boards held open for viewers. Default 200.
 	MaxViewerBoards int
 	// IdleGrace is how long a private board with no subscriber is kept, which
@@ -84,6 +88,9 @@ type Viewer struct {
 
 	secret string
 	hash   string // hex sha256 of secret; the only form used as a map key
+	// cached is true when this request was signed in by the session cache
+	// rather than by a backend answer made for it.
+	cached bool
 }
 
 // String keeps the secret out of any %v.
@@ -116,6 +123,9 @@ type login struct {
 
 	mu    sync.Mutex
 	cache map[string]cachedViewer // by hex sha256 of the secret, never the secret
+	// rechecked is when each session was last re-validated by recheckRefused,
+	// by the same hash.
+	rechecked map[string]time.Time
 
 	limiter *windowLimiter
 	boards  *viewerBoards
@@ -155,6 +165,9 @@ func (s *Server) EnableLogin(ctx context.Context, cfg Login) error {
 	if cfg.SessionCacheTTL <= 0 {
 		cfg.SessionCacheTTL = 15 * time.Second
 	}
+	if cfg.RefusalRecheck <= 0 {
+		cfg.RefusalRecheck = 5 * time.Second
+	}
 	if cfg.MaxViewerBoards <= 0 {
 		cfg.MaxViewerBoards = 200
 	}
@@ -177,6 +190,7 @@ func (s *Server) EnableLogin(ctx context.Context, cfg Login) error {
 		secure:     true,
 		log:        s.log,
 		cache:      map[string]cachedViewer{},
+		rechecked:  map[string]time.Time{},
 		limiter:    newWindowLimiter(cfg.SigninLimit, cfg.SigninWindow, cfg.Now),
 	}
 	if cfg.InsecureCookie {
@@ -218,6 +232,7 @@ func (s *Server) viewer(w http.ResponseWriter, r *http.Request) (*Viewer, viewer
 	}
 	hash := secretHash(secret)
 	if v, ok := l.cached(hash); ok {
+		v.cached = true
 		return v, viewerSignedIn
 	}
 	bs, err := l.cfg.Backend.Session(r.Context(), secret)
@@ -331,6 +346,92 @@ func (l *login) forget(match func(Viewer) bool) {
 func (l *login) sessionEnded(hash string) {
 	l.forget(func(v Viewer) bool { return v.hash == hash })
 	l.boards.evictWhere("session ended", func(b *viewerBoard) bool { return b.hash == hash })
+}
+
+// refusal is what re-checking a refused viewer's session concluded.
+type refusal int
+
+const (
+	refusalStands      refusal = iota // the session is good: the refusal is about the team
+	refusalSessionOver                // the backend answered 401 for the session
+	refusalUnavailable                // the session could not be checked
+)
+
+// recheckRefused decides what a refusal from the backend — a 404 or 401 from
+// /access, or a 404 from a private board's first read — means for a viewer.
+//
+// The backend answers 404, not 401, to /access for a session that is no longer
+// valid (app/authz folds every refusal into one answer), so a viewer the
+// SESSION CACHE signed in may be refused because the session itself is over.
+// Believing the cache would serve that 404 with the cookie kept until the
+// cache entry expires. So the cache entry is dropped and the session is asked
+// about once, uncached:
+//
+//   - 401: the session is over. It is forgotten, its private boards are
+//     closed, and the caller clears the cookie in this same response;
+//   - 200: the refusal stands and the cookie is kept (a non-member, or a
+//     member removed from the team). The fresh answer is cached again;
+//   - anything else: unavailable, and the cookie is kept.
+//
+// A viewer validated by the backend during this request is not re-checked
+// for a 404: that answer is already fresh. A 401 is re-checked either way.
+//
+// It is the refusal path only, and it is rated per session: at most one
+// re-validation per RefusalRecheck for one session, whatever the number of
+// requests, slugs or tabs. A request refused inside that window keeps the
+// verdict of the re-check that just ran (which re-cached the session), so it
+// makes no backend call of its own; and a re-check never leads to another
+// re-check, so there is no loop to amplify.
+func (s *Server) recheckRefused(ctx context.Context, v *Viewer, status401 bool) refusal {
+	l := s.login
+	if !v.cached && !status401 {
+		return refusalStands
+	}
+	if !l.mayRecheck(v.hash) {
+		if status401 {
+			// As before: the session is forgotten, so the very next request
+			// asks the backend uncached and clears the cookie on its 401.
+			l.sessionEnded(v.hash)
+		}
+		return refusalStands
+	}
+	l.forget(func(c Viewer) bool { return c.hash == v.hash })
+	bs, err := l.cfg.Backend.Session(ctx, v.secret)
+	switch {
+	case err == nil:
+		l.remember(&Viewer{SessionKey: bs.SessionKey, AccountKey: bs.AccountKey, DisplayName: bs.DisplayName,
+			secret: v.secret, hash: v.hash})
+		return refusalStands
+	case errors.Is(err, feed.ErrSessionInvalid):
+		l.sessionEnded(v.hash)
+		return refusalSessionOver
+	default:
+		s.log.Warn("could not re-validate a refused browser session; the viewer is unavailable, the cookie is kept", "err", err)
+		return refusalUnavailable
+	}
+}
+
+// mayRecheck reports whether hash's session may be re-validated now, and if so
+// records that it is.
+func (l *login) mayRecheck(hash string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.cfg.Now()
+	if last, ok := l.rechecked[hash]; ok && now.Sub(last) < l.cfg.RefusalRecheck {
+		return false
+	}
+	if len(l.rechecked) >= maxCachedViewers {
+		for k, last := range l.rechecked {
+			if now.Sub(last) >= l.cfg.RefusalRecheck {
+				delete(l.rechecked, k)
+			}
+		}
+		if len(l.rechecked) >= maxCachedViewers {
+			l.rechecked = map[string]time.Time{}
+		}
+	}
+	l.rechecked[hash] = now
+	return true
 }
 
 // sameOrigin is the Origin / Sec-Fetch-Site check every state-changing POST
