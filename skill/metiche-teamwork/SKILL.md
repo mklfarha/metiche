@@ -1,6 +1,6 @@
 ---
 name: metiche-teamwork
-description: Work alongside other coding agents and humans on one repo through the metiche MCP server — declare what you are about to do before you do it, hold narrow path claims, heartbeat while you work, and act on the collisions metiche reports inside your own tool responses. Use whenever the metiche MCP tools are connected, and whenever the user says metiche, join code, team board, "who else is touching this", "don't step on the other agent", "we're working in parallel", hackathon team, declare intent, claim paths, heartbeat, pending instructions, or asks you to judge whether two pieces of work conflict.
+description: Work alongside other coding agents and humans on one repo through the metiche MCP server — declare what you are about to do before you do it, hold narrow path claims, heartbeat while you work, and act on the collisions metiche reports inside your own tool responses. Use whenever the metiche MCP tools are connected, and whenever the user says metiche, join code, team board, "who else is touching this", "don't step on the other agent", "we're working in parallel", hackathon team, invite a teammate, declare intent, claim paths, heartbeat, pending instructions, or asks you to judge whether two pieces of work conflict.
 ---
 
 # metiche — working in a team of agents
@@ -39,7 +39,7 @@ join_team              once per agent process
 Everything else — contracts, decisions, judgements, conflict resolution, instructions — hangs off
 that spine and is occasional.
 
-### The fifteen tools
+### The tools
 
 The server's own tool schemas are authoritative; read them. This is the map, not the signature
 list.
@@ -61,6 +61,9 @@ list.
 | `get_instructions` | when `pending.instructions > 0` | **not read-only** — reading is the delivery receipt |
 | `report_back` | after acting on an instruction | close the loop with the human who sent it |
 | `get_team_state` | at session start, rarely after | scoped and paginated; not a substitute for the pending counts |
+| `create_invite` | when the person asks to add someone | returns a join code **once**; see "Inviting a teammate" |
+| `list_invites` | to see what is outstanding | never shows codes |
+| `revoke_invite` | when a code is no longer wanted or leaked | takes an `invite_id` |
 
 There is **no claim verb**. `declare_intent` makes the claims; `update_intent` adds, drops,
 extends and completes them. One concept, not two.
@@ -150,17 +153,28 @@ is a free exact match that saves everyone a semantic judgement.
 
 ---
 
-## Claim honestly and narrowly
+## Claim narrowly
 
-Claim **what you will actually touch**, at the finest granularity you can name.
+Claim **the specific files you are about to edit**, or the narrowest folder that holds them.
 
-`app/**` conflicts with everyone. The server knows that: an over-broad claim (depth ≤ 1) is
-capped at `low` severity and you get a "narrow this" nudge instead of protection. A claim so wide
-it always fires is indistinguishable from no claim at all, and it trains every other agent on the
-team to ignore your name.
+- **A repo-wide pattern protects nothing.** `**`, `**/*.go`, `.` and `app/**` are accepted, but a
+  pattern whose fixed part is at most one folder deep is over-broad: every conflict on it is
+  capped at `low` severity, below the notify floor. It shows on the board and warns nobody, you
+  included.
+- **`*` does not cross `/`.** `*.go` is Go files at the repo root only. It is not every Go file.
+- **Relative to the git root** (`git rev-parse --show-toplevel`), whatever directory you are in.
+  An absolute path is refused (`path is absolute; claims are repo-relative`).
+- **Widen as the work moves.** Start with what you know, then `update_intent(add_paths: [...])`
+  when you find the next file. Added paths are collision-checked like a declaration.
 
-- Name files when you know them: `internal/auth/auth.go`.
-- Name a real subtree when you genuinely own it: `internal/auth/**`, not `internal/**`.
+```
+good:  paths: ["app/rest.go", "app/mcp/intents.go"]   # the files you will edit
+good:  paths: ["app/mcp/*.go"]                        # one package you really are all over
+bad:   paths: ["**/*.go"]                             # repo-wide: recorded low, warns nobody
+bad:   paths: ["*.go"]                                # root-level files only, not what you meant
+bad:   the file's full path on your disk             # absolute: refused
+```
+
 - Use `mode: read` for files you are only reading. Read×read is *never* a conflict, so read
   claims are free and they are how a teammate learns you depend on their file.
 - Use `mode: structural` for renames, moves and deletes. These are escalated deliberately: a
@@ -171,8 +185,8 @@ team to ignore your name.
 If you do not yet know which files you need, use `check_paths` first. It is read-only and commits
 you to nothing — it answers "is anyone in here?" before you decide to be in here.
 
-Paths are relative to the git root (`git rev-parse --show-toplevel`), whatever directory you are
-in. They are normalized on insert: no absolute paths, no `..`, a trailing `/` becomes `**`.
+Paths are normalized on insert: no absolute paths, no `..`, a trailing `/` becomes `**`, and a
+name with no wildcard and no dot (`app/mcp`) is read as a folder (`app/mcp/**`).
 Generated code is dropped from claims entirely by the project's ignore patterns, so do not bother
 claiming it and do not be surprised when it does not appear.
 
@@ -304,6 +318,32 @@ the person asks.
 
 Never pass a token in chat, yours or theirs. The sign-in link is the only thing you hand over, and
 only to the person.
+
+---
+
+## Inviting a teammate
+
+When the person asks to add someone to the team:
+
+1. Call `create_invite`, optionally with a label, a use limit and an expiry (the tool's schema
+   names the fields). Defaults are **1 use** and **7 days**. An owner can go up to 100 uses and
+   30 days; a member up to 25 uses and 7 days.
+2. The join code is in that response and nowhere else: `list_invites` never shows it again. Give
+   it to the person you are working for, and they pass it on privately, the way they would send
+   a password.
+3. The teammate runs the installer, chooses **join** and pastes the code at the prompt:
+
+   ```sh
+   curl -fsSL https://metiche.xyz/install.sh | sh
+   ```
+
+   or, without a prompt, `curl -fsSL https://metiche.xyz/install.sh | METICHE_JOIN_CODE=<code> sh`.
+
+`list_invites` shows what is outstanding. `revoke_invite` with an `invite_id` kills one at once:
+do that when a code is no longer needed or went somewhere it should not have.
+
+A join code is a key to the team. Never paste one into the repository, a commit, an issue, a PR,
+a public chat, or any metiche field.
 
 ---
 
@@ -441,7 +481,7 @@ human watching saw all of it happen live.
 
 - `join_team` once, `start_session` per piece of work, `end_session` when you stop.
 - Send `repo_url` and `project_key` straight from git, and every path relative to the git root.
-- `declare_intent` **before** you touch anything, with real paths and a real sentence.
+- `declare_intent` **before** you touch anything, with the specific files and a real sentence.
 - `heartbeat` every ~60s and around every batch of edits, with a status line that says *why*.
 - Drop paths as soon as you are done with them.
 - Read `pending` on every response. Act when non-zero, do nothing when zero.
@@ -451,7 +491,9 @@ human watching saw all of it happen live.
 **Don't**
 
 - Don't make up a project_key, or name it after the folder you were started in.
-- Don't claim `app/**` or `src/**`. It is capped at `low` and it makes you noise.
+- Don't claim `**`, `**/*.go` or `app/**`. They are capped at `low` and warn nobody.
+- Don't send an absolute path, and don't expect `*.go` to reach past the repo root.
+- Don't paste a join code anywhere but privately to the person you work for.
 - Don't declare after the edit.
 - Don't poll `get_team_state` on a timer.
 - Don't go quiet for twenty minutes mid-refactor.

@@ -4,7 +4,8 @@ Three pieces, in the order they matter:
 
 1. **The skill** — [`skill/metiche-teamwork/SKILL.md`](../skill/metiche-teamwork/SKILL.md).
    Prose that changes how an agent behaves: declare before acting, heartbeat while working, claim
-   narrowly, act on what comes back. Any assistant that reads a rules or instructions file can use
+   narrowly (the specific files, relative to the git root; a repo-wide `**` is recorded at low
+   severity and warns nobody), act on what comes back. Any assistant that reads a rules or instructions file can use
    it as-is.
 2. **The MCP server** — the fifteen tools. Nothing to install; it is an HTTP endpoint.
 3. **The token** — minted by the server when you join. It is what every client sends as its
@@ -64,7 +65,8 @@ There is no signup and no web form. `create_team` makes the team and joins you t
 and returns three things: your **token**, the team **slug**, and the team's first **join code** —
 which the installer prints in a box, because a join code nobody can see is a team nobody can be
 invited to. Send it to your teammates the way you would send a password; they run the one-liner
-with `METICHE_JOIN_CODE=` set to it.
+with `METICHE_JOIN_CODE=` set to it. That first code has no use limit and no expiry, so for each
+new teammate a fresh invite is the better thing to send (see "Invite a teammate" below).
 
 ### What it does before it writes anything
 
@@ -153,6 +155,35 @@ and keeps the old file as a backup, but the shell that ran it still exports the 
 refused. Now a `METICHE_TOKEN` that matches a backup of `~/.metiche/env` is recognised as stale:
 the current saved token is used, with a warning to open a new terminal (or run `. ~/.metiche/env`).
 The end of every run warns when this terminal still holds a different token than the one saved.
+
+## Invite a teammate
+
+Anyone already on the team can bring someone in. Three steps:
+
+1. **Ask your assistant to create an invite**, e.g. "make a metiche invite for Ana". It calls
+   `create_invite`, optionally with a label, a use limit and an expiry, and shows you the join
+   code. By default a code admits **one** person and expires in **7 days**. Team owners can raise
+   that to 100 uses and 30 days; members to 25 uses and 7 days.
+2. **Share the code privately**: a direct message, a password manager, in person. You see it
+   once. `list_invites` shows the outstanding invites but never their codes.
+3. **Your teammate runs the installer and pastes it.**
+
+   ```sh
+   curl -fsSL https://metiche.xyz/install.sh | sh
+   ```
+
+   They choose **join** and paste the code at the prompt, which does not echo it. Without a
+   prompt:
+
+   ```sh
+   curl -fsSL https://metiche.xyz/install.sh | METICHE_JOIN_CODE=<code> sh
+   ```
+
+Changed your mind, or the code ended up somewhere public? Ask your assistant to revoke it: it finds
+the invite with `list_invites` and calls `revoke_invite` with that `invite_id`, and the code stops
+working.
+
+Never paste a join code into a repository, an issue, a PR or a public chat.
 
 ## Claude Code, by hand
 

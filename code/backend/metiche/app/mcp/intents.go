@@ -92,7 +92,7 @@ func RegisterWorkTools(s *mcp.Server, h *Handler, logger *zap.Logger) {
 		Description: "Say what you are ABOUT TO DO and which files you are taking, BEFORE you start. This is the main tool: call it at the top of every piece of work and again whenever your plan changes. " +
 			"It creates the intent and claims the paths in one step — there is no separate claim tool. " +
 			"Claims never block anybody: overlap is allowed, and if somebody else is already in those files you are told in THIS response, with what to do about it, while they find out on their next call. " +
-			"Claim what you will actually edit, not the whole directory: a claim on a subtree collides with everyone and is reported as low-value noise.",
+			"Claim the files you will actually edit, not the whole repo: a repo-wide or top-level claim is recorded at low severity and warns nobody.",
 		// Additive, not idempotent: two calls with two different idempotency
 		// keys are two real intents. The key makes a RETRY safe, which is a
 		// different promise.
@@ -122,8 +122,8 @@ func RegisterWorkTools(s *mcp.Server, h *Handler, logger *zap.Logger) {
 type DeclareIntentParams struct {
 	SessionKey string   `json:"session_key" jsonschema:"The session_key start_session gave you."`
 	Summary    string   `json:"summary" jsonschema:"One sentence on what you are about to do, written for a teammate: 'add the POST /api/login handler and its token refresh'. Max 280 characters. This is what other agents judge against, so name the thing, not the file."`
-	Paths      []string `json:"paths,omitempty" jsonschema:"The files you are about to touch. Relative to the git root ('git rev-parse --show-toplevel'), NOT to your working directory: started in the parent folder or a subfolder, you still send 'app/rest.go', never 'myrepo/app/rest.go' or 'rest.go'. Globs allowed: 'src/api/*.go', 'internal/auth/**'. Claim what you will actually edit - a whole-subtree claim collides with everyone and is capped at low severity, which means nobody is warned about the file you really wanted. Generated and vendored paths are dropped automatically."`
-	Mode       string   `json:"mode,omitempty" jsonschema:"What you are doing to those paths: 'read' (just reading), 'write' (editing, the default) or 'structural' (renaming, moving or deleting). Say structural when it applies - it breaks other people's code without any merge conflict to warn them, so it is scored higher than a plain edit."`
+	Paths      []string `json:"paths,omitempty" jsonschema:"The specific files, or the narrowest folder, you are about to edit: 'app/rest.go', 'app/mcp/*.go'. Relative to the git root ('git rev-parse --show-toplevel'), NOT to your working directory: send 'app/rest.go', never 'myrepo/app/rest.go' or 'rest.go'. An absolute path is refused. '*' does not cross '/', so '*.go' means files at the repo root only. A repo-wide or top-level pattern ('**', '**/*.go', '.', 'app/**') is accepted but recorded at low severity and warns nobody, so it protects nothing. Widen later with update_intent add_paths as the work moves. Generated and vendored paths are dropped automatically."`
+	Mode       string   `json:"mode,omitempty" jsonschema:"What you are doing to every path in this call: 'read' (just reading; two readers never conflict), 'write' (editing, the default) or 'structural' (renaming, moving or deleting). Say structural when it applies - it breaks other people's code without any merge conflict to warn them, so it is scored high even against someone only reading."`
 	Kind       string   `json:"kind,omitempty" jsonschema:"What kind of work this is: implement, fix, refactor, investigate, test, docs, infra, or hold. Defaults to implement."`
 
 	ExternalRef string `json:"external_ref,omitempty" jsonschema:"The issue or ticket id this is for, if there is one. It is the highest-signal duplicate-work key there is, because it is an exact match - two agents on the same ticket is worth knowing immediately."`
@@ -314,7 +314,7 @@ type UpdateIntentParams struct {
 	Summary    string `json:"summary,omitempty" jsonschema:"A replacement summary, when the plan changed. Max 280 characters. Changing it bumps the intent's revision, which is what lets other agents' models take one fresh look at a plan they already judged."`
 	StatusLine string `json:"status_line,omitempty" jsonschema:"What you are doing RIGHT NOW, one line, max 120 characters - 'rewriting the token refresh in auth.go'. This is what a teammate sees on the board."`
 
-	AddPaths  []string `json:"add_paths,omitempty" jsonschema:"Files you have discovered you also need, relative to the git root like every path you send (never to your working directory). They are collision-checked exactly like declare_intent, so you find out in this response if somebody is already there."`
+	AddPaths  []string `json:"add_paths,omitempty" jsonschema:"Files you have discovered you also need, under the same rules as declare_intent paths: the specific files or narrowest folder ('app/mcp/intents.go'), relative to the git root and never absolute; a repo-wide pattern like '**' warns nobody. They are collision-checked exactly like declare_intent, so you find out in this response if somebody is already there."`
 	DropPaths []string `json:"drop_paths,omitempty" jsonschema:"Files you are finished with, spelled exactly as you claimed them (relative to the git root). Release them as soon as you are done rather than waiting for the TTL - a held file nobody is editing is the most annoying kind of false positive."`
 	Mode      string   `json:"mode,omitempty" jsonschema:"The mode for add_paths: read, write or structural. Defaults to the mode of the claim you already hold for this intent."`
 
