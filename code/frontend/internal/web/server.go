@@ -239,6 +239,11 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/decisions", s.decisions)
 		r.Get("/runs", s.runs)
 		r.Get("/runs/{session}", s.run)
+		// Invites (invites.go): the board's only writes, for a signed-in
+		// member with the CSRF token. Everybody else gets the NotFound page.
+		r.Get("/invites", s.invites)
+		r.Post("/invites", s.createInvite)
+		r.Post("/invites/{invite}/revoke", s.revokeInvite)
 		// These three paths were board controls. They had no authentication,
 		// and each applied a made-up event to the board and broadcast it to
 		// every viewer — of a real team, or of the shared demo. They now answer
@@ -595,6 +600,10 @@ func (s *Server) team(w http.ResponseWriter, r *http.Request) (*Team, state.Snap
 	t, res := s.resolveTeam(r.Context(), v, vs, slug)
 	switch res {
 	case resolveFound:
+		// The Invites tab is for a live member only (invites.go).
+		if vs == viewerSignedIn && s.viewerIsMember(r.Context(), v, t) {
+			r = memberRequest(r)
+		}
 		return t, t.Hub.Snapshot(), r, true
 	case resolveUnavailable, resolveFull:
 		// Not a verdict about the team — the backend is unreachable or this

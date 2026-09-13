@@ -29,6 +29,9 @@ type stubLogin struct {
 	exchanges     []map[string]string
 	sawBearer     bool
 	sessionReads  map[string]int // /v1/teams/{slug}[/...] reads carrying a session, per slug
+
+	// inv is the invite routes (invites_stub_test.go).
+	inv stubInvites
 }
 
 type stubSession struct {
@@ -49,7 +52,8 @@ func (l *stubLogin) end(s *stubSession, reason string) {
 
 func newStubLogin() stubLogin {
 	return stubLogin{now: time.Now, private: map[string]string{}, members: map[string]map[string]bool{},
-		sessions: map[string]*stubSession{}, links: map[string]*stubSession{}, sessionReads: map[string]int{}}
+		sessions: map[string]*stubSession{}, links: map[string]*stubSession{}, sessionReads: map[string]int{},
+		inv: newStubInvites()}
 }
 
 // observe records what a team read carried. Called with b.mu held.
@@ -164,11 +168,12 @@ func (b *stubBackend) serveAccess(w http.ResponseWriter, r *http.Request, slug s
 		return
 	}
 	if _, ok := b.public[slug]; ok {
-		writeJSON(w, map[string]any{"visibility": "public", "role": nil})
+		// null unless the session is a member of the public team.
+		writeJSON(w, map[string]any{"visibility": "public", "role": b.roleLocked(slug, r)})
 		return
 	}
 	if _, ok := b.readableLocked(slug, r); ok {
-		writeJSON(w, map[string]any{"visibility": "private", "role": "member"})
+		writeJSON(w, map[string]any{"visibility": "private", "role": b.roleLocked(slug, r)})
 		return
 	}
 	problem404(w)
@@ -282,10 +287,16 @@ func (b *stubBackend) serveBrowser(w http.ResponseWriter, r *http.Request) {
 			unauthorized()
 			return
 		}
+		// Every live membership, public teams included, as the backend lists them.
 		var teams []map[string]any
 		for slug, name := range b.login.private {
 			if b.login.members[slug][cur.account] {
 				teams = append(teams, map[string]any{"slug": slug, "name": name, "visibility": "private", "role": "member"})
+			}
+		}
+		for slug, name := range b.public {
+			if b.login.members[slug][cur.account] {
+				teams = append(teams, map[string]any{"slug": slug, "name": name, "visibility": "public", "role": "member"})
 			}
 		}
 		writeJSON(w, map[string]any{"teams": teams})

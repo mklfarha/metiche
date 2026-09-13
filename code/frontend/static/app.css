@@ -881,3 +881,69 @@ svg.graph { display: block; min-width: 720px; }
   .who-btn, .who .who-name { min-height: 40px; }
   .who-btn { padding: 0 12px; }
 }
+
+/* /t/{slug}/invites. The only page on the board that changes anything, and
+ * only for a signed-in member. The code panel reuses landing.js's copy button
+ * (data-copy), styled here because the board does not load landing.css. */
+.page.invites { max-width: 760px; }
+.page.invites h2.inv-list-h { margin-top: 22px; }
+.page.invites .note { margin: 6px 0 10px; font-size: 12px; color: var(--ink-3); }
+.inv-form { display: grid; gap: 12px; }
+.inv-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.inv-field { display: grid; gap: 4px; min-width: 0; }
+.inv-field .k { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.inv-field input, .inv-field select {
+  font: inherit; font-size: 13px; width: 100%; min-width: 0; padding: 7px 9px;
+  border-radius: 6px; background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+}
+.inv-field input:focus, .inv-field select:focus { outline: none; border-color: var(--accent); }
+.inv-hint { font-size: 12px; color: var(--ink-3); }
+.inv-error {
+  margin-bottom: 10px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; overflow-wrap: anywhere;
+  color: var(--coral-ink); background: var(--sev-high-bg); border: 1px solid var(--sev-high-line);
+}
+.inv-created { border-left: 4px solid var(--good); }
+.inv-created h3 { font-size: 14px; margin-bottom: 4px; overflow-wrap: anywhere; }
+.inv-created p { margin: 8px 0; font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.inv-created .inv-once b { color: var(--ink); }
+.inv-created .code { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
+.inv-created .code-head {
+  display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; min-height: 36px;
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.inv-created .code .copy {
+  margin-left: auto; min-height: 28px; padding: 2px 11px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 5px;
+}
+.inv-created .code .copy:hover { border-color: var(--accent); }
+.inv-created pre {
+  margin: 0; padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.inv-created pre#invite-code { font-size: 22px; font-weight: 700; letter-spacing: .14em; }
+.inv-created .inv-done { margin-top: 10px; }
+.inv-created .inv-done .btn { display: inline-flex; align-items: center; }
+.invites-list { list-style: none; margin: 0; padding: 0; }
+.inv {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+}
+.inv:not(.state-active) { border-style: dashed; }
+.inv:not(.state-active) .nm { font-weight: 500; color: var(--ink-2); }
+.inv .inv-main { flex: 1 1 auto; min-width: 0; }
+.inv .nm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.inv .nm > span:first-child { min-width: 0; }
+.inv .sl { font-family: var(--mono); font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; }
+.inv form { margin: 0; }
+@media (max-width: 600px) {
+  .inv-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .inv-field.inv-label { grid-column: 1 / -1; }
+  .inv { flex-wrap: wrap; }
+  .inv-created pre#invite-code { font-size: 19px; letter-spacing: .1em; }
+}
+@media (max-width: 1180px), (pointer: coarse) {
+  .inv-field input, .inv-field select { min-height: 44px; }
+  .inv-created .code .copy { min-height: 40px; min-width: 72px; }
+}

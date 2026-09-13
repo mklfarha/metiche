@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -187,6 +188,132 @@ func (c *BrowserClient) Revoke(ctx context.Context, secret, key string) error {
 	return c.del(ctx, "/browser/sessions/"+url.PathEscape(key), secret, ErrNotFound)
 }
 
+// ── invites (docs/BOARD_LOGIN.md §10.10) ────────────────────────────────────
+
+// ErrInviteNotFound is the backend's 404 for an invite this viewer may not
+// revoke: another member's, another team's, one that never existed. It is
+// told apart from ErrNotFound (the team, for this viewer) by the problem's
+// title, which the backend sets to the refusal code "not_found".
+var ErrInviteNotFound = errors.New("no invite with that id that you can revoke")
+
+// InviteRefused is a create or revoke the backend refused on its merits: a cap,
+// a bad value, the per-account rate limit. Message is the backend's own text,
+// for the page; Error() is only the code, for a log line.
+type InviteRefused struct {
+	Status  int
+	Code    string // "invalid_argument" | "not_permitted" | "rate_limited"
+	Message string
+}
+
+func (e *InviteRefused) Error() string { return "invite refused: " + e.Code }
+
+// Invite is one row of GET /v1/teams/{slug}/invites. It has no field for a
+// code: the backend never sends one there.
+type Invite struct {
+	InviteID     string     `json:"invite_id"`
+	Label        string     `json:"label"`
+	CreatedBy    string     `json:"created_by"`
+	CreatedByYou bool       `json:"created_by_you"`
+	Uses         int64      `json:"uses"`
+	MaxUses      *int64     `json:"max_uses"`   // nil: uncapped
+	ExpiresAt    *time.Time `json:"expires_at"` // nil: never
+	State        string     `json:"state"`      // active | expired | exhausted | revoked
+	LastUsedAt   *time.Time `json:"last_used_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// InviteList is GET /v1/teams/{slug}/invites.
+type InviteList struct {
+	TeamSlug string   `json:"team_slug"`
+	Scope    string   `json:"scope"` // "team" (the owner) | "created_by_you" (a member)
+	Invites  []Invite `json:"invites"`
+	More     bool     `json:"more"`
+}
+
+// Owner reports whether the list is the whole team's, which only the owner
+// gets.
+func (l InviteList) Owner() bool { return l.Scope == "team" }
+
+// InviteRequest is POST /v1/teams/{slug}/invites. Zero means the default.
+type InviteRequest struct {
+	Label          string `json:"label"`
+	MaxUses        int    `json:"max_uses"`
+	ExpiresInHours int    `json:"expires_in_hours"`
+}
+
+// CreatedInvite is the POST's answer: the only place a code ever appears.
+type CreatedInvite struct {
+	InviteID  string    `json:"invite_id"`
+	Label     string    `json:"label"`
+	Code      string    `json:"code"`
+	MaxUses   int64     `json:"max_uses"`
+	ExpiresAt time.Time `json:"expires_at"`
+	State     string    `json:"state"`
+	ShareNote string    `json:"share_note"`
+}
+
+// String keeps the code out of any %v a caller might log.
+func (c CreatedInvite) String() string {
+	return fmt.Sprintf("CreatedInvite{invite_id:%s max_uses:%d}", c.InviteID, c.MaxUses)
+}
+
+// Invites lists what this viewer may see of a team's invites. 404 is
+// ErrNotFound: no such team, or this viewer is not a live member (one answer).
+func (c *BrowserClient) Invites(ctx context.Context, secret, slug string) (InviteList, error) {
+	var out InviteList
+	err := c.getJSON(ctx, "/teams/"+url.PathEscape(slug)+"/invites", secret, &out, ErrNotFound)
+	return out, err
+}
+
+// CreateInvite mints an invite. The code is in the answer and nowhere else.
+func (c *BrowserClient) CreateInvite(ctx context.Context, secret, slug string, in InviteRequest) (CreatedInvite, error) {
+	path := "/teams/" + url.PathEscape(slug) + "/invites"
+	status, raw, err := c.call(ctx, http.MethodPost, path, secret, in)
+	if err != nil {
+		return CreatedInvite{}, err
+	}
+	if status == http.StatusCreated {
+		var out CreatedInvite
+		if err := json.Unmarshal(raw, &out); err != nil || out.Code == "" {
+			return CreatedInvite{}, fmt.Errorf("POST /v1%s: malformed answer", redactPath(path))
+		}
+		return out, nil
+	}
+	return CreatedInvite{}, inviteError(http.MethodPost, path, status, raw)
+}
+
+// RevokeInvite ends one invite.
+func (c *BrowserClient) RevokeInvite(ctx context.Context, secret, slug, inviteID string) error {
+	path := "/teams/" + url.PathEscape(slug) + "/invites/" + url.PathEscape(inviteID)
+	status, raw, err := c.call(ctx, http.MethodDelete, path, secret, nil)
+	if err != nil {
+		return err
+	}
+	if status >= 200 && status < 300 {
+		return nil
+	}
+	return inviteError(http.MethodDelete, path, status, raw)
+}
+
+// inviteError maps a non-2xx invite answer. Only a problem whose title is a
+// refusal code is a verdict; anything else is "unavailable" to the caller.
+func inviteError(method, path string, status int, raw []byte) error {
+	var p struct{ Title, Detail string }
+	_ = json.Unmarshal(raw, &p)
+	switch {
+	case status == http.StatusUnauthorized:
+		return ErrSessionInvalid
+	case status == http.StatusNotFound && p.Title == "not_found":
+		return ErrInviteNotFound
+	case status == http.StatusNotFound:
+		return ErrNotFound
+	case (status == http.StatusBadRequest || status == http.StatusForbidden || status == http.StatusTooManyRequests) &&
+		p.Title != "" && p.Detail != "":
+		return &InviteRefused{Status: status, Code: p.Title, Message: p.Detail}
+	}
+	return statusError(method, "/v1"+redactPath(path), status)
+}
+
 func (c *BrowserClient) getJSON(ctx context.Context, path, secret string, v any, on404 error) error {
 	status, raw, err := c.call(ctx, http.MethodGet, path, secret, nil)
 	if err != nil {
@@ -277,6 +404,13 @@ func (c *BrowserClient) call(ctx context.Context, method, path, secret string, i
 func redactPath(path string) string {
 	switch {
 	case len(path) > len("/teams/") && path[:len("/teams/")] == "/teams/":
+		_, sub, _ := strings.Cut(path[len("/teams/"):], "/")
+		switch {
+		case sub == "invites":
+			return "/teams/{slug}/invites"
+		case strings.HasPrefix(sub, "invites/"):
+			return "/teams/{slug}/invites/{invite_id}"
+		}
 		return "/teams/{slug}/access"
 	case len(path) > len("/browser/sessions/") && path[:len("/browser/sessions/")] == "/browser/sessions/":
 		return "/browser/sessions/{key}"

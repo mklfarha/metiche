@@ -86,6 +86,12 @@ func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b.serveAccess(w, r, slug)
 		return
 	}
+	if sub == "invites" || strings.HasPrefix(sub, "invites/") {
+		b.total-- // serveInvites counts it
+		b.mu.Unlock()
+		b.serveInvites(w, r, slug, sub)
+		return
+	}
 	name, public := b.public[slug]
 	if !public {
 		name, public = b.readableLocked(slug, r)

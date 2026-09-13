@@ -1,0 +1,300 @@
+package view
+
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+	"time"
+)
+
+// TabInvites is the Invites nav item, shown only to a signed-in member
+// (Viewer.Member).
+const TabInvites Tab = "invites"
+
+// InstallCommand is the line a teammate runs to join.
+const InstallCommand = "curl -fsSL https://metiche.xyz/install.sh | sh"
+
+// InviteRow is one invite as the list shows it. It has no field for a code:
+// the backend never sends one in a list, and this type has nowhere to put one.
+type InviteRow struct {
+	ID           string
+	Label        string
+	CreatedBy    string
+	CreatedByYou bool
+	Uses         int64
+	MaxUses      *int64     // nil: uncapped
+	ExpiresAt    *time.Time // nil: never
+	State        string     // active | expired | exhausted | revoked
+	LastUsedAt   *time.Time
+	CreatedAt    time.Time
+	// CanRevoke: the viewer is the team's owner, or created this invite.
+	CanRevoke bool
+}
+
+// InviteForm is the create form: what it is prefilled with, and the caps for
+// this viewer's role. The backend enforces the caps whatever the form says.
+type InviteForm struct {
+	Label      string
+	MaxUses    int
+	Hours      int
+	MaxUsesCap int
+	HoursCap   int
+	// DefaultMaxUses and DefaultHours are what an empty field means.
+	DefaultMaxUses int
+	DefaultHours   int
+}
+
+// CreatedInvite is the one-time panel. The web layer renders it ONLY on the
+// POST response that minted the invite: never on a GET, never after a
+// redirect, and the code goes in no URL, cookie or header.
+type CreatedInvite struct {
+	Code      string
+	Label     string
+	MaxUses   int64
+	ExpiresAt time.Time
+	ShareNote string
+}
+
+// InvitesParams is everything /t/{slug}/invites renders besides the viewer.
+type InvitesParams struct {
+	Slug    string
+	Owner   bool
+	Form    InviteForm
+	Created *CreatedInvite
+	// Error is a refusal to show: the backend's own words, or the board's
+	// check that a number is a number.
+	Error string
+	// ListUnavailable: the list could not be read (an invite was still
+	// created, and its code is shown).
+	ListUnavailable bool
+	Invites         []InviteRow
+	More            bool
+}
+
+type expiryOption struct {
+	Hours int
+	Label string
+}
+
+// expiryOptions are the choices up to cap, plus selected if it is not one of
+// them (a refused submission keeps what was sent).
+func expiryOptions(cap, selected int) []expiryOption {
+	all := []expiryOption{{1, "1 hour"}, {24, "1 day"}, {72, "3 days"}, {168, "7 days"}, {336, "14 days"}, {720, "30 days"}}
+	var out []expiryOption
+	found := false
+	for _, o := range all {
+		if o.Hours <= cap {
+			out = append(out, o)
+			found = found || o.Hours == selected
+		}
+	}
+	if !found && selected > 0 {
+		out = append(out, expiryOption{selected, fmt.Sprintf("%d hours", selected)})
+	}
+	return out
+}
+
+func invitesURL(slug string) templ.SafeURL {
+	return templ.SafeURL("/t/" + url.PathEscape(slug) + "/invites")
+}
+
+func revokeInviteURL(slug, id string) templ.SafeURL {
+	return templ.SafeURL("/t/" + url.PathEscape(slug) + "/invites/" + url.PathEscape(id) + "/revoke")
+}
+
+func inviteLabel(label string) string {
+	if label == "" {
+		return "Untitled invite"
+	}
+	return label
+}
+
+func inviteCreator(inv InviteRow) string {
+	switch {
+	case inv.CreatedByYou:
+		return "you"
+	case inv.CreatedBy == "":
+		return "unknown"
+	}
+	return inv.CreatedBy
+}
+
+func inviteUses(inv InviteRow) string {
+	if inv.MaxUses == nil {
+		return fmt.Sprintf("%d / no limit", inv.Uses)
+	}
+	return fmt.Sprintf("%d / %d", inv.Uses, *inv.MaxUses)
+}
+
+func inviteBadge(state string) string {
+	if state == "active" {
+		return "good"
+	}
+	return "plain"
+}
+
+func usesPhrase(n int64) string {
+	if n == 1 {
+		return "1 person"
+	}
+	return fmt.Sprintf("%d people", n)
+}
+
+func capsHint(f InviteForm, owner bool) string {
+	d := fmt.Sprintf("Defaults: %d use, %d days.", f.DefaultMaxUses, f.DefaultHours/24)
+	if owner {
+		return d + fmt.Sprintf(" As the team's owner you can go up to %d uses and %d days.", f.MaxUsesCap, f.HoursCap/24)
+	}
+	return d + fmt.Sprintf(" Members can go up to %d uses and %d days; the team's owner can make larger ones.", f.MaxUsesCap, f.HoursCap/24)
+}
+
+// InvitesPage is GET (and the POST answers of) /t/{slug}/invites: make a join
+// code, see the team's invites, revoke one. Every action is a POST form with
+// the CSRF token. The copy buttons are static/landing.js, which reveals them;
+// the page has no inline script.
+templ InvitesPage(p InvitesParams) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page invites">
+				<h2>Invites</h2>
+				<div class="sub">
+					A join code lets someone new onto this team. Share it privately; it is shown once, when you create it.
+				</div>
+				if p.Created != nil {
+					@createdInvite(p.Slug, *p.Created)
+				}
+				if p.Error != "" {
+					<div class="inv-error" role="alert" data-invite-error>{ p.Error }</div>
+				}
+				<form class="card inv-form" method="post" action={ invitesURL(p.Slug) }>
+					<input type="hidden" name="csrf" value={ ViewerFrom(ctx).CSRFToken }/>
+					<div class="inv-fields">
+						<label class="inv-field inv-label">
+							<span class="k">Label</span>
+							<input type="text" name="label" maxlength="80" placeholder="e.g. for Ana" autocomplete="off" value={ p.Form.Label }/>
+						</label>
+						<label class="inv-field">
+							<span class="k">Max uses</span>
+							<input
+								type="number"
+								name="max_uses"
+								min="1"
+								max={ strconv.Itoa(p.Form.MaxUsesCap) }
+								step="1"
+								inputmode="numeric"
+								value={ strconv.Itoa(p.Form.MaxUses) }
+							/>
+						</label>
+						<label class="inv-field">
+							<span class="k">Expires in</span>
+							<select name="expires_in_hours">
+								for _, o := range expiryOptions(p.Form.HoursCap, p.Form.Hours) {
+									<option value={ strconv.Itoa(o.Hours) } selected?={ o.Hours == p.Form.Hours }>{ o.Label }</option>
+								}
+							</select>
+						</label>
+					</div>
+					<div class="inv-hint">{ capsHint(p.Form, p.Owner) }</div>
+					<div><button class="btn primary" type="submit">Create invite</button></div>
+				</form>
+				<h2 class="inv-list-h">
+					if p.Owner {
+						Team invites
+					} else {
+						Your invites
+					}
+				</h2>
+				<div class="sub">
+					if p.Owner {
+						Every invite on this team.
+					} else {
+						The invites you created. The team's owner sees all of them.
+					}
+					Codes are never listed.
+				</div>
+				if p.ListUnavailable {
+					<div class="note">The list could not be loaded right now. Reload the page in a moment.</div>
+				} else if len(p.Invites) == 0 {
+					<div class="note">No invites yet.</div>
+				}
+				<ul class="invites-list">
+					for _, inv := range p.Invites {
+						<li class={ "inv", "state-" + inv.State } data-invite={ inv.ID } data-state={ inv.State }>
+							<div class="inv-main">
+								<div class="nm">
+									<span>{ inviteLabel(inv.Label) }</span>
+									<span class={ "badge", inviteBadge(inv.State) }>{ inv.State }</span>
+								</div>
+								<div class="sl">
+									created by { inviteCreator(inv) } · <time datetime={ stamp(inv.CreatedAt) }>{ when(inv.CreatedAt) }</time>
+								</div>
+								<div class="sl">
+									uses { inviteUses(inv) } · expires
+									if inv.ExpiresAt != nil {
+										<time datetime={ stamp(*inv.ExpiresAt) }>{ when(*inv.ExpiresAt) }</time>
+									} else {
+										never
+									}
+									· last used
+									if inv.LastUsedAt != nil {
+										<time datetime={ stamp(*inv.LastUsedAt) }>{ when(*inv.LastUsedAt) }</time>
+									} else {
+										never
+									}
+								</div>
+							</div>
+							if inv.CanRevoke && inv.State == "active" {
+								<form method="post" action={ revokeInviteURL(p.Slug, inv.ID) }>
+									<input type="hidden" name="csrf" value={ ViewerFrom(ctx).CSRFToken }/>
+									<button class="btn" type="submit">Revoke</button>
+								</form>
+							}
+						</li>
+					}
+				</ul>
+				if p.More {
+					<div class="note">Showing the newest 100.</div>
+				}
+				<div class="note">Revoking stops a code working. People who already joined with it keep their access.</div>
+			</div>
+		</div>
+	</div>
+	<script src="/static/landing.js" defer></script>
+}
+
+// createdInvite is the one-time panel: the code in a copyable box, the share
+// note and what the teammate runs.
+templ createdInvite(slug string, c CreatedInvite) {
+	<section class="card inv-created" data-invite-created aria-labelledby="inv-created-h">
+		<h3 id="inv-created-h">
+			Invite created
+			if c.Label != "" {
+				· { c.Label }
+			}
+		</h3>
+		<p class="inv-once">
+			<b>Copy the code now.</b> It is shown only on this page: reloading will not show it again,
+			and nothing on the board can show it later.
+		</p>
+		<div class="code inv-code">
+			<div class="code-head">
+				join code
+				<button class="copy" type="button" data-copy="invite-code" aria-live="polite" hidden>Copy</button>
+			</div>
+			<pre id="invite-code">{ c.Code }</pre>
+		</div>
+		<p>
+			It admits { usesPhrase(c.MaxUses) } until <time datetime={ stamp(c.ExpiresAt) }>{ when(c.ExpiresAt) }</time>.
+		</p>
+		<p class="inv-share">{ c.ShareNote }</p>
+		<p>Your teammate runs this, chooses <b>join</b> and pastes the code:</p>
+		<div class="code inv-cmd">
+			<div class="code-head">
+				teammate's terminal
+				<button class="copy" type="button" data-copy="invite-install" aria-live="polite" hidden>Copy</button>
+			</div>
+			<pre id="invite-install">{ InstallCommand }</pre>
+		</div>
+		<div class="inv-done"><a class="btn" href={ invitesURL(slug) }>Done</a></div>
+	</section>
+}

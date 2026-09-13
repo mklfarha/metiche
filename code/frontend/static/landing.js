@@ -1,4 +1,6 @@
 // metiche — the landing page's only script: a copy button for the install line.
+// The board's Invites page loads it too, for the one-time join code and the
+// teammate's install line (button[data-copy] naming a <pre> by id).
 //
 // Progressive enhancement. The button ships with the `hidden` attribute and is
 // revealed here, so with JS off there is no dead control and the command in

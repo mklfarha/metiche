@@ -25,6 +25,10 @@ type Viewer struct {
 	// Every POST form carries it as the "csrf" field; htmx sends it as
 	// X-CSRF-Token from the <body>'s hx-headers.
 	CSRFToken string
+	// Member is true when the backend confirmed, for this request, that the
+	// signed-in viewer is a live member of the team the page is for. It is
+	// what puts the Invites tab in the topbar; everybody else never sees it.
+	Member bool
 }
 
 type viewerKey struct{}
@@ -125,6 +129,9 @@ templ topbar(s state.Snapshot, tab Tab) {
 			@tab_(tab, TabContracts, "Contracts", fmt.Sprintf("/t/%s/contracts", s.Team.Slug), "nav-n-contracts", len(s.Contracts), false, false)
 			@tab_(tab, TabDecisions, "Decisions", fmt.Sprintf("/t/%s/decisions", s.Team.Slug), "nav-n-decisions", len(s.Decisions), false, false)
 			@tab_(tab, TabRuns, "Runs", fmt.Sprintf("/t/%s/runs", s.Team.Slug), "nav-n-runs", len(s.Sessions), false, false)
+			if ViewerFrom(ctx).Member {
+				@tab_(tab, TabInvites, "Invites", fmt.Sprintf("/t/%s/invites", s.Team.Slug), "nav-n-invites", 0, false, false)
+			}
 		</nav>
 		<div class="spacer"></div>
 		@cadenceLabel(s)
