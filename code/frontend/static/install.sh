@@ -49,7 +49,10 @@
 # works. Nothing for a client is written until that client's proof succeeds.
 # A saved token the server REJECTS starts a new identity, and says so; a
 # network error, a 5xx or a timeout refuses and writes nothing — a flaky
-# connection must never turn you into somebody new.
+# connection must never turn you into somebody new. A $METICHE_TOKEN that is
+# byte for byte the token in ~/.metiche/env (the profile line loads it) is the
+# saved token; a different one was passed on purpose, and a rejection of it
+# refuses.
 #
 # --uninstall removes exactly what the list above says metiche owns, with the
 # same backups, and does not contact the server.
@@ -145,6 +148,11 @@ DID_SOMETHING=0
 ANCHOR=""
 ANCHOR_SOURCE=""
 ANCHOR_TEAMS=""
+# 1 only when $METICHE_TOKEN is a token somebody PASSED: set, and not simply
+# the token in ~/.metiche/env that the profile line loaded. See anchor_token.
+TOKEN_EXPLICIT=0
+# 1 when $METICHE_TOKEN is set but is byte for byte the saved token.
+TOKEN_FROM_PROFILE=0
 
 # The clients found on this machine, in KNOWN_CLIENTS order; the one being
 # configured and its generated identity; and what is done so far.
@@ -242,6 +250,12 @@ A re-run needs none of them: the token in ~/.metiche/env is used, and if you
 are on several teams, METICHE_TEAM_SLUG says which one. If the server REJECTS
 that saved token (it was reset, or the token revoked), the script says so and
 starts a new identity; a network error or a 5xx refuses instead.
+
+$METICHE_TOKEN holding the SAME token as ~/.metiche/env (the profile line
+loads it into every shell) counts as that saved token: a rejection starts a
+new identity, and METICHE_JOIN_CODE / METICHE_TEAM_NAME still apply. Only a
+DIFFERENT token in $METICHE_TOKEN is one you passed; it outranks both, and a
+rejection of it refuses.
 
 Every file it changes that already existed is backed up first, next to
 itself, as <file>.metiche-backup-<timestamp>.
@@ -668,19 +682,36 @@ existing_token() {
 # join with no bearer — so a re-run, or a second client, would add a second
 # person to the board however stable client_key is.
 #
-# $METICHE_TOKEN first, else ~/.metiche/env. Sets ANCHOR and ANCHOR_SOURCE;
-# touches no network. A client's own token, when it has one, is carried in
-# preference to the anchor — see join_client.
+# $METICHE_TOKEN first, else ~/.metiche/env. Sets ANCHOR, ANCHOR_SOURCE,
+# TOKEN_EXPLICIT and TOKEN_FROM_PROFILE; touches no network. A client's own
+# token, when it has one, is carried in preference to the anchor — see
+# join_client.
+#
+# $METICHE_TOKEN is not always something you passed. The profile line this
+# script writes loads ~/.metiche/env into every new shell, so on a re-run the
+# variable usually holds the SAVED token. When it is byte for byte the token in
+# that file (read the way existing_token reads it: never sourced, never
+# eval'd), it is the saved token and is treated exactly as the file would be —
+# which is what lets a saved token the server has since rejected start a new
+# identity instead of refusing forever. A DIFFERENT token in $METICHE_TOKEN
+# was passed on purpose, and a rejection of it still refuses.
 anchor_token() {
     ANCHOR=""
     ANCHOR_SOURCE=""
-    if [ -n "${METICHE_TOKEN:-}" ]; then
-        validate_token "$METICHE_TOKEN"
-        ANCHOR="$METICHE_TOKEN"
-        ANCHOR_SOURCE="\$METICHE_TOKEN"
-        return 0
-    fi
+    TOKEN_EXPLICIT=0
+    TOKEN_FROM_PROFILE=0
     _found=$(existing_token)
+    if [ -n "${METICHE_TOKEN:-}" ]; then
+        if [ -n "$_found" ] && [ "$METICHE_TOKEN" = "$_found" ]; then
+            TOKEN_FROM_PROFILE=1
+        else
+            validate_token "$METICHE_TOKEN"
+            TOKEN_EXPLICIT=1
+            ANCHOR="$METICHE_TOKEN"
+            ANCHOR_SOURCE="\$METICHE_TOKEN"
+            return 0
+        fi
+    fi
     if [ -n "$_found" ]; then
         ANCHOR="$_found"
         ANCHOR_SOURCE="$ENV_FILE"
@@ -722,7 +753,11 @@ prompt_join_or_create() {
 choose_identity() {
     anchor_token
 
-    if [ -n "${METICHE_TOKEN:-}" ]; then
+    # Only a token you PASSED outranks a join code or a team name. The saved
+    # token, loaded into $METICHE_TOKEN by the profile line, does not: it is
+    # carried as the anchor like any saved token, and the join or create you
+    # asked for still happens.
+    if [ "$TOKEN_EXPLICIT" -eq 1 ]; then
         ACTION="token"
         if [ -n "${METICHE_JOIN_CODE:-}" ] || [ -n "$TEAM_NAME" ]; then
             warn "\$METICHE_TOKEN is set, so METICHE_JOIN_CODE / METICHE_TEAM_NAME are ignored"
@@ -1195,6 +1230,9 @@ resolve_team() {
     _rest_clients=${_rest_clients# }
     if [ -n "$ANCHOR" ]; then
         info "anchor: the token from $ANCHOR_SOURCE (never printed)"
+        if [ "$TOKEN_FROM_PROFILE" -eq 1 ]; then
+            info "  \$METICHE_TOKEN is set to that same saved token (your shell profile loads $ENV_FILE), so it counts as the saved token, not one you passed"
+        fi
     else
         info "anchor: none yet — the first client's token becomes it"
     fi
