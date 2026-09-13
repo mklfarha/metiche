@@ -197,7 +197,9 @@ type DeliveredInstruction struct {
 	// agent meets both and they mean the same thing.
 	SuggestedAction string `json:"suggested_action"`
 
-	// Ref is the conflict this notice is about (CF-7), for resolve_conflict.
+	// Ref is the conflict this notice is about (CF-7), so the agent can name it
+	// in its report_back note and a person can find it on the board. No tool
+	// resolves a conflict yet.
 	Ref string `json:"ref,omitempty"`
 
 	// ReportBack is true when somebody is waiting for an answer.
@@ -671,7 +673,9 @@ func fallbackAction(kind enums.InstructionKind, key, with string) string {
 	case enums.INSTRUCTION_KIND_CONFLICT_NOTICE:
 		return fmt.Sprintf("call check_paths on the files you hold to see where %s is, and narrow or drop what you do not need with update_intent(drop_paths=[...]); then report_back('%s', ...)", who, key)
 	case enums.INSTRUCTION_KIND_JUDGE_REQUEST:
-		return fmt.Sprintf("call get_review_context for the pair and answer with report_judgement, then report_back('%s', 'done')", key)
+		// No tool can serve a judge request yet, so the honest answer is
+		// blocked, which also closes the loop for whoever raised it.
+		return fmt.Sprintf("judging pairs is not available yet: report_back('%s', 'blocked', note='judging is not available yet')", key)
 	case enums.INSTRUCTION_KIND_QUESTION:
 		return fmt.Sprintf("answer it in the note: report_back('%s', 'done', note='<your answer>')", key)
 	default:

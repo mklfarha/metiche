@@ -586,7 +586,10 @@ func TestEveryInstructionKindHasAnAction(t *testing.T) {
 		if !strings.Contains(got, "IN-4") {
 			t.Errorf("kind %d: %q does not name the instruction to answer", k, got)
 		}
-		if !strings.Contains(got, "report_back") && !strings.Contains(got, "report_judgement") {
+		// report_back is the only tool every kind can be answered with today;
+		// an action naming a tool the server does not register is worse than
+		// none.
+		if !strings.Contains(got, "report_back") {
 			t.Errorf("kind %d: %q names no tool, so it is a sentence rather than an action", k, got)
 		}
 	}

@@ -82,7 +82,8 @@ func (p Pending) Any() bool { return p.Instructions > 0 || p.Conflicts > 0 || p.
 
 // NoteForPending is the one-line nudge appended to a response that has work
 // waiting. Written for a model deciding what to call next, so it names the
-// tool.
+// tool - and names none when no tool can serve it yet, because a model told to
+// call a tool that is not registered either errors or invents one.
 func (p Pending) NoteForPending() string {
 	switch {
 	case p.Instructions > 0 && p.Conflicts > 0:
@@ -93,7 +94,9 @@ func (p Pending) NoteForPending() string {
 	case p.Conflicts > 0:
 		return fmt.Sprintf("%d open conflict(s) involve you — call get_instructions", p.Conflicts)
 	case p.Reviews > 0:
-		return fmt.Sprintf("%d pair(s) assigned to you to judge — call get_review_context", p.Reviews)
+		// Judging pairs is not built: no tool serves a review yet. The count
+		// stays in the envelope so the shape does not change when it is.
+		return fmt.Sprintf("%d pair(s) assigned to you to judge — judging is not available yet, so there is nothing to call; carry on", p.Reviews)
 	}
 	return ""
 }
