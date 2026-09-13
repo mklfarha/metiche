@@ -262,8 +262,10 @@ templ InvitesPage(p InvitesParams) {
 	<script src="/static/landing.js" defer></script>
 }
 
-// createdInvite is the one-time panel: the code in a copyable box, the share
-// note and what the teammate runs.
+// createdInvite is the one-time panel: the code in a copyable box, how to share
+// it and what the teammate runs. The backend's share_note is not rendered: it
+// repeats the uses and expiry above (with a raw timestamp) and is written for
+// agents, so the panel keeps its own copy.
 templ createdInvite(slug string, c CreatedInvite) {
 	<section class="card inv-created" data-invite-created aria-labelledby="inv-created-h">
 		<h3 id="inv-created-h">
@@ -286,7 +288,7 @@ templ createdInvite(slug string, c CreatedInvite) {
 		<p>
 			It admits { usesPhrase(c.MaxUses) } until <time datetime={ stamp(c.ExpiresAt) }>{ when(c.ExpiresAt) }</time>.
 		</p>
-		<p class="inv-share">{ c.ShareNote }</p>
+		<p class="inv-share">Share it privately: never in a commit, an issue, a PR or a public channel.</p>
 		<p>Your teammate runs this, chooses <b>join</b> and pastes the code:</p>
 		<div class="code inv-cmd">
 			<div class="code-head">

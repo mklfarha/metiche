@@ -492,7 +492,7 @@ else
             check "board SSE connected (status $(jq -r .streamStatus "$W/cdp/ready.json"))" eq "$(jq -r .streamOpened "$W/cdp/ready.json")" true
             MARKER="smoke marker $(date +%s)"
             if mcp_tool "$TOK1" start_session "$(jq -nc --arg s "$T1" --arg m "$MARKER" \
-                '{team_slug:$s, project_key:"smoke-repo", goal:$m, status_line:$m}')"; then
+                '{team_slug:$s, project_key:"smoke-repo", goal:$m, status_line:$m, confirm_new_project:"person"}')"; then
                 ok "start_session with the agent token"
             else
                 bad "start_session failed (HTTP $MCP_HTTP: $(cat "$W/r/mcp.err"))"

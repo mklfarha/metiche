@@ -361,7 +361,7 @@ func inviteShareNote(slug string, maxUses int64, expiresAt time.Time) string {
 	return fmt.Sprintf(
 		"Share this code like a door code: only with the people you want on %s, and never in a commit, an issue, a PR or a public channel. "+
 			"Your teammate runs the metiche installer (%s), chooses join and pastes the code. "+
-			"It works %d %s until %s. It is shown only this once: list_invites never shows it.",
+			"It works %d %s until %s. It is shown only this once and never again.",
 		slug, installerCommand, maxUses, times, expiresAt.UTC().Format(time.RFC3339))
 }
 

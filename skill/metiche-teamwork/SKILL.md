@@ -100,6 +100,8 @@ repository, use the git root's basename, or omit `project_key` and send only `re
 note says it created a project while the team already has others, and one of those is this
 repository, `end_session` and start again with the right `repo_url`.
 
+**Which team, which project.** Before `start_session`, look for a `.metiche` file, walking up from your working directory to the git root. If you find one, pass its `team` as `team_slug` and its `project` as `project_key` (take `project` only from a file at or below the git root), always send `repo_url`, and add `confirm_new_project: "metiche_file"`. If `start_session` answers `code: "confirm_repo_binding"`, nothing went wrong and nothing was created: this repository isn't a project on that team yet, and putting its work on a board every member can see is your person's decision. Ask them, verbatim: "Should work in <repo> go on team <name>'s board, where its members can see it?" On yes, call `start_session` again with the same arguments plus `confirm_new_project: "person"`, then write `.metiche` at the git root with `team = <slug>` and `project = <key>` so nobody is asked again. On no, don't use metiche in this repository, or `create_team` for this work and start the session with that `team_slug`. Never pass `"person"` unless your person actually said yes.
+
 **Every path is relative to the git root, never to your working directory.** Started in `~/src`
 with the repository at `~/src/shop`? The file is `app/rest.go`, not `shop/app/rest.go`. Started in
 `~/src/shop/app`? Still `app/rest.go`, not `rest.go`. That holds for `declare_intent`,

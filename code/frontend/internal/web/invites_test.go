@@ -212,7 +212,7 @@ func TestCreateInviteShowsTheCodeOnce(t *testing.T) {
 		`<pre id="invite-code">` + code + `</pre>`,
 		`data-copy="invite-code"`,
 		`<pre id="invite-install">curl -fsSL https://metiche.xyz/install.sh | sh</pre>`,
-		"Share this code like a door code",
+		"Share it privately: never in a commit, an issue, a PR or a public channel.",
 		"chooses <b>join</b> and pastes the code",
 		`src="/static/landing.js"`,
 	} {
@@ -222,6 +222,10 @@ func TestCreateInviteShowsTheCodeOnce(t *testing.T) {
 	}
 	if strings.Contains(body, "<script>") {
 		t.Error("the page has an inline script")
+	}
+	// The backend's share_note is for agents; the panel has its own copy.
+	if strings.Contains(body, "Share this code like a door code") {
+		t.Error("the panel renders the backend's share_note")
 	}
 	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
 		t.Errorf("Cache-Control %q, want no-store", cc)
