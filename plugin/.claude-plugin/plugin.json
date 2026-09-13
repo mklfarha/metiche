@@ -1,8 +1,8 @@
 {
   "name": "metiche",
   "displayName": "metiche",
-  "version": "0.1.1",
-  "description": "Live coordination between coding agents on one repo: the metiche-teamwork skill plus the metiche MCP server, so an agent declares what it is about to do and hears about collisions inside its own tool response.",
+  "version": "0.2.0",
+  "description": "Live coordination between coding agents on one repo: the metiche-teamwork skill, so an agent declares what it is about to do and hears about collisions inside its own tool response.",
   "author": {
     "name": "mklfarha",
     "url": "https://github.com/mklfarha"

@@ -1,73 +1,76 @@
 # The metiche Claude Code plugin
 
-One install gets both halves of the client side:
+**Skill only.** The plugin ships `skills/metiche-teamwork/SKILL.md`, which teaches an agent the
+cadence: declare before acting, heartbeat while working, act on what comes back.
 
-- **the skill** — `skills/metiche-teamwork/SKILL.md`, which teaches an agent the cadence:
-  declare before acting, heartbeat while working, act on what comes back.
-- **the MCP server** — `.mcp.json` at the plugin root, which is where the tools come from.
+**The MCP server is not in the plugin.** It is registered by `install.sh` with a per-agent token:
 
-A skill without the server is advice about tools that do not exist. A server without the skill is
-fifteen tools an agent calls once and forgets. They ship together on purpose.
+```sh
+claude mcp add --transport http --scope user metiche https://mcp.metiche.xyz/v1/mcp \
+  --header "Authorization: Bearer <Claude Code's own token>"
+```
+
+The installer runs that for you, after joining your team *as Claude Code* and verifying the token it
+got back. You never type it.
+
+## Why the server moved out
+
+Until 0.1.x the plugin carried a `.mcp.json` that expanded `${METICHE_TOKEN}` from your environment.
+That broke identity in two ways:
+
+- **One token for every client.** A token names one agent. Every Claude Code window, and any other
+  client reading the same variable, presented the same token, so they were one agent on the board.
+- **Custom headers are dropped.** A second header, `X-Metiche-Client-Key`, was added to say which
+  agent was calling. The server log showed that Claude Code does not forward custom headers from a
+  plugin's `.mcp.json`; only `Authorization` arrives.
+
+Now the token *is* the agent. `install.sh` makes one join per client (`<machine>-claude`,
+`<machine>-codex`, ...), and writes each client's own token into that client's own config. The
+`Authorization` header is the only one needed, and it is the one header every MCP client forwards.
+
+`0.2.0` removes `.mcp.json`. The installer runs `claude plugin update`, because `plugin install`
+reports an older installed version as already installed and ships nothing.
 
 ## Layout
 
 ```
 plugin/                                  ← the marketplace root AND the plugin root
   .claude-plugin/
-    plugin.json                          the plugin manifest
-    marketplace.json                     the marketplace manifest ("source": "./")
-  .mcp.json                              the metiche MCP server, auto-loaded
+    plugin.json                          the plugin manifest (version 0.2.0)
+    marketplace.json                     the marketplace manifest ("source": "./", version 0.2.0)
   skills/
     metiche-teamwork/SKILL.md            auto-discovered by folder name
   README.md
 ```
 
-Both the plugin-root `.mcp.json` and `skills/*/SKILL.md` are discovered automatically, so neither
-is declared in `plugin.json`.
+Keep the two `version` fields equal. Claude Code caches a plugin by version, so a change that does
+not bump both is a change nobody receives.
 
 ## Installing it
 
-From a clone of the metiche repository:
+Use the installer; it installs this plugin and registers the server:
+
+```sh
+curl -fsSL https://metiche.xyz/install.sh | sh
+```
+
+By hand, from a clone of the metiche repository, the skill alone:
 
 ```sh
 claude plugin marketplace add ./plugin
 claude plugin install metiche@metiche --scope user -y
+claude plugin details metiche@metiche     # one skill, no MCP server
 ```
-
-Without a clone, `install.sh` at the repository root does the same thing after making a shallow
-clone at `~/.metiche/src`. Scopes are `local`, `user` or `project`; `user` is the sensible one for
-a coordination tool you want in every repository.
-
-Verify:
-
-```sh
-claude plugin details metiche@metiche
-```
-
-It should report one skill and one MCP server.
 
 ## The credential
 
-`.mcp.json` carries **no** credential and never will:
+Nothing in this plugin carries a credential, and nothing ever will. Each client's token lives in
+that client's own home-directory config: `~/.claude.json` for Claude Code, written by
+`claude mcp add`.
 
-```json
-"headers": { "Authorization": "Bearer ${METICHE_TOKEN}" }
-```
-
-Claude Code expands `${VAR}` and `${VAR:-default}` in `.mcp.json` values, headers included. So the
-token lives in your environment and nowhere in this repository. `install.sh` writes it to
-`~/.metiche/env` (mode 0600) and prints the one line that loads it from your shell profile.
-
-**A token is not a join code**, and the bearer is always the token. A join code is an *invite*: you
-hand it to `join_team` as an argument, once, and the server mints you a token in exchange. Sending
-the join code as a bearer gets you a 401 — it is not a credential and the server does not accept it
-as one. The installer performs that exchange for you and writes the token it gets back.
-
-`${METICHE_MCP_URL:-https://mcp.metiche.xyz/v1/mcp}` lets you point at a local server without editing
-anything: `METICHE_MCP_URL=http://127.0.0.1:8788/mcp`.
-
-If `METICHE_JOIN_CODE` is unset, Claude Code loads the server with the placeholder unexpanded and
-warns you. That is the intended failure — visible, not silent.
+**A token is not a join code**, and the bearer is always the token. A join code is an *invite*: it
+goes to `join_team` as an argument, once, and the server mints a token in exchange. A join code sent
+as a bearer gets a 401.
 
 ## Why the skill is copied, not referenced
 
@@ -85,13 +88,3 @@ Keep them in sync when you edit the skill:
 cp skill/metiche-teamwork/SKILL.md plugin/skills/metiche-teamwork/SKILL.md
 diff -q skill/metiche-teamwork/SKILL.md plugin/skills/metiche-teamwork/SKILL.md
 ```
-
-## Status
-
-`mcp.metiche.xyz` is live and answers MCP over streamable HTTP. Install the plugin, set
-`METICHE_TOKEN`, and the server is reachable.
-
-Tools 8-12 and 14 of the surface (`publish_contract`, `record_decision`, `get_review_context`,
-`report_judgement`, `resolve_conflict`, `report_back`) are not registered yet, so contract
-mismatches and the model-judged semantic checks do not fire. Path collisions -- the mechanical
-half, and the one that catches the most -- work end to end.

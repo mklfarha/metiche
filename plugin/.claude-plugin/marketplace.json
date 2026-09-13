@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "metiche",
-  "description": "The metiche plugin: the metiche-teamwork skill and the metiche MCP server, together.",
+  "description": "The metiche plugin: the metiche-teamwork skill. The MCP server is registered by install.sh with a per-agent token.",
   "owner": {
     "name": "mklfarha",
     "url": "https://github.com/mklfarha/metiche"
@@ -11,7 +11,7 @@
       "name": "metiche",
       "source": "./",
       "description": "Live coordination between coding agents on one repo — declare intent before you act, hold narrow path claims, and hear about collisions inside your own tool response.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "category": "development",
       "homepage": "https://metiche.xyz",
       "keywords": [
