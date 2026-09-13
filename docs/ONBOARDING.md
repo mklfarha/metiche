@@ -164,6 +164,9 @@ Anyone already on the team can bring someone in. Three steps:
    `create_invite`, optionally with a label, a use limit and an expiry, and shows you the join
    code. By default a code admits **one** person and expires in **7 days**. Team owners can raise
    that to 100 uses and 30 days; members to 25 uses and 7 days.
+
+   Or open your board → **Invites**. Signed-in team members see that tab; it has the same form,
+   the same limits and a copy button for the code, and it lists and revokes invites too.
 2. **Share the code privately**: a direct message, a password manager, in person. You see it
    once. `list_invites` shows the outstanding invites but never their codes.
 3. **Your teammate runs the installer and pastes it.**

@@ -1374,3 +1374,55 @@ Both are fixed since; §10.7 describes the behaviour now.
 - **Fixed: `signin.js` handled the board's 403 and 429 as the "already used or expired" message**, and
   discards the link, although the link was never sent to the backend. A rate-limited person with
   a good link is told it is dead.
+
+### 10.10 Invites on the board (backend deceeaf)
+
+A signed-in member can make, list and revoke invites from the board. It is the board's only write,
+and it follows the MCP tools' rules exactly, because it runs the same code.
+
+- **One source of truth:** `app/mcp/invites.go` has `CreateInviteAs`, `ListInvitesAs` and
+  `RevokeInviteAs`. Each takes a caller already pinned to a team: the account, its live membership
+  and the team. `create_invite`, `list_invites` and `revoke_invite` are `RequireTeam` plus these
+  functions, and their texts are unchanged. A refusal is an `InviteRefusal`: its `Error()` is the
+  tool's text, and its `Code` lets REST choose a status.
+  - Defaults: 1 use, 7 days. The owner can go up to 100 uses and 30 days; a member is capped at 25
+    uses and 7 days.
+  - An owner sees and revokes every invite; a member only their own.
+  - **30 creates an hour per account, as one budget across both surfaces:** `app/rest.go` hands
+    the MCP endpoint's own `Handler` to the REST routes.
+- **Backend (`app/webapi/invites.go`), board only, on `AllowedRoutes`, not routed by any ingress:**
+
+  | route | answer |
+  |---|---|
+  | `GET /v1/teams/{slug}/invites` | 200 `list_invites`' result. It never has a code. |
+  | `POST /v1/teams/{slug}/invites` `{label, max_uses, expires_in_hours}` | 201 `create_invite`'s result. The code is here and only here. |
+  | `DELETE /v1/teams/{slug}/invites/{invite_id}` | 200 `revoke_invite`'s result |
+  | any bearer (`Authorization`, `X-Metiche-Token`, even alongside a session), no session, a session that does not validate, a non-member (of a public team too), a revoked member, an unknown team | 404, the same bytes as webapi's unknown team |
+  | `invalid_argument` / `not_permitted` / `rate_limited` / `not_found` (an invite you may not revoke) | 400 / 403 / 429 with `Retry-After` / 404. Each is problem+json with `title` = the code and `detail` = the tool's text. |
+  | database failure | 503 |
+
+  Every answer carries `Cache-Control: no-store`. The session is the only credential, read from
+  `X-Metiche-Browser-Session`.
+- **Board (`internal/web/invites.go`, `internal/view/invites.templ`):**
+  - `GET /t/{slug}/invites` shows the create form, with the defaults and this role's caps, and
+    the list: label, created by, uses/max, expiry, state and last used. Every active invite the
+    viewer may revoke has a Revoke POST form. There are never any codes.
+  - **The Invites tab** is in the topbar only for a signed-in member. A private board is only ever
+    granted to a member. On a public board the tab needs the slug in the viewer's own
+    `GET /v1/browser/teams`, so a public team's requests still never carry a session.
+  - **Everybody else gets the NotFound page, 404, for the GET and both POSTs**, byte-identical to
+    an unknown team for that viewer: anonymous, a signed-in non-member, and any demo board.
+  - `POST /t/{slug}/invites` and `POST /t/{slug}/invites/{invite}/revoke` check, in order:
+    Origin / `Sec-Fetch-Site` (403), a cookie (otherwise NotFound), then the CSRF token (403).
+    Nothing reaches the backend before all three pass.
+  - **The code:** a successful create is answered with the page itself, 200, carrying the
+    one-time panel: the code in a copy box, the share note and
+    `curl -fsSL https://metiche.xyz/install.sh | sh`, choose join, paste. It is
+    `Cache-Control: private, no-store` and has no `Location`. The code is in no URL, cookie or
+    header, and the board keeps no copy, so a reload does not show it. If the list cannot be read
+    after a create, the code is still shown.
+  - A cap or a bad value is a 422, and the rate limit a 429. Both show the server's message
+    without its code prefix and keep what was typed. A backend outage is 503 and keeps the cookie.
+  - A revoke answers 303 back to the page. An invite the viewer may not revoke is a 422 with a
+    message.
+  - The copy buttons are `static/landing.js` (`button[data-copy]`). There is no inline script.
