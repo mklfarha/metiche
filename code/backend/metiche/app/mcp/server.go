@@ -134,6 +134,12 @@ which is the only way their claims can collide. Every path you send to declare_i
 and check_paths is relative to that git root, NOT to your working directory: started in the parent
 folder or a subfolder, the file is still app/rest.go.
 
+Before start_session, look for a .metiche file, walking up from your working directory to the git
+root. If you find one, pass its team as team_slug and its project as project_key, with
+confirm_new_project: "metiche_file". A repository that is not yet a project on the team comes back
+once with code "confirm_repo_binding" (not an error, nothing created): ask your person the question
+in its note, and only on a yes call start_session again with confirm_new_project: "person".
+
 Your token identifies THIS agent - this client, on this machine. Every client gets its own, and the
 Authorization header is the only thing any call needs. You never need client_key; omit it, and never
 guess one. Several terminals of one client are several sessions of one agent: call start_session in
@@ -223,6 +229,8 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 			"Start a new session per piece of work, not per message. " +
 			"Identify the repository from git, run inside it: repo_url = 'git remote get-url origin' (omit if there is no remote), project_key = the basename of 'git rev-parse --show-toplevel', branch = 'git branch --show-current'. " +
 			"Every path you later claim or check is relative to that git root, not to your working directory. " +
+			"Before calling, look for a .metiche file walking up from your working directory to the git root; if found, pass its team as team_slug and its project as project_key, with confirm_new_project: 'metiche_file'. " +
+			"A repository that is not yet a project on the team returns code confirm_repo_binding and creates nothing: ask your person the question in its note. " +
 			"If you are on more than one team, pass team_slug so the work lands on the right board. You never need client_key: your token already names this agent. " +
 			"Several terminals of one client are several sessions of one agent; start_session tells you about your other live sessions.",
 		Annotations: idempotent,

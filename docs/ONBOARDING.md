@@ -283,6 +283,39 @@ header      Authorization: Bearer <your metiche token>
 
 and the skill, which is one markdown file with no dependencies.
 
+## Binding a repo to a team
+
+A team's board is visible to every member of that team, so metiche never puts a repository's work
+there on a guess. Once, per repository, per team, somebody decides.
+
+**The `.metiche` file.** Two lines at the git root, safe to commit (it names a team and grants no
+access; never put a token, join code or URL in it):
+
+```
+team = taqueria-tracker
+project = taqueria
+```
+
+`metiche init` writes it (docs/CLI.md §1.10). Agents look for it walking up from their working
+directory to the git root, pass `team` as `team_slug` and `project` as `project_key`, and confirm
+with `confirm_new_project: "metiche_file"`. A `project` line above the git root is ignored.
+
+**When the agent asks.** Only when `start_session` would create a new project: no active project on
+the team has this repository's remote or this key, and there is no `.metiche` for it. Then
+`start_session` creates nothing and answers `code: "confirm_repo_binding"` (not an error), with the
+team, the repository and the team's existing projects. The agent asks you:
+
+> Should work in github.com/acme/shop go on team Taqueria Tracker's board, where its members can see it?
+
+On yes it starts again with `confirm_new_project: "person"` and writes the `.metiche` above. A
+repository that is already a project on the team never asks, and neither does any clone that has the
+committed `.metiche`.
+
+**Picking a different team.** Say no. The agent either leaves metiche out of this repository, or
+calls `create_team` for this work (or uses another team you are on) and starts the session with that
+`team_slug`. On several teams, a call without `team_slug` is refused until a `.metiche` or you name
+one. To rebind a repository later, `metiche init --team <slug> --force`.
+
 ## Dogfooding — metiche pointed at itself
 
 [`.mcp.json`](../.mcp.json) at the repository root registers metiche for agents working **on**

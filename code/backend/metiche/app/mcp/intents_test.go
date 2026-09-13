@@ -42,9 +42,10 @@ func withDetector(t *testing.T, hs *harness) {
 func startWork(t *testing.T, hs *harness, c *caller, branch, goal string) string {
 	t.Helper()
 	res, _, err := hs.h.StartSession(c.ctx, nil, StartSessionParams{
-		ProjectKey: "metiche",
-		Branch:     branch,
-		Goal:       goal,
+		ProjectKey:        "metiche",
+		Branch:            branch,
+		Goal:              goal,
+		ConfirmNewProject: "person",
 	})
 	if err != nil {
 		t.Fatalf("start_session(%s): %v", branch, err)

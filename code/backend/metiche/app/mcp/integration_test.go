@@ -399,6 +399,8 @@ func TestIntegrationIdempotentReplay(t *testing.T) {
 		IdempotencyKey: "retry-me",
 	}
 
+	// A new project on the team: the person confirmed it (repobinding.go).
+	args.ConfirmNewProject = "person"
 	first, _, err := hs.h.StartSession(ctx, nil, args)
 	if err != nil {
 		t.Fatalf("first start_session: %v", err)
@@ -618,8 +620,8 @@ func TestIntegrationOnePersonManyTeams(t *testing.T) {
 	// team-scoped call must refuse rather than guess which board to write to.
 	if _, _, err := hs.h.StartSession(ana.ctx, nil, StartSessionParams{ProjectKey: "metiche"}); err == nil {
 		t.Error("start_session picked a team for a caller who is on two")
-	} else if !strings.Contains(err.Error(), "team_slug") {
-		t.Errorf("the refusal should name the missing argument: %v", err)
+	} else if !strings.Contains(err.Error(), "team_slug") || !strings.Contains(err.Error(), ".metiche") {
+		t.Errorf("the refusal should name the missing argument and where to find it (.metiche): %v", err)
 	}
 
 	teamA, err := hs.h.teamByID(context.Background(), hs.teamID)
@@ -627,7 +629,7 @@ func TestIntegrationOnePersonManyTeams(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, _, err := hs.h.StartSession(ana.ctx, nil, StartSessionParams{
-		ProjectKey: "metiche", TeamSlug: teamA.Slug}); err != nil {
+		ProjectKey: "metiche", TeamSlug: teamA.Slug, ConfirmNewProject: "person"}); err != nil {
 		t.Fatalf("start_session with an explicit team_slug: %v", err)
 	}
 }
@@ -731,10 +733,11 @@ func TestIntegrationConcurrentWritesAreGapless(t *testing.T) {
 			defer wg.Done()
 			<-start // release them all at the same instant
 			res, _, err := hs.h.StartSession(ctxs[i%len(ctxs)], nil, StartSessionParams{
-				ProjectKey:     "metiche",
-				Branch:         fmt.Sprintf("feat/%d", i),
-				Goal:           fmt.Sprintf("piece of work %d", i),
-				IdempotencyKey: fmt.Sprintf("concurrent-%d", i),
+				ProjectKey:        "metiche",
+				Branch:            fmt.Sprintf("feat/%d", i),
+				Goal:              fmt.Sprintf("piece of work %d", i),
+				IdempotencyKey:    fmt.Sprintf("concurrent-%d", i),
+				ConfirmNewProject: "person",
 			})
 			mu.Lock()
 			defer mu.Unlock()
@@ -847,9 +850,10 @@ func TestIntegrationConcurrentRetriesOfOneCall(t *testing.T) {
 			defer wg.Done()
 			<-start
 			res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{
-				ProjectKey:     "metiche",
-				Goal:           "the one piece of work",
-				IdempotencyKey: "the-same-key",
+				ProjectKey:        "metiche",
+				Goal:              "the one piece of work",
+				IdempotencyKey:    "the-same-key",
+				ConfirmNewProject: "person",
 			})
 			mu.Lock()
 			defer mu.Unlock()
@@ -894,7 +898,7 @@ func TestIntegrationTwoCursors(t *testing.T) {
 	hs := newHarness(t)
 	ctx := hs.join(t, "Ana", "client-a").ctx
 
-	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work"})
+	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work", ConfirmNewProject: "person"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -944,7 +948,7 @@ func TestIntegrationHeartbeatExtendsClaimsWithoutTheLock(t *testing.T) {
 	ana := hs.join(t, "Ana", "client-a")
 	ctx := ana.ctx
 
-	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work"})
+	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work", ConfirmNewProject: "person"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1020,7 +1024,7 @@ func TestIntegrationDetectionRunsInsideTheLock(t *testing.T) {
 	hs := newHarness(t)
 	ctx := hs.join(t, "Ana", "client-a").ctx
 
-	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work"})
+	res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{ProjectKey: "metiche", Goal: "work", ConfirmNewProject: "person"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1136,7 +1140,7 @@ func TestIntegrationAuthIsRequired(t *testing.T) {
 
 	// Another agent cannot touch this agent's session.
 	ctxA := hs.join(t, "Ana", "client-a").ctx
-	res, _, err := hs.h.StartSession(ctxA, nil, StartSessionParams{ProjectKey: "metiche"})
+	res, _, err := hs.h.StartSession(ctxA, nil, StartSessionParams{ProjectKey: "metiche", ConfirmNewProject: "person"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1158,7 +1162,7 @@ func TestIntegrationGetTeamState(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		if _, _, err := hs.h.StartSession(ctxA, nil, StartSessionParams{
-			ProjectKey: "metiche", Goal: fmt.Sprintf("ana %d", i), StatusLine: "working"}); err != nil {
+			ProjectKey: "metiche", Goal: fmt.Sprintf("ana %d", i), StatusLine: "working", ConfirmNewProject: "person"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1350,7 +1354,7 @@ func TestIntegrationCreateTeam(t *testing.T) {
 	// The creator's token works immediately: no second call needed.
 	creator := hs.ctxForToken(t, first.Token)
 	if _, _, err := hs.h.StartSession(creator, nil,
-		StartSessionParams{ProjectKey: "metiche", Goal: "work", TeamSlug: first.TeamSlug}); err != nil {
+		StartSessionParams{ProjectKey: "metiche", Goal: "work", TeamSlug: first.TeamSlug, ConfirmNewProject: "person"}); err != nil {
 		t.Fatalf("start_session with the creator's token: %v", err)
 	}
 

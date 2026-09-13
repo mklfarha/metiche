@@ -598,7 +598,8 @@ func (h *Handler) RequireTeam(ctx context.Context, teamRef string) (Resolved, er
 				}
 			}
 			return Resolved{}, fmt.Errorf(
-				"you are on %d teams, so this call needs a team_slug: one of %s",
+				"you are on %d teams, so this call needs a team_slug: one of %s. "+
+					"If a .metiche file (walking up from your working directory to the git root) names a team, pass that; otherwise ask your person which team, never guess",
 				len(members), strings.Join(slugs, ", "))
 		}
 	}

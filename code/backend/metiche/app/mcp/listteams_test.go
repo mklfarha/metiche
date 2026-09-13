@@ -406,7 +406,7 @@ func TestIntegrationListTeamsSingleThenMany(t *testing.T) {
 	// A live session on that team flips the disambiguator, and a teammate
 	// moves the member count.
 	if _, _, err := hs.h.StartSession(ana.ctx, nil, StartSessionParams{
-		ProjectKey: "metiche", Goal: "build the login endpoint"}); err != nil {
+		ProjectKey: "metiche", Goal: "build the login endpoint", ConfirmNewProject: "person"}); err != nil {
 		t.Fatal(err)
 	}
 	hs.join(t, "Cass", "client-cass")
