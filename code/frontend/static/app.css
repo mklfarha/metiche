@@ -179,8 +179,18 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
  * topbar's min-content width (~1150px with six tabs, the pace picker and both
  * cursors), and overflow:hidden then silently clipped every page to the left
  * third of a phone. The document never scrolled sideways; it just lost the
- * right-hand side of everything. */
-.app { display: grid; grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); height: 100vh; overflow: hidden; }
+ * right-hand side of everything.
+ *
+ * Every child is placed in an explicit row. With only "auto 1fr", a demo
+ * board's banner took the 1fr row and the page fell into an implicit
+ * content-sized row, so on a short page the banner swelled to fill the
+ * screen. A live board has no banner: row 2 is then an empty auto track of
+ * zero height and the page still gets the 1fr. Below 1100px .app is a block
+ * and these placements do nothing. */
+.app { display: grid; grid-template-rows: auto auto 1fr; grid-template-columns: minmax(0, 1fr); height: 100vh; overflow: hidden; }
+.app > .topbar { grid-row: 1; }
+.app > .demo-banner { grid-row: 2; }
+.app > .main { grid-row: 3; }
 
 .topbar {
   display: flex; align-items: center; gap: 18px;
@@ -626,15 +636,9 @@ tr.r-unconsumed td:first-child { box-shadow: inset 3px 0 0 var(--idle); }
 .cadence {
   display: flex; align-items: center; gap: 6px;
   padding: 2px 6px 2px 9px; border: 1px solid var(--line);
-  border-radius: 20px; background: var(--bg); cursor: pointer;
+  border-radius: 20px; background: var(--bg); cursor: default;
 }
 .cadence .k { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); }
-.cadence select {
-  font: inherit; font-family: var(--mono); font-size: 11.5px; font-weight: 600;
-  color: var(--ink); background: transparent; border: 0; cursor: pointer;
-  padding: 2px 2px; appearance: none; text-align: right;
-}
-.cadence select:focus { outline: none; }
 .cadence:hover { border-color: var(--accent); }
 
 /* ---------------------------------------------------------------- graph
@@ -786,7 +790,6 @@ svg.graph { display: block; min-width: 720px; }
   .brand .logo { min-height: 44px; }
   nav.tabs a { min-height: 44px; }
   .cadence { min-height: 40px; padding-top: 0; padding-bottom: 0; }
-  .cadence select { min-height: 40px; }
   .btn { min-height: 40px; padding: 0 14px; }
   .alertstrip .go { display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; }
   .badges { gap: 6px; }
