@@ -33,6 +33,17 @@ type stubLogin struct {
 type stubSession struct {
 	secret, key, account, name, redirect string
 	revoked                              bool
+	// endReason and revokedAt are set when a session is revoked; expired marks
+	// one that ran out. Both kinds stay in GET /v1/browser/sessions, as the
+	// real backend lists them until the sweeper deletes them.
+	endReason string
+	revokedAt time.Time
+	expired   bool
+}
+
+// end revokes s with an end_reason. Called with b.mu held.
+func (l *stubLogin) end(s *stubSession, reason string) {
+	s.revoked, s.endReason, s.revokedAt = true, reason, l.now().UTC()
 }
 
 func newStubLogin() stubLogin {
@@ -76,6 +87,20 @@ func (b *stubBackend) addSession(secret, key, account, name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.login.sessions[secret] = &stubSession{secret: secret, key: key, account: account, name: name}
+}
+
+// addEndedSession adds a session that is no longer signed in. reason is an
+// end_reason ("revoked", "revoked_by_agent", …), or "expired".
+func (b *stubBackend) addEndedSession(secret, key, account, name, reason string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	s := &stubSession{secret: secret, key: key, account: account, name: name}
+	if reason == "expired" {
+		s.expired = true
+	} else {
+		b.login.end(s, reason)
+	}
+	b.login.sessions[secret] = s
 }
 
 func (b *stubBackend) addLink(link string, s stubSession) {
@@ -154,7 +179,7 @@ func (b *stubBackend) serveBrowser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur := b.login.sessions[r.Header.Get(feed.BrowserSessionHeader)]
-	valid := cur != nil && !cur.revoked
+	valid := cur != nil && !cur.revoked && !cur.expired
 	unauthorized := func() { http.Error(w, `{"title":"unauthorized"}`, http.StatusUnauthorized) }
 	path := r.URL.Path
 
@@ -190,18 +215,29 @@ func (b *stubBackend) serveBrowser(w http.ResponseWriter, r *http.Request) {
 			unauthorized()
 			return
 		}
-		cur.revoked = true
+		b.login.end(cur, "signed_out")
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && path == "/v1/browser/sessions":
 		if !valid {
 			unauthorized()
 			return
 		}
+		// Like the backend: every row of the account, ended and expired ones
+		// included, each with its state.
 		var list []map[string]any
 		for _, s := range b.login.sessions {
-			if s.account == cur.account && !s.revoked {
-				list = append(list, map[string]any{"key": s.key, "created_at": b.login.now().UTC(), "user_agent": "test agent"})
+			if s.account != cur.account {
+				continue
 			}
+			row := map[string]any{"key": s.key, "created_at": b.login.now().UTC(), "user_agent": "test agent",
+				"current": s == cur, "state": "live", "revoked_at": nil, "end_reason": ""}
+			switch {
+			case s.revoked:
+				row["state"], row["revoked_at"], row["end_reason"] = "ended", s.revokedAt, s.endReason
+			case s.expired:
+				row["state"] = "expired"
+			}
+			list = append(list, row)
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i]["key"].(string) < list[j]["key"].(string) })
 		writeJSON(w, map[string]any{"sessions": list})
@@ -211,8 +247,8 @@ func (b *stubBackend) serveBrowser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, s := range b.login.sessions {
-			if s.account == cur.account {
-				s.revoked = true
+			if s.account == cur.account && !s.revoked && !s.expired {
+				b.login.end(s, "signed_out_everywhere")
 			}
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -224,7 +260,7 @@ func (b *stubBackend) serveBrowser(w http.ResponseWriter, r *http.Request) {
 		key := strings.TrimPrefix(path, "/v1/browser/sessions/")
 		for _, s := range b.login.sessions {
 			if s.key == key && s.account == cur.account && !s.revoked {
-				s.revoked = true
+				b.login.end(s, "revoked")
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}

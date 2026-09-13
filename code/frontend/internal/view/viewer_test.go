@@ -183,7 +183,23 @@ func accountFixture() AccountParams {
 			IPHint: "203.0.113.0/24", CreatedAt: created, LastSeenAt: &seen, Current: true},
 		{Key: "BS-TESTONLY/2", UserAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
 			IPHint: "2001:db8:1::/48", CreatedAt: created.Add(-24 * time.Hour)},
+	}, Ended: []AccountSession{
+		{Key: "BS-TESTENDED1", UserAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0",
+			CreatedAt: created.Add(-48 * time.Hour), LastSeenAt: &seen, EndedAt: &seen, EndReason: "revoked_by_agent"},
+		{Key: "BS-TESTEXPIRD", UserAgent: "curl/8.7.1", CreatedAt: created.Add(-72 * time.Hour), EndReason: SessionExpiredReason},
 	}}
+}
+
+func TestSessionEndText(t *testing.T) {
+	for reason, want := range map[string]string{
+		"signed_out": "signed out", "signed_out_everywhere": "signed out everywhere", "revoked": "revoked",
+		"revoked_by_agent": "signed out by an agent", "replaced": "replaced by a newer sign-in",
+		SessionExpiredReason: "expired", "": "ended", "something_new": "ended",
+	} {
+		if got := SessionEndText(reason); got != want {
+			t.Errorf("SessionEndText(%q) = %q, want %q", reason, got, want)
+		}
+	}
 }
 
 func TestAccountPage(t *testing.T) {
@@ -205,6 +221,23 @@ func TestAccountPage(t *testing.T) {
 	// The current browser is ended with Sign out, not a revoke button.
 	if strings.Contains(html, "BS-TESTONLY-1/revoke") {
 		t.Errorf("current session offers revoke")
+	}
+	// Ended sessions are read-only, in their own list, with why they ended.
+	_, endedList, ok := strings.Cut(html, `<ul class="sessions ended">`)
+	if !ok {
+		t.Fatalf("account page has no ended list")
+	}
+	for _, want := range []string{
+		`data-session="BS-TESTENDED1" data-end-reason="revoked_by_agent"`, `<span class="badge plain">signed out by an agent</span>`,
+		`ended <time datetime="2026-09-12T10:30:00Z">`,
+		`data-session="BS-TESTEXPIRD" data-end-reason="expired"`, `<span class="badge plain">expired</span>`,
+	} {
+		if !strings.Contains(endedList, want) {
+			t.Errorf("ended list lacks %q", want)
+		}
+	}
+	if strings.Contains(endedList, "BS-TESTONLY") || strings.Contains(html, "BS-TESTENDED1/revoke") || strings.Contains(html, "BS-TESTEXPIRD/revoke") {
+		t.Errorf("an ended session is listed as live or offers revoke")
 	}
 	forms := postForm.FindAllString(html, -1)
 	if len(forms) != 3 {
@@ -237,7 +270,10 @@ func TestSignInPage(t *testing.T) {
 		`id="signin-progress" data-state="progress" role="status" hidden>`,
 		`id="signin-failed" data-state="failed" role="alert" hidden>`,
 		`id="signin-unavailable" data-state="unavailable" role="alert" hidden>`,
+		`id="signin-rate-limited" data-state="rate-limited" role="alert" hidden>`,
+		`id="signin-forbidden" data-state="forbidden" role="alert" hidden>`,
 		"This sign-in link has already been used or has expired. Links work once, for 10 minutes.",
+		SignInRateLimitedMessage, SignInForbiddenMessage,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("sign-in page lacks %q", want)

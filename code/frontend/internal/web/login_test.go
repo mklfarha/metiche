@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -702,6 +705,95 @@ func TestAccountPagesAndPosts(t *testing.T) {
 		t.Fatalf("signout-all: %d", rec.Code)
 	}
 	assertCookieCleared(t, "signout-all", rec)
+}
+
+// TestAccountSeparatesEndedSessions: the backend lists sessions that ended or
+// expired as well as live ones. /account offers Revoke only on live sessions
+// other than this browser, and lists the rest read-only with why they ended.
+func TestAccountSeparatesEndedSessions(t *testing.T) {
+	x := newLoginHarness(t, Discovery{}, Login{})
+	x.world(t)
+	const (
+		second   = "mbs_fake-session-member-0002"
+		third    = "mbs_fake-session-member-0003"
+		thirdKey = "BS-MEMBER0003"
+	)
+	x.backend.addSession(second, "BS-MEMBER0002", memberAccount, memberName)
+	x.backend.addSession(third, thirdKey, memberAccount, memberName)
+	ended := []struct{ key, reason, text string }{
+		{"BS-REVOKED001", "revoked", "revoked"},
+		{"BS-SIGNEDOUT1", "signed_out", "signed out"},
+		{"BS-EVERYWHER1", "signed_out_everywhere", "signed out everywhere"},
+		{"BS-BYAGENT001", "revoked_by_agent", "signed out by an agent"},
+		{"BS-REPLACED01", "replaced", "replaced by a newer sign-in"},
+		{"BS-EXPIRED001", "expired", "expired"},
+	}
+	for i, e := range ended {
+		x.backend.addEndedSession(fmt.Sprintf("mbs_fake-session-ended-%04d", i), e.key, memberAccount, memberName, e.reason)
+	}
+	revokeTarget := regexp.MustCompile(`action="/account/sessions/([^"]+)/revoke"`)
+	targets := func(body string) []string {
+		var keys []string
+		for _, m := range revokeTarget.FindAllStringSubmatch(body, -1) {
+			keys = append(keys, m[1])
+		}
+		sort.Strings(keys)
+		return keys
+	}
+	endedRow := func(body, key, reason string) string {
+		return regexp.MustCompile(`(?s)<li class="sess ended" data-session="` + regexp.QuoteMeta(key) +
+			`" data-end-reason="` + regexp.QuoteMeta(reason) + `">.*?</li>`).FindString(body)
+	}
+
+	rec := x.getAs(memberSecret, "/account")
+	body := rec.Body.String()
+	if rec.Code != 200 {
+		t.Fatalf("/account: %d", rec.Code)
+	}
+	if got := targets(body); strings.Join(got, ",") != "BS-MEMBER0002,"+thirdKey {
+		t.Fatalf("revoke forms target %q, want only the live sessions that are not this browser", got)
+	}
+	live, endedList, ok := strings.Cut(body, `<ul class="sessions ended">`)
+	if !ok {
+		t.Fatal("/account has no list of ended sessions")
+	}
+	for _, k := range []string{memberKey, "BS-MEMBER0002", thirdKey} {
+		if !strings.Contains(live, `data-session="`+k+`"`) || strings.Contains(endedList, k) {
+			t.Errorf("live session %s is not (only) in the live list", k)
+		}
+	}
+	if !strings.Contains(live, `class="sess current" data-session="`+memberKey+`"`) {
+		t.Errorf("this browser is not marked current")
+	}
+	for _, e := range ended {
+		if strings.Contains(live, e.key) {
+			t.Errorf("ended session %s is in the live list", e.key)
+		}
+		row := endedRow(endedList, e.key, e.reason)
+		if row == "" || !strings.Contains(row, `<span class="badge plain">`+e.text+`</span>`) {
+			t.Errorf("ended session %s does not say %q: %q", e.key, e.text, row)
+		}
+		if strings.Contains(row, "<form") || strings.Contains(row, "<button") {
+			t.Errorf("ended session %s has a control: %q", e.key, row)
+		}
+		if hasEndTime := strings.Contains(row, "ended <time"); hasEndTime != (e.reason != "expired") {
+			t.Errorf("ended session %s: end time shown = %v", e.key, hasEndTime)
+		}
+	}
+
+	// Revoking a live session moves it to the ended list, as revoked.
+	rec = x.do(http.MethodPost, "/account/sessions/"+thirdKey+"/revoke", "csrf="+csrfToken(memberSecret),
+		withCookie(memberSecret), withHeader("Origin", testOrigin))
+	if rec.Code != http.StatusSeeOther || !x.backend.revoked(third) {
+		t.Fatalf("revoke: %d", rec.Code)
+	}
+	body = x.getAs(memberSecret, "/account").Body.String()
+	if got := targets(body); strings.Join(got, ",") != "BS-MEMBER0002" {
+		t.Fatalf("after revoking %s, revoke forms target %q", thirdKey, got)
+	}
+	if row := endedRow(body, thirdKey, "revoked"); !strings.Contains(row, `<span class="badge plain">revoked</span>`) {
+		t.Fatalf("a revoked session is not listed as revoked: %q", row)
+	}
 }
 
 // ---------------------------------------------------------------- semantics

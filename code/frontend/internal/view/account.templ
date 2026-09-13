@@ -17,13 +17,48 @@ type AccountSession struct {
 	ExpiresAt  time.Time
 	// Current marks the session of the browser viewing the page.
 	Current bool
+	// EndedAt is when an ended session was signed out or revoked; nil for a
+	// live or expired one.
+	EndedAt *time.Time
+	// EndReason is why a session is no longer signed in: the backend's
+	// end_reason ("signed_out", "revoked", …) or SessionExpiredReason. Empty
+	// for a live session.
+	EndReason string
 }
+
+// SessionExpiredReason is the EndReason of a session that ran out rather than
+// being ended by anyone.
+const SessionExpiredReason = "expired"
 
 // AccountParams is everything /account renders besides the viewer, which it
 // reads from the context (display name and CSRF token). The web layer only
 // renders it for a signed-in viewer; anonymous is a redirect to /signin.
 type AccountParams struct {
+	// Sessions are the live, signed-in browsers. Each but the current one has
+	// a Revoke button.
 	Sessions []AccountSession
+	// Ended are sessions that ended or expired recently, shown read-only with
+	// why, so "why was I signed out" has an answer.
+	Ended []AccountSession
+}
+
+// SessionEndText says, in words, why a session ended.
+func SessionEndText(reason string) string {
+	switch reason {
+	case "signed_out":
+		return "signed out"
+	case "signed_out_everywhere":
+		return "signed out everywhere"
+	case "revoked":
+		return "revoked"
+	case "revoked_by_agent":
+		return "signed out by an agent"
+	case "replaced":
+		return "replaced by a newer sign-in"
+	case SessionExpiredReason:
+		return "expired"
+	}
+	return "ended"
 }
 
 // AccountPage is GET /account: who you are signed in as, every browser signed
@@ -82,6 +117,35 @@ templ AccountPage(p AccountParams) {
 					if len(p.Sessions) == 0 {
 						<div class="note">No signed-in browsers are listed right now.</div>
 					}
+					if len(p.Ended) > 0 {
+						<h2 class="sect">Recently signed out</h2>
+						<ul class="sessions ended">
+							for _, s := range p.Ended {
+								<li class="sess ended" data-session={ s.Key } data-end-reason={ s.EndReason }>
+									<div class="sess-main">
+										<div class="nm">
+											<span title={ s.UserAgent }>{ browserHint(s.UserAgent) }</span>
+											<span class="badge plain">{ SessionEndText(s.EndReason) }</span>
+										</div>
+										<div class="sl">{ s.Key }{ ipSuffix(s.IPHint) }</div>
+										<div class="sl">
+											signed in <time datetime={ stamp(s.CreatedAt) }>{ when(s.CreatedAt) }</time>
+											· last seen
+											if s.LastSeenAt != nil {
+												<time datetime={ stamp(*s.LastSeenAt) }>{ when(*s.LastSeenAt) }</time>
+											} else {
+												never
+											}
+										</div>
+										if s.EndedAt != nil {
+											<div class="sl">ended <time datetime={ stamp(*s.EndedAt) }>{ when(*s.EndedAt) }</time></div>
+										}
+									</div>
+								</li>
+							}
+						</ul>
+						<div class="note">Browsers that are no longer signed in stay listed for about a week, with why they ended.</div>
+					}
 					<div class="acct-actions">
 						<form method="post" action="/signout">
 							<input type="hidden" name="csrf" value={ ViewerFrom(ctx).CSRFToken }/>
@@ -94,7 +158,7 @@ templ AccountPage(p AccountParams) {
 					</div>
 					<div class="note">
 						A browser signs in with a one-time link from one of your agents. Sign out ends this
-						browser; sign out everywhere ends every browser listed above. Retiring the agent
+						browser; sign out everywhere ends every signed-in browser. Retiring the agent
 						that opened a browser also signs that browser out.
 					</div>
 					<div class="note"><a class="nf-link" href="/teams">Your teams →</a></div>

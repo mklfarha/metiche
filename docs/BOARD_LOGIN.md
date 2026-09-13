@@ -1276,15 +1276,22 @@ Every response carries `Cache-Control: no-store`. Errors are problem+json.
 - **`signin.js`:**
   - It reads the fragment and calls `replaceState` before any request.
   - It keeps the link in `sessionStorage`, then POSTs a form body `link=<secret>` to `/signin`.
-  - It expects `{"redirect": …}` (followed only when it is a same-origin path) or
-    `{"error":"unavailable"}` (shows "unavailable" and keeps the link for a reload).
-  - Any other answer shows the one failure message and discards the link.
-  - **A network error (no answer at all) is treated as unavailable**, and the link is kept for one
-    retry on reload. §2.5 step 5 said "anything else → failure".
+  - `{"redirect": …}` is followed only when it is a same-origin path, and clears the link.
+  - **Only `{"error":"link"}` means the link is dead**: it shows the one failure message and
+    discards the link.
+  - `{"error":"rate_limited"}` (the board's 429) and `{"error":"forbidden"}` (its 403) are
+    answered before the link reaches the backend, so each keeps the link and has its own message:
+    wait a minute and reload, or open the link in the same browser, directly.
+  - `{"error":"unavailable"}`, an answer the page does not understand, and **a network error (no
+    answer at all)** show "unavailable" and keep the link for a retry on reload. §2.5 step 5 said
+    "anything else → failure".
 - **Topbar:** an anonymous viewer sees **"Sign in"** on every board, demo boards included. A
   signed-in viewer sees "signed in as <name>" (linking to `/account`) and a Sign out POST form.
-- **`/account`:** **the current session has no Revoke button**; Sign out covers it. There is also
-  "Sign out everywhere".
+- **`/account`:** live sessions are listed with a Revoke button, except **the current session,
+  which has none**; Sign out covers it. There is also "Sign out everywhere". Sessions the backend
+  lists as `ended` or `expired` are shown separately under "Recently signed out", read-only, with
+  why they ended: signed out, signed out everywhere, revoked, signed out by an agent, replaced by a
+  newer sign-in, or expired.
 - **`/teams`:** "Your teams" appears only when signed in. The anonymous text is byte-identical to
   what it was before.
 
@@ -1354,13 +1361,16 @@ Every response carries `Cache-Control: no-store`. Errors are problem+json.
   backend outage is 503 and keeps the cookie.
 - **Anonymous `/account`:** redirects to `/signin`.
 
-### 10.9 Gaps noticed while writing this (not fixed; code owners to decide)
+### 10.9 Gaps noticed while writing this
 
-- **`/account` shows ended sessions as if live.**
+Both are fixed since; §10.7 describes the behaviour now.
+
+- **Fixed: `/account` showed ended sessions as if live.** `feed.SessionListing` now carries
+  `state`, `revoked_at` and `end_reason`, and only `live` rows get a Revoke button. What it was:
   - `feed.SessionListing` drops the backend's `state`, `revoked_at` and `end_reason`.
   - `accountSessions` does not filter.
   - So revoked and expired rows still in the table (up to their 7-day tail) render like live ones,
     each with a Revoke button, which answers `revoked: 0`.
-- **`signin.js` handles the board's 403 and 429 as the "already used or expired" message**, and
+- **Fixed: `signin.js` handled the board's 403 and 429 as the "already used or expired" message**, and
   discards the link, although the link was never sent to the backend. A rate-limited person with
   a good link is told it is dead.

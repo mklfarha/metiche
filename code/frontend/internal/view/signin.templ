@@ -9,6 +9,13 @@ const (
 	// SignInUnavailableMessage is shown when the backend could not answer. The
 	// page keeps the link in sessionStorage so a reload retries it.
 	SignInUnavailableMessage = "metiche is unavailable right now. If you have not used this link yet, reload this page within its 10 minutes."
+	// SignInRateLimitedMessage is the board's 429. The link never reached the
+	// backend, so it is kept and a reload retries it.
+	SignInRateLimitedMessage = "Too many sign-in attempts from this network. Wait a minute, then reload this page; the link still works for its 10 minutes."
+	// SignInForbiddenMessage is the board's 403: the request did not come
+	// from this site's own page (Origin or Sec-Fetch-Site). The link never
+	// reached the backend and is kept.
+	SignInForbiddenMessage = "The sign-in request did not come from this page. Open the sign-in link in the same browser, directly: paste it into the address bar instead of opening it from another page or app."
 )
 
 // SignInPage is GET /signin. It is static: the same bytes for every visitor,
@@ -17,7 +24,7 @@ const (
 //
 // The link arrives as a URL fragment (/signin#mbl_…), which a browser never
 // transmits. /static/signin.js takes it out of the address bar before any
-// request, then POSTs it to /signin in the body. The page shows one of four
+// request, then POSTs it to /signin in the body. The page shows one of six
 // states; with JavaScript off the explanation stays up and <noscript> says why
 // the link cannot work.
 templ SignInPage() {
@@ -59,6 +66,16 @@ templ SignInPage() {
 						<div class="glyph">!</div>
 						<div class="title">Not signed in yet</div>
 						<div class="hint">{ SignInUnavailableMessage }</div>
+					</div>
+					<div class="empty signin-state" id="signin-rate-limited" data-state="rate-limited" role="alert" hidden>
+						<div class="glyph">!</div>
+						<div class="title">Not signed in yet</div>
+						<div class="hint">{ SignInRateLimitedMessage }</div>
+					</div>
+					<div class="empty signin-state" id="signin-forbidden" data-state="forbidden" role="alert" hidden>
+						<div class="glyph">!</div>
+						<div class="title">Not signed in</div>
+						<div class="hint">{ SignInForbiddenMessage }</div>
 					</div>
 					<noscript>
 						<div class="note signin-noscript">

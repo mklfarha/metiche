@@ -56,7 +56,8 @@ func (b *browserStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /v1/teams/open-team/access":
 		_, _ = io.WriteString(w, `{"visibility":"public","role":null}`)
 	case "GET /v1/browser/sessions":
-		_, _ = io.WriteString(w, `{"sessions":[{"key":"BS-ABCDEFGHIJ","created_at":"2026-09-12T10:00:00Z","last_seen_at":null,"expires_at":"2026-10-12T10:00:00Z","user_agent":"Firefox"}]}`)
+		_, _ = io.WriteString(w, `{"sessions":[{"key":"BS-ABCDEFGHIJ","created_at":"2026-09-12T10:00:00Z","last_seen_at":null,"expires_at":"2026-10-12T10:00:00Z","user_agent":"Firefox","state":"live","current":true,"revoked_at":null,"end_reason":""},`+
+			`{"key":"BS-ENDED00001","created_at":"2026-09-11T10:00:00Z","last_seen_at":"2026-09-11T11:00:00Z","expires_at":"2026-10-11T10:00:00Z","user_agent":"Safari","state":"ended","current":false,"revoked_at":"2026-09-11T12:00:00Z","end_reason":"revoked_by_agent"}]}`)
 	case "GET /v1/browser/teams":
 		_, _ = io.WriteString(w, `{"teams":[{"slug":"acme-live","name":"Acme","visibility":"private","role":"owner"}]}`)
 	default:
@@ -132,8 +133,13 @@ func TestBrowserClientShapes(t *testing.T) {
 	}
 
 	list, err := c.Sessions(ctx, fakeSession)
-	if err != nil || len(list) != 1 || list[0].Key != "BS-ABCDEFGHIJ" || list[0].LastSeenAt != nil {
+	if err != nil || len(list) != 2 || list[0].Key != "BS-ABCDEFGHIJ" || list[0].LastSeenAt != nil ||
+		list[0].State != SessionLive || !list[0].Current || list[0].RevokedAt != nil || list[0].EndReason != "" {
 		t.Fatalf("sessions = %+v, %v", list, err)
+	}
+	if e := list[1]; e.State != SessionEnded || e.EndReason != "revoked_by_agent" || e.RevokedAt == nil ||
+		!e.RevokedAt.Equal(time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("ended session = %+v", e)
 	}
 	teams, err := c.Teams(ctx, fakeSession)
 	if err != nil || len(teams) != 1 || teams[0].Slug != "acme-live" || teams[0].Visibility != "private" {

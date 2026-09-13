@@ -8,7 +8,8 @@
   'use strict';
 
   var SLOT = 'metiche.signin.pending';
-  var STATES = ['signin-explain', 'signin-progress', 'signin-failed', 'signin-unavailable'];
+  var STATES = ['signin-explain', 'signin-progress', 'signin-failed', 'signin-unavailable',
+    'signin-rate-limited', 'signin-forbidden'];
 
   // 1. Read the fragment.
   var hash = window.location.hash || '';
@@ -32,7 +33,7 @@
 
   // With the fragment gone, a reload after "unavailable" can only retry if the
   // link is kept somewhere. sessionStorage is this tab only, and is cleared on
-  // success or on a definite failure.
+  // success or when the backend refused the link, and on nothing else.
   if (secret) {
     storage(function (s) { s.setItem(SLOT, secret); });
   } else {
@@ -69,14 +70,28 @@
       window.location.replace(answer.redirect);
       return;
     }
-    if (answer && answer.error === 'unavailable') {
-      show('signin-unavailable');
+    var error = answer ? answer.error : '';
+    // Only {"error":"link"} means the backend saw the link and refused it (or
+    // it was malformed): used, expired or unknown. That is the one failure
+    // message, and nothing is worth keeping for a retry.
+    if (error === 'link') {
+      clearSlot();
+      show('signin-failed');
       return;
     }
-    // Anything else is the one failure message. The link is spent or dead, so
-    // there is nothing worth keeping for a retry.
-    clearSlot();
-    show('signin-failed');
+    // The board's 429 and 403 are answered before the link reaches the
+    // backend, so the link may well be good: keep it.
+    if (error === 'rate_limited') {
+      show('signin-rate-limited');
+      return;
+    }
+    if (error === 'forbidden') {
+      show('signin-forbidden');
+      return;
+    }
+    // "unavailable", or an answer this page does not understand: nothing says
+    // the link is spent, so keep it for a reload.
+    show('signin-unavailable');
   }, function () {
     // The request never got an answer (offline, connection reset): the link
     // may well be unused, so this reads as "unavailable" and keeps it for a

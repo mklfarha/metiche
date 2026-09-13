@@ -76,6 +76,10 @@ func (a TeamAccess) Private() bool { return a.Visibility == "private" }
 
 // SessionListing is one row of GET /v1/browser/sessions. Never a secret or a
 // hash: the backend does not send them, and this type has nowhere to put one.
+//
+// The list includes sessions that already ended or expired, until the sweeper
+// deletes them, so "why was I signed out" has an answer. Only State "live" is
+// a signed-in browser.
 type SessionListing struct {
 	Key        string     `json:"key"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -85,7 +89,21 @@ type SessionListing struct {
 	IPHint     string     `json:"ip_hint"`
 	AuthMethod string     `json:"auth_method"`
 	Current    bool       `json:"current"`
+	// State is "live", "ended" (revoked_at is set) or "expired".
+	State string `json:"state"`
+	// RevokedAt is when an ended session was ended; nil otherwise.
+	RevokedAt *time.Time `json:"revoked_at"`
+	// EndReason is why it ended: "signed_out", "signed_out_everywhere",
+	// "revoked", "revoked_by_agent", "replaced", or "" when it has not.
+	EndReason string `json:"end_reason"`
 }
+
+// Session states in GET /v1/browser/sessions.
+const (
+	SessionLive    = "live"
+	SessionEnded   = "ended"
+	SessionExpired = "expired"
+)
 
 // BrowserTeam is one row of GET /v1/browser/teams.
 type BrowserTeam struct {
@@ -132,7 +150,9 @@ func (c *BrowserClient) Access(ctx context.Context, secret, slug string) (TeamAc
 	return out, err
 }
 
-// Sessions lists the account's live browser sessions: GET /v1/browser/sessions.
+// Sessions lists the account's browser sessions, newest first, including the
+// ended and expired ones still in the table: GET /v1/browser/sessions.
+// Callers filter on State.
 func (c *BrowserClient) Sessions(ctx context.Context, secret string) ([]SessionListing, error) {
 	var out struct {
 		Sessions []SessionListing `json:"sessions"`

@@ -34,18 +34,31 @@ func (s *Server) withViewer(r *http.Request, v *Viewer) *http.Request {
 	}))
 }
 
-// accountSessions adapts the backend's session list for the account page and
-// marks this browser's row.
-func accountSessions(list []feed.SessionListing, current string) []view.AccountSession {
-	out := make([]view.AccountSession, 0, len(list))
+// accountSessions adapts the backend's session list for the account page. The
+// backend also lists sessions that ended (signed out, revoked, replaced) or
+// expired, until the sweeper deletes them. Only a live row is a signed-in
+// browser, gets a Revoke button and can be this browser; every other row,
+// including a state this board does not know, is shown read-only with why it
+// ended.
+func accountSessions(list []feed.SessionListing, current string) (live, ended []view.AccountSession) {
 	for _, l := range list {
-		out = append(out, view.AccountSession{
+		s := view.AccountSession{
 			Key: l.Key, UserAgent: l.UserAgent, IPHint: l.IPHint,
 			CreatedAt: l.CreatedAt, LastSeenAt: l.LastSeenAt, ExpiresAt: l.ExpiresAt,
-			Current: l.Current || l.Key == current,
-		})
+		}
+		switch l.State {
+		case feed.SessionLive:
+			s.Current = l.Current || l.Key == current
+			live = append(live, s)
+		case feed.SessionExpired:
+			s.EndReason = view.SessionExpiredReason
+			ended = append(ended, s)
+		default:
+			s.EndedAt, s.EndReason = l.RevokedAt, l.EndReason
+			ended = append(ended, s)
+		}
 	}
-	return out
+	return live, ended
 }
 
 // yourTeams adapts GET /v1/browser/teams for /teams.
@@ -263,7 +276,8 @@ func (s *Server) account(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = s.withViewer(r, v)
-	s.render(w, r, view.AccountPage(view.AccountParams{Sessions: accountSessions(sessions, v.SessionKey)}))
+	live, ended := accountSessions(sessions, v.SessionKey)
+	s.render(w, r, view.AccountPage(view.AccountParams{Sessions: live, Ended: ended}))
 }
 
 // signoutAll is POST /account/signout-all.

@@ -7,7 +7,8 @@ night after the demo exposed: **a human has no way to see metiche, and onboardin
 invisible until somebody spends hours reading logs by hand.**
 
 - **A person cannot see their own teams.** Only agents can call `list_teams`.
-  - The board has no login and shows **public teams only**. The board service runs without a board
+  - That night the board had no login and showed **public teams only** (board login is now built:
+    `docs/BOARD_LOGIN.md` §10). The board service runs without a board
     token, and `app/authz` answers a private team with the same 404 as a missing one, so
     `/t/<private-slug>` is a 404 (`code/frontend/internal/web/discovery_test.go`,
     `privacy_test.go`; `app/authz/authz_test.go`). Teams are private by default.
@@ -124,9 +125,10 @@ Global flags (accepted by every command):
 - **Endpoint.** `--url` beats `METICHE_MCP_URL`, which beats `https://mcp.metiche.xyz/v1/mcp`. It must
   be `https://`; `http://localhost*` and `http://127.0.0.1*` are allowed with a warning (the
   installer's rule). **Board base:** `METICHE_BOARD_URL`, default `https://metiche.xyz`. A board is
-  `<base>/t/<slug>` (`code/frontend/internal/web/server.go`), and the CLI prints or opens a board
-  URL **only for a public team**. A private team's board 404s in a browser until the board has a
-  viewer gate. The CLI learns visibility from `get_team_state` (§4.2).
+  `<base>/t/<slug>` (`code/frontend/internal/web/server.go`). A private team's board is a 404 to a
+  browser that is not signed in as a member; board login (`docs/BOARD_LOGIN.md` §10) signs a
+  member's browser in, and `metiche open` does that through `open_board`'s one-time link (§1.5).
+  The CLI learns visibility from `get_team_state` (§4.2).
 - **Secrets are never accepted as arguments.** Tokens come from the environment or files; join codes
   are only ever *output*.
 - **Human output goes to stdout, diagnostics to stderr.** With `--json`, stdout carries exactly one
@@ -175,7 +177,7 @@ this machine (laptop)
 
 teams (2)
   taqueria-tracker  Taqueria Tracker   private · owner · 3 members · you are live here
-    board     not viewable in a browser: private team, and the board has no login yet
+    board     https://metiche.xyz/t/taqueria-tracker   private: metiche open signs this browser in
     projects  taqueria   2 live   last activity 12s ago
               api        0 live   last activity 3d ago
     live      S-41  Mark · claude on laptop  taqueria  feat/lanes  "wiring the lane builder"   12s ago  mine
@@ -195,7 +197,7 @@ Keys and names above are illustrative. `--json`:
  "account_key":"AC-3f9c",
  "machine":{"machine_id":"laptop","clients":[{"client":"claude","client_key":"laptop-claude","agent_key":"AG-12","last_request_at":"…"}]},
  "teams":[{"slug":"taqueria-tracker","name":"Taqueria Tracker","role":"owner","members":3,"active_session":true,
-           "visibility":"private","board_url":null,"board_note":"private team: not viewable in a browser until the board has a viewer gate",
+           "visibility":"private","board_url":"https://metiche.xyz/t/taqueria-tracker","board_note":"private team: a 404 until metiche open signs this browser in",
            "projects":[{"key":"taqueria","name":"taqueria","live_sessions":2,"last_activity_at":"…"}],
            "sessions":[{"key":"S-41","member":"Mark","agent":"claude on laptop","project":"taqueria","branch":"feat/lanes","status_line":"…","status":"live","last_seen":"…","mine":true}]}]}
 ```
@@ -297,7 +299,7 @@ One team in full, for a person. It calls `get_team_state` with `scope=members` (
 ```
 $ metiche teams show
 taqueria-tracker  "Taqueria Tracker"  private · you are owner · bound here by /Users/me/work/taqueria/.metiche
-board     not viewable in a browser: private team, and the board has no login yet
+board     https://metiche.xyz/t/taqueria-tracker   private: metiche open signs this browser in
 members   Mark (owner, you)   joined 2026-09-01   agents: claude on laptop (live 12s ago), codex on laptop (3d ago)
           Ana  (member)       joined 2026-09-03   agents: cursor on ana-mbp (1m ago)
 projects  taqueria   github.com/mklfarha/taqueria   2 live   last activity 12s ago
@@ -354,7 +356,7 @@ The `.metiche` hint appears only for the nearest binding from the working direct
 not scan your disk. Leaving a team you already left prints `already left` and exits 0. Exit codes:
 0; 2; 3; 4; 5.
 
-#### 1.4.5 Not in the CLI until board login ships
+#### 1.4.5 Not in the CLI until board login is deployed
 
 These stay out of the CLI for now:
 - **Changing visibility.** `create_team` keeps every team private so that going public is "a
@@ -367,12 +369,13 @@ These stay out of the CLI for now:
 Both are owner acts against *another person*, on anonymous accounts whose display names nobody
 verified (`createteam.go:73-80`).
 
-**Dependency on `docs/BOARD_LOGIN.md`** (a design the owner approved on 2026-09-13; nothing is implemented):
+**Dependency on `docs/BOARD_LOGIN.md`** (owner-approved 2026-09-13; built and committed, not yet
+deployed; its §10 records what was built):
 - It gives people an authenticated browser view of private boards, through a sign-in link minted
-  by `open_board`.
-- It fixes F2 and re-checks membership on every request, and every 60 s on an open stream (its
-  §2.8, §4.4). So a removal or a visibility change would finally take effect everywhere a person
-  can look.
+  by `open_board` (its §10.1).
+- It fixes F2 and re-checks membership on every request, and every 60 s on an open stream, on the
+  backend and on the board (its §10.4, §10.8). So a removal or a visibility change takes effect
+  everywhere a person can look.
 - It keeps the board **read-only against the backend** (its Non-goals), so these writes will not
   live on the board either.
 
@@ -2119,11 +2122,12 @@ C, D and E are written against B's interfaces; D and E wait for A's deploy for t
 6. §8.5: `metiche doctor` on the owner's machine before and after re-running the installer, both
    outputs pasted.
 7. `metiche status` on the owner's machine lists their teams, projects and live sessions.
-8. Through the artifact, against production: for every board URL `status` prints, `curl -s -o
-   /dev/null -w '%{http_code}'` returns 200. For every private team of the owner's, the
-   `<board>/t/<slug>` URL the CLI withheld returns 404. A 200 for a private team means the premise
-   has changed (a board token was configured, with no viewer gate), and it is a stop-the-line
-   finding, not a CLI bug.
+8. Through the artifact, against production: for every public team `status` lists, `curl -s -o
+   /dev/null -w '%{http_code}'` on its board URL returns 200. For every private team of the
+   owner's, the same anonymous curl (no session cookie) on `<board>/t/<slug>` returns 404, and
+   `metiche open <slug>` opens that board signed in (`docs/BOARD_LOGIN.md` §10.8). A 200 for a
+   private team without a session means the viewer gate is broken, and it is a stop-the-line
+   finding, not a CLI bug. (The board refuses to start with a board token configured, §10.8.)
 9. In the owner's `taqueria` clone, `metiche init` run from the git root and again from a
    subdirectory writes **one** `.metiche`, at the git root, with `project = taqueria`. The second
    run reports `unchanged`. Outputs pasted.
@@ -2232,8 +2236,9 @@ Known unknowns that are not questions, verified during phase 1 on real installs:
    each §8.4 mutation turns its row red.
 3. On the owner's machine, `metiche doctor` reports the real pre-v4 failures before re-running the
    installer and is clean after. `metiche status` shows every team, project and live session, private
-   teams included, without an agent in the loop. It prints board URLs only for public teams, each of
-   which answers 200, while every private team's withheld URL answers 404 (phase 1 proof 8).
+   teams included, without an agent in the loop. Every public team's board URL answers 200; every
+   private team's answers 404 without a session and opens signed in through `metiche open` (phase 1
+   proof 8).
 4. An invite is created, used, revoked and refused through the CLI on production, with no SQL.
 5. `curl -fsSL https://metiche.xyz/install.sh | sh` on a fresh machine installs a checksum-verified
    `metiche` from a tagged GitHub release, ends with a clean doctor summary, and

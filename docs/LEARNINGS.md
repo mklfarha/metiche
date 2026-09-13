@@ -35,8 +35,11 @@ identity value was left for an LLM to choose.
 - **Rule:** a project is identified by the repository (normalized git remote URL); the key
   is a label. Paths are relative to the git root. Creating a project while the team already
   has others says so.
-- **Enforced by:** **open** — fix in progress in `app/mcp/sessions.go` (repo URL matching,
-  `repourl.go`) with a same-repo-different-keys collision test.
+- **Enforced by:** **fixed.** 1b44075: `start_session` matches an active project by the
+  normalized git remote (`app/mcp/projectrepo.go`), refuses a key already bound to another
+  repository, and names the team's existing projects when it creates a new one. 507a9e6:
+  `start_session` says when the repository overrode the `project_key`, and the timeline names the
+  real project.
 
 ### 1.3 Duplicate teams
 - **What happened (found, not yet hit):** `create_team` dedupes only by idempotency key
@@ -109,9 +112,12 @@ model's guess. When one looks free-text in a tool schema, that is a bug.
   configure anything with a token that does not authenticate") instead of starting a new
   identity. → A `$METICHE_TOKEN` byte-identical to the saved one is the saved token.
   Enforced by 74752ea (`anchor_token`, `TOKEN_FROM_PROFILE` / `TOKEN_EXPLICIT`).
-- **Same-shell re-run gap — open.** Right after an install creates a new identity, the
-  current shell still exports the old token, which no longer matches the file → a re-run in
-  that shell is treated as explicit and refused. A new terminal is fine.
+- **Same-shell re-run gap — fixed (95cad88).** Right after an install creates a new identity,
+  the current shell still exported the old token, which no longer matched the file → a re-run in
+  that shell was treated as explicit and refused. → A `$METICHE_TOKEN` that matches a backup of
+  the env file (`~/.metiche/env.metiche-backup-*` or `~/.metiche.metiche-backup-*/env`) is a stale
+  saved token, not one passed on purpose: the installer uses the current saved token and warns to
+  open a new terminal (`docs/BOARD_LOGIN.md` §10.6).
 - **Never overwrite a user file without reading it first.** `~/.codex/AGENTS.md` (2.8 KB of
   the owner's content) was overwritten because a `grep -c … || …` read "zero matches" as "no
   file". Recovered byte-exact from a Codex session log. → The installer only edits a
@@ -144,9 +150,12 @@ model's guess. When one looks free-text in a tool schema, that is a bug.
 - **Boards leaked to anyone.** A demo team appeared in private tabs and on the owner's
   phone. → Only demo teams are listed publicly; private teams 404 (indistinguishable from
   nonexistent); `/healthz` counts only live teams (c36994c).
-- **Consequence, open:** there is no viewer login, so the only way to see a private board is
-  to make the team public. Board login (a one-time link from the terminal) is planned in
-  `docs/BOARD_LOGIN.md`. Until then, don't print a board URL for a private team — it's a 404.
+- **Consequence — fixed (0655144, 949d4b5):** there was no viewer login, so the only way to
+  see a private board was to make the team public. → Board login: `open_board` mints a one-time
+  sign-in link, the board exchanges it for a per-viewer browser session, and membership is checked
+  on every request; the board holds no backend credential and refuses to start with one. 0655144
+  is the backend, 949d4b5 the board server; `docs/BOARD_LOGIN.md` §10 is the as-built record. A
+  private team's board URL is still a 404 to anyone not signed in as a member.
 - **Secrets:** the repo is public. Never print or commit tokens, join codes, passwords or
   DSNs — not in docs, logs, test fixtures, reports, or `claude mcp add` output shown to a
   user. Snapshot redaction keeps tokens out of `team_event`.

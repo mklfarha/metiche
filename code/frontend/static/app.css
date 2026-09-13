@@ -850,6 +850,8 @@ svg.graph { display: block; min-width: 720px; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
 }
 .sess.current { border-color: var(--accent); }
+.sess.ended { border-style: dashed; }
+.sess.ended .nm { font-weight: 500; color: var(--ink-2); }
 .sess .sess-main { flex: 1 1 auto; min-width: 0; }
 .sess .nm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
 .sess .sl { font-family: var(--mono); font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; }

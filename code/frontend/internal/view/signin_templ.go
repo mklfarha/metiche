@@ -17,6 +17,13 @@ const (
 	// SignInUnavailableMessage is shown when the backend could not answer. The
 	// page keeps the link in sessionStorage so a reload retries it.
 	SignInUnavailableMessage = "metiche is unavailable right now. If you have not used this link yet, reload this page within its 10 minutes."
+	// SignInRateLimitedMessage is the board's 429. The link never reached the
+	// backend, so it is kept and a reload retries it.
+	SignInRateLimitedMessage = "Too many sign-in attempts from this network. Wait a minute, then reload this page; the link still works for its 10 minutes."
+	// SignInForbiddenMessage is the board's 403: the request did not come
+	// from this site's own page (Origin or Sec-Fetch-Site). The link never
+	// reached the backend and is kept.
+	SignInForbiddenMessage = "The sign-in request did not come from this page. Open the sign-in link in the same browser, directly: paste it into the address bar instead of opening it from another page or app."
 )
 
 // SignInPage is GET /signin. It is static: the same bytes for every visitor,
@@ -25,7 +32,7 @@ const (
 //
 // The link arrives as a URL fragment (/signin#mbl_…), which a browser never
 // transmits. /static/signin.js takes it out of the address bar before any
-// request, then POSTs it to /signin in the body. The page shows one of four
+// request, then POSTs it to /signin in the body. The page shows one of six
 // states; with JavaScript off the explanation stays up and <noscript> says why
 // the link cannot work.
 func SignInPage() templ.Component {
@@ -56,7 +63,7 @@ func SignInPage() templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(SignInFailedMessage)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/signin.templ`, Line: 56, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/signin.templ`, Line: 63, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -69,13 +76,39 @@ func SignInPage() templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(SignInUnavailableMessage)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/signin.templ`, Line: 61, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/signin.templ`, Line: 68, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div></div><noscript><div class=\"note signin-noscript\">Signing in needs JavaScript, and so does the board. Turn it on, then run <code>metiche open</code> again for a new link.</div></noscript><div class=\"note\"><a class=\"nf-link\" href=\"/teams\">See the demo teams →</a></div></div></div><script src=\"/static/signin.js\"></script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div></div><div class=\"empty signin-state\" id=\"signin-rate-limited\" data-state=\"rate-limited\" role=\"alert\" hidden><div class=\"glyph\">!</div><div class=\"title\">Not signed in yet</div><div class=\"hint\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 string
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(SignInRateLimitedMessage)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/signin.templ`, Line: 73, Col: 50}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div><div class=\"empty signin-state\" id=\"signin-forbidden\" data-state=\"forbidden\" role=\"alert\" hidden><div class=\"glyph\">!</div><div class=\"title\">Not signed in</div><div class=\"hint\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(SignInForbiddenMessage)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/signin.templ`, Line: 78, Col: 48}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div><noscript><div class=\"note signin-noscript\">Signing in needs JavaScript, and so does the board. Turn it on, then run <code>metiche open</code> again for a new link.</div></noscript><div class=\"note\"><a class=\"nf-link\" href=\"/teams\">See the demo teams →</a></div></div></div><script src=\"/static/signin.js\"></script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
