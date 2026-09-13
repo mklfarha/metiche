@@ -11,13 +11,9 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mklfarha/metiche/backend/app/coordination"
-	projectmod "github.com/mklfarha/metiche/backend/core/module/project"
-	project_types "github.com/mklfarha/metiche/backend/core/module/project/types"
 	sessionmod "github.com/mklfarha/metiche/backend/core/module/session"
 	session_types "github.com/mklfarha/metiche/backend/core/module/session/types"
 	payload_entity "github.com/mklfarha/metiche/backend/entity/event_payload"
-	project_entity "github.com/mklfarha/metiche/backend/entity/project"
 	session_entity "github.com/mklfarha/metiche/backend/entity/session"
 	"github.com/mklfarha/metiche/backend/enums"
 )
@@ -32,15 +28,15 @@ const DefaultClaimTTLSeconds = 900
 // ─────────────────────────────────────────────
 
 type StartSessionParams struct {
-	ProjectKey     string `json:"project_key" jsonschema:"A short stable key for the repository you are working in - the repo name is the obvious choice. Claims are scoped to it, so a team working across several repos does not collide with itself. Created on first use."`
+	ProjectKey     string `json:"project_key,omitempty" jsonschema:"The name of the git root folder: the basename of 'git rev-parse --show-toplevel', run in the repository - never a name you make up, and never your working directory's name when you were started above or inside the repo. Optional when repo_url is given (derived from it); required when there is no remote. Claims are scoped to the project, so every agent in one repository must land on the same one. Created on first use."`
 	TeamSlug       string `json:"team_slug,omitempty" jsonschema:"Which team this work is for, by slug. Omit it if you are only on one team; required if you are on several, because guessing would put your work on the wrong board."`
 	ClientKey      string `json:"client_key,omitempty" jsonschema:"Your token identifies this agent. You never need client_key; omit it. Several terminals of one client are several sessions of one agent — start_session tells you about your other live sessions."`
-	Branch         string `json:"branch,omitempty" jsonschema:"The git branch you are working on, exactly as git reports it. Self-reported: metiche never runs git."`
+	Branch         string `json:"branch,omitempty" jsonschema:"The output of 'git branch --show-current', run in the repository. Omit it on a detached HEAD. Self-reported: metiche never runs git."`
 	BaseCommit     string `json:"base_commit,omitempty" jsonschema:"The commit you branched from, full or short sha."`
 	Goal           string `json:"goal,omitempty" jsonschema:"One sentence on what this whole session is for, written for a teammate skimming the board. Max 280 characters."`
 	StatusLine     string `json:"status_line,omitempty" jsonschema:"The 'what I am doing right now' line shown on the board. Max 120 characters. Update it with heartbeat."`
 	ProjectName    string `json:"project_name,omitempty" jsonschema:"Human-readable repository name, used only when the project is created on this call."`
-	RepoURL        string `json:"repo_url,omitempty" jsonschema:"Repository URL, used only when the project is created on this call."`
+	RepoURL        string `json:"repo_url,omitempty" jsonschema:"The output of 'git remote get-url origin', run in the repository; omit it only if there is no remote. This is how metiche knows two agents are in the SAME repository: https and ssh forms, .git and letter case are normalized away, and an existing project for this repository is used whatever project_key says. Credentials in the URL are stripped and never stored."`
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"Pass a key of your own and retrying this exact call returns the exact same answer instead of starting a second session. Omit it and every call starts a new session."`
 }
 
@@ -58,9 +54,21 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 	}
 	ag, team, member := who.Agent, who.Team, who.Member
 
+	// The repository is the project's identity; the key is only its name.
+	// Canonicalized here, before anything is logged or written, so a
+	// credential in the remote never gets further than this line. A remote
+	// with no host (a local path) has no canonical URL and identifies nothing:
+	// the key alone decides, as it always did.
+	repoURL := truncate(canonicalRepoURL(args.RepoURL), 512)
 	projectKey := truncate(args.ProjectKey, 512)
+	keyDerived := false
+	if projectKey == "" && repoURL != "" {
+		projectKey = truncate(projectKeyFromRepoURL(repoURL), 512)
+		keyDerived = projectKey != ""
+	}
 	if projectKey == "" {
-		return nil, nil, errors.New("project_key is required — claims are scoped to a repository, and an unscoped claim collides with every other repo the team owns")
+		return nil, nil, errors.New("project_key is required when there is no repo_url — claims are scoped to a repository, and an unscoped claim collides with every other repo the team owns; " +
+			"send repo_url (git remote get-url origin) or project_key (the basename of git rev-parse --show-toplevel)")
 	}
 
 	idem := strings.TrimSpace(args.IdempotencyKey)
@@ -77,10 +85,9 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 	}
 
 	var (
-		sessionKey  string
-		sessionID   uuid.UUID
-		projectID   uuid.UUID
-		projectMade bool
+		sessionKey string
+		sessionID  uuid.UUID
+		projectID  uuid.UUID
 	)
 
 	response, err := h.commit(ctx, Mutation{
@@ -108,39 +115,20 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 					len(open), describeOpenSessions(open, tc.Now))
 			}
 
-			proj, found, err := h.projectByKey(ctx, tc.Tx, team.ID, projectKey)
+			// Resolved under the lock this Apply already holds, so two agents
+			// racing to open the first session in one repository cannot each
+			// create a project for it. See resolveProject for the order.
+			resolved, err := h.resolveProject(ctx, tc, team.ID, projectInput{
+				Key:        projectKey,
+				KeyDerived: keyDerived,
+				RepoURL:    repoURL,
+				Name:       args.ProjectName,
+				Branch:     args.Branch,
+			})
 			if err != nil {
 				return err
 			}
-			if !found {
-				// Created on first use so joining a team and starting work is
-				// one call each, not three. The defaults matter more here than
-				// anywhere: nuzur generates most of the Go in this repo, and
-				// without the generated-code ignore patterns every agent would
-				// collide with every other agent on files nobody hand-edits.
-				id, err := uuid.NewV4()
-				if err != nil {
-					return err
-				}
-				proj = project_entity.Project{
-					ID:                   id,
-					TeamUUID:             team.ID,
-					Key:                  projectKey,
-					Name:                 truncate(firstNonEmpty(args.ProjectName, projectKey), 120),
-					RepoURL:              nullString(truncate(args.RepoURL, 512)),
-					DefaultBranch:        nullString(truncate(args.Branch, 120)),
-					IgnorePatterns:       coordination.DefaultIgnorePatterns(),
-					HotspotPatterns:      coordination.DefaultHotspotPatterns(),
-					CaseInsensitivePaths: true,
-					Cadence:              enums.PROJECT_CADENCE_HACKATHON,
-					Status:               enums.RECORD_STATUS_ACTIVE,
-				}
-				if _, err := h.core.Project().Insert(ctx,
-					project_types.UpsertRequest{Project: proj}, projectmod.WithSQLTransaction(tc.Tx)); err != nil {
-					return err
-				}
-				projectMade = true
-			}
+			proj := resolved.Project
 			projectID = proj.ID
 
 			id, err := uuid.NewV4()
@@ -185,8 +173,8 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			if len(open) > 0 {
 				env.Note = otherSessionsNote(open, sessionKey, tc.Now) + "; " + env.Note
 			}
-			if projectMade {
-				env.Note = fmt.Sprintf("project %q created; ", projectKey) + env.Note
+			if resolved.Created {
+				env.Note = newProjectNote(proj.Key, resolved.Others, sessionKey) + "; " + env.Note
 			}
 			return nil
 		},

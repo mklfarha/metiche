@@ -47,7 +47,7 @@ list.
 | tool | when | note |
 |---|---|---|
 | `join_team` | once, at startup | join code → your agent identity. Re-joining with the same client key is idempotent. |
-| `start_session` | once per piece of work | branch, base commit, goal. This is also the run record. |
+| `start_session` | once per piece of work | `repo_url`, `project_key`, `branch` straight from git (see below), base commit, goal. This is also the run record. |
 | `end_session` | when you stop | releases claims immediately instead of waiting for TTL |
 | **`heartbeat`** | **~every 60s** | alive + extend claims + collect pending counts. Cheapest call in the system. |
 | **`declare_intent`** | **before each chunk** | summary + paths + mode. Creates the intent *and* its claims in one transaction. |
@@ -64,6 +64,35 @@ list.
 
 There is **no claim verb**. `declare_intent` makes the claims; `update_intent` adds, drops,
 extends and completes them. One concept, not two.
+
+---
+
+## Name the repository from git, never from a guess
+
+Claims are scoped to a **project**, and a project is a repository. Two agents in one repository
+that land on two projects cannot see each other at all: they edit the same file and no conflict is
+ever raised. That happens when an agent invents a project name, or names the project after the
+folder it happened to be started in — a parent of the repo, or a subfolder of it.
+
+So read all three from git, run inside the repository:
+
+| `start_session` field | send exactly |
+|---|---|
+| `repo_url` | the output of `git remote get-url origin` — omit it only if there is no remote |
+| `project_key` | the basename of `git rev-parse --show-toplevel` (the git root folder's name) |
+| `branch` | the output of `git branch --show-current` — omit it on a detached HEAD |
+
+metiche matches projects by `repo_url` first (https or ssh, `.git`, letter case and any embedded
+credentials are all normalized away), so with it every agent in the repository lands on one project
+even if their keys differ. If `start_session` refuses because the key belongs to a different
+repository, use the git root's basename, or omit `project_key` and send only `repo_url`. If its
+note says it created a project while the team already has others, and one of those is this
+repository, `end_session` and start again with the right `repo_url`.
+
+**Every path is relative to the git root, never to your working directory.** Started in `~/src`
+with the repository at `~/src/shop`? The file is `app/rest.go`, not `shop/app/rest.go`. Started in
+`~/src/shop/app`? Still `app/rest.go`, not `rest.go`. That holds for `declare_intent`,
+`update_intent` and `check_paths` alike — two agents spelling one file two ways never collide.
 
 ---
 
@@ -142,7 +171,8 @@ team to ignore your name.
 If you do not yet know which files you need, use `check_paths` first. It is read-only and commits
 you to nothing — it answers "is anyone in here?" before you decide to be in here.
 
-Paths are normalized on insert: no absolute paths, no `..`, a trailing `/` becomes `**`.
+Paths are relative to the git root (`git rev-parse --show-toplevel`), whatever directory you are
+in. They are normalized on insert: no absolute paths, no `..`, a trailing `/` becomes `**`.
 Generated code is dropped from claims entirely by the project's ignore patterns, so do not bother
 claiming it and do not be surprised when it does not appear.
 
@@ -264,7 +294,8 @@ pointed at the same metiche team. Ana's agent is **A**, Beto's is **B**. Keys ar
 **1. A starts and declares.**
 
 ```
-A → start_session(project: "metiche", branch: "feat/auth", base_commit: "9f2c1ab",
+A → start_session(repo_url: "git@github.com:acme/metiche.git", project_key: "metiche",
+                  branch: "feat/auth", base_commit: "9f2c1ab",
                   goal: "login endpoint")                      → S-17
 A → declare_intent(
       summary: "Add POST /api/login — verify password, mint session, set cookie",
@@ -388,6 +419,7 @@ human watching saw all of it happen live.
 **Do**
 
 - `join_team` once, `start_session` per piece of work, `end_session` when you stop.
+- Send `repo_url` and `project_key` straight from git, and every path relative to the git root.
 - `declare_intent` **before** you touch anything, with real paths and a real sentence.
 - `heartbeat` every ~60s and around every batch of edits, with a status line that says *why*.
 - Drop paths as soon as you are done with them.
@@ -397,6 +429,7 @@ human watching saw all of it happen live.
 
 **Don't**
 
+- Don't make up a project_key, or name it after the folder you were started in.
 - Don't claim `app/**` or `src/**`. It is capped at `low` and it makes you noise.
 - Don't declare after the edit.
 - Don't poll `get_team_state` on a timer.

@@ -124,6 +124,16 @@ The loop:
   3. heartbeat about every 60 seconds while you work. Claims lapse without it.
   4. end_session when you are done, so your holds are released immediately.
 
+Name the repository from git, never from your own guess, and run these inside the repository
+whatever folder you were started in:
+  repo_url    = the output of: git remote get-url origin   (omit it only if there is no remote)
+  project_key = the basename of: git rev-parse --show-toplevel
+  branch      = the output of: git branch --show-current
+metiche matches projects by repo_url first, so every agent in one repository lands on one project -
+which is the only way their claims can collide. Every path you send to declare_intent, update_intent
+and check_paths is relative to that git root, NOT to your working directory: started in the parent
+folder or a subfolder, the file is still app/rest.go.
+
 Your token identifies THIS agent - this client, on this machine. Every client gets its own, and the
 Authorization header is the only thing any call needs. You never need client_key; omit it, and never
 guess one. Several terminals of one client are several sessions of one agent: call start_session in
@@ -208,6 +218,8 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 		Name: "start_session",
 		Description: "Begin one bounded piece of work: which repo, which branch, what commit you are starting from, and what you are trying to achieve. Returns a session_key you pass to every later call. " +
 			"Start a new session per piece of work, not per message. " +
+			"Identify the repository from git, run inside it: repo_url = 'git remote get-url origin' (omit if there is no remote), project_key = the basename of 'git rev-parse --show-toplevel', branch = 'git branch --show-current'. " +
+			"Every path you later claim or check is relative to that git root, not to your working directory. " +
 			"If you are on more than one team, pass team_slug so the work lands on the right board. You never need client_key: your token already names this agent. " +
 			"Several terminals of one client are several sessions of one agent; start_session tells you about your other live sessions.",
 		Annotations: idempotent,

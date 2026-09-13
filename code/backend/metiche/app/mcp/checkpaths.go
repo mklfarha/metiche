@@ -39,7 +39,7 @@ const CheckPathsMaxFindings = 10
 
 type CheckPathsParams struct {
 	SessionKey string   `json:"session_key" jsonschema:"The session_key start_session gave you."`
-	Paths      []string `json:"paths" jsonschema:"The repo-relative files or globs you are thinking about touching: 'internal/auth/token.go', 'src/api/**'. Nothing is claimed and nobody is told you asked."`
+	Paths      []string `json:"paths" jsonschema:"The files or globs you are thinking about touching: 'internal/auth/token.go', 'src/api/**'. Relative to the git root ('git rev-parse --show-toplevel'), NOT to your working directory: started in the parent folder or a subfolder, you still send 'app/rest.go', never 'myrepo/app/rest.go' or 'rest.go'. Nothing is claimed and nobody is told you asked."`
 	Mode       string   `json:"mode,omitempty" jsonschema:"What you would be doing to them - read, write (the default) or structural. It changes the answer: two readers are never a conflict, and a structural change collides with everything."`
 }
 

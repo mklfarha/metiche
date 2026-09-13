@@ -122,7 +122,7 @@ func RegisterWorkTools(s *mcp.Server, h *Handler, logger *zap.Logger) {
 type DeclareIntentParams struct {
 	SessionKey string   `json:"session_key" jsonschema:"The session_key start_session gave you."`
 	Summary    string   `json:"summary" jsonschema:"One sentence on what you are about to do, written for a teammate: 'add the POST /api/login handler and its token refresh'. Max 280 characters. This is what other agents judge against, so name the thing, not the file."`
-	Paths      []string `json:"paths,omitempty" jsonschema:"The repo-relative files you are about to touch. Globs allowed: 'src/api/*.go', 'internal/auth/**'. Claim what you will actually edit - a whole-subtree claim collides with everyone and is capped at low severity, which means nobody is warned about the file you really wanted. Generated and vendored paths are dropped automatically."`
+	Paths      []string `json:"paths,omitempty" jsonschema:"The files you are about to touch. Relative to the git root ('git rev-parse --show-toplevel'), NOT to your working directory: started in the parent folder or a subfolder, you still send 'app/rest.go', never 'myrepo/app/rest.go' or 'rest.go'. Globs allowed: 'src/api/*.go', 'internal/auth/**'. Claim what you will actually edit - a whole-subtree claim collides with everyone and is capped at low severity, which means nobody is warned about the file you really wanted. Generated and vendored paths are dropped automatically."`
 	Mode       string   `json:"mode,omitempty" jsonschema:"What you are doing to those paths: 'read' (just reading), 'write' (editing, the default) or 'structural' (renaming, moving or deleting). Say structural when it applies - it breaks other people's code without any merge conflict to warn them, so it is scored higher than a plain edit."`
 	Kind       string   `json:"kind,omitempty" jsonschema:"What kind of work this is: implement, fix, refactor, investigate, test, docs, infra, or hold. Defaults to implement."`
 
@@ -314,8 +314,8 @@ type UpdateIntentParams struct {
 	Summary    string `json:"summary,omitempty" jsonschema:"A replacement summary, when the plan changed. Max 280 characters. Changing it bumps the intent's revision, which is what lets other agents' models take one fresh look at a plan they already judged."`
 	StatusLine string `json:"status_line,omitempty" jsonschema:"What you are doing RIGHT NOW, one line, max 120 characters - 'rewriting the token refresh in auth.go'. This is what a teammate sees on the board."`
 
-	AddPaths  []string `json:"add_paths,omitempty" jsonschema:"Files you have discovered you also need. They are collision-checked exactly like declare_intent, so you find out in this response if somebody is already there."`
-	DropPaths []string `json:"drop_paths,omitempty" jsonschema:"Files you are finished with. Release them as soon as you are done rather than waiting for the TTL - a held file nobody is editing is the most annoying kind of false positive."`
+	AddPaths  []string `json:"add_paths,omitempty" jsonschema:"Files you have discovered you also need, relative to the git root like every path you send (never to your working directory). They are collision-checked exactly like declare_intent, so you find out in this response if somebody is already there."`
+	DropPaths []string `json:"drop_paths,omitempty" jsonschema:"Files you are finished with, spelled exactly as you claimed them (relative to the git root). Release them as soon as you are done rather than waiting for the TTL - a held file nobody is editing is the most annoying kind of false positive."`
 	Mode      string   `json:"mode,omitempty" jsonschema:"The mode for add_paths: read, write or structural. Defaults to the mode of the claim you already hold for this intent."`
 
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"Pass a key of your own and retrying this exact call returns the exact same answer instead of applying the change twice."`
