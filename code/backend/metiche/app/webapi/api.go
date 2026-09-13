@@ -114,6 +114,10 @@ const (
 	PathDecisions = "/v1/teams/{slug}/decisions"
 	PathSession   = "/v1/teams/{slug}/sessions/{key}"
 
+	// PathSessions is the team's run history: every session, newest first,
+	// paged with an opaque cursor (history.go).
+	PathSessions = "/v1/teams/{slug}/sessions"
+
 	// PathAccess answers "may this viewer read this team, and as what?" for
 	// the board (docs/BOARD_LOGIN.md §4.2). Board only; NOT routed by any
 	// ingress.
@@ -141,6 +145,7 @@ func (a *API) RegisterOn(r chi.Router) {
 	r.Get(PathContracts, a.guard.Wrap(a.handleContracts))
 	r.Get(PathDecisions, a.guard.Wrap(a.handleDecisions))
 	r.Get(PathSession, a.guard.Wrap(a.handleSession))
+	r.Get(PathSessions, a.guard.Wrap(a.handleSessions))
 	r.Get(PathAccess, a.guard.Wrap(a.handleAccess))
 }
 

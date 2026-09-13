@@ -97,14 +97,7 @@ var openConflictStatuses = []any{
 	enums.CONFLICT_STATUS_RESOLVING,
 }
 
-const liveSessionsQuery = "SELECT s.`id`, s.`key`, s.`branch`, s.`goal`, s.`status`, s.`status_line`, " +
-	"s.`started_at`, s.`last_heartbeat_at`, s.`ended_at`, s.`outcome`, " +
-	"p.`key`, m.`key`, m.`display_name`, a.`label`, a.`client_kind`, ci.`key` " +
-	"FROM `session` s " +
-	"JOIN `project` p ON p.`id` = s.`project_uuid` " +
-	"JOIN `member` m ON m.`id` = s.`member_uuid` " +
-	"JOIN `agent` a ON a.`id` = s.`agent_uuid` " +
-	"LEFT JOIN `intent` ci ON ci.`id` = s.`current_intent_uuid` " +
+const liveSessionsQuery = "SELECT " + sessionColumns + " " + sessionJoins +
 	"WHERE s.`team_uuid` = ? AND s.`status` IN (?, ?) " +
 	"ORDER BY m.`display_name`, a.`label`, s.`key`"
 
@@ -132,32 +125,11 @@ func loadLiveSessions(ctx context.Context, tx *sql.Tx, teamUUID string) ([]sessi
 	out := make([]sessionWire, 0, 16)
 	ids := make([]string, 0, 16)
 	for rows.Next() {
-		var (
-			id                                                      string
-			s                                                       sessionWire
-			branch, goal, statusLine                                sql.NullString
-			started, heartbeat, ended                               sql.NullTime
-			status, outcome                                         sql.NullInt64
-			projectKey, memberKey, memberName, agentLabel, clientKd sql.NullString
-			currentIntent                                           sql.NullString
-		)
-		if err := rows.Scan(&id, &s.Key, &branch, &goal, &status, &statusLine,
-			&started, &heartbeat, &ended, &outcome,
-			&projectKey, &memberKey, &memberName, &agentLabel, &clientKd, &currentIntent); err != nil {
+		id, core, err := scanSessionCore(rows)
+		if err != nil {
 			return nil, nil, err
 		}
-		s.Branch, s.Goal, s.StatusLine = branch.String, goal.String, statusLine.String
-		s.Status = enums.SessionStatus(status.Int64).String()
-		if outcome.Valid && enums.SessionOutcome(outcome.Int64) != enums.SESSION_OUTCOME_INVALID {
-			s.Outcome = enums.SessionOutcome(outcome.Int64).String()
-		}
-		s.StartedAt, s.LastHeartbeatAt, s.EndedAt = rfc3339(started), rfc3339(heartbeat), rfc3339(ended)
-		s.ProjectKey, s.MemberKey, s.MemberName = projectKey.String, memberKey.String, memberName.String
-		s.AgentLabel, s.ClientKind = agentLabel.String, clientKd.String
-		s.CurrentIntentKey = currentIntent.String
-		s.Intents = []intentWire{}
-		s.Claims = []claimWire{}
-		out = append(out, s)
+		out = append(out, sessionWire{sessionCore: core, Intents: []intentWire{}, Claims: []claimWire{}})
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {

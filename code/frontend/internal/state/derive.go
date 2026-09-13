@@ -338,6 +338,29 @@ func (s Snapshot) Runs() []*model.Session {
 	return out
 }
 
+// RunCounts counts what this board holds for one session: its intents, the
+// distinct paths its claims name, and the conflicts it is in.
+func (s Snapshot) RunCounts(key string) (intents, paths, conflicts int) {
+	for _, in := range s.Intents {
+		if in.SessionKey == key {
+			intents++
+		}
+	}
+	seen := map[string]bool{}
+	for _, c := range s.Claims {
+		if c.SessionKey != key {
+			continue
+		}
+		for _, p := range c.Paths {
+			if !seen[p] {
+				seen[p] = true
+				paths++
+			}
+		}
+	}
+	return intents, paths, len(s.ConflictsForSession(key))
+}
+
 // ConflictsForSession returns every conflict a session participates in.
 func (s Snapshot) ConflictsForSession(key string) []*model.Conflict {
 	out := []*model.Conflict{}

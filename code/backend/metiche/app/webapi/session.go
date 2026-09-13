@@ -26,6 +26,12 @@ type sessionResponse struct {
 	// one. It is a sequence, the same unit as everything else in this API, so
 	// a caller never has to learn a second pagination vocabulary.
 	NextAfter *int64 `json:"next_after,omitempty"`
+
+	// History is the rest of the run's story, whatever its status now: every
+	// intent it declared, every path it claimed and every conflict it took
+	// part in. Session.Intents and Session.Claims stay what they are on the
+	// snapshot — what it holds right now — and are empty once it has ended.
+	History runHistoryWire `json:"history"`
 }
 
 var errSessionNotFound = errors.New("no such session")
@@ -34,7 +40,8 @@ var errSessionNotFound = errors.New("no such session")
 //
 // A session's history IS the event log filtered by session — the model has no
 // separate record of steps, on purpose — so this endpoint is that filter, plus
-// the session row itself so the page has a heading.
+// the session row itself so the page has a heading, plus what the session
+// declared, claimed and collided on over its whole life.
 //
 // It reads inside the same read-only REPEATABLE READ transaction as everything
 // else here, which matters more than it looks: the session row and its events
@@ -80,7 +87,9 @@ func (a *API) handleSession(w http.ResponseWriter, r *http.Request) {
 			next := events[len(events)-1].Sequence
 			out.NextAfter = &next
 		}
-		return nil
+
+		out.History, err = loadRunHistory(r.Context(), tx, team.UUID, sessionUUID)
+		return err
 	})
 	if err != nil {
 		if errors.Is(err, errSessionNotFound) {
@@ -93,37 +102,47 @@ func (a *API) handleSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-const sessionQuery = "SELECT s.`id`, s.`key`, s.`branch`, s.`goal`, s.`status`, s.`status_line`, " +
-	"s.`started_at`, s.`last_heartbeat_at`, s.`ended_at`, s.`outcome`, " +
-	"p.`key`, m.`key`, m.`display_name`, a.`label`, a.`client_kind`, ci.`key` " +
-	"FROM `session` s " +
+// sessionColumns is the one column list every session read selects, in the
+// order scanSessionCore reads it, and sessionJoins is what names its project,
+// member, agent and current intent. The snapshot, the session page and the
+// history list all use both, so the three can never describe a session
+// differently.
+const sessionColumns = "s.`id`, s.`key`, s.`branch`, s.`goal`, s.`status`, s.`status_line`, " +
+	"s.`started_at`, s.`last_heartbeat_at`, s.`ended_at`, s.`outcome`, s.`outcome_note`, " +
+	"p.`key`, m.`key`, m.`display_name`, a.`label`, a.`client_kind`, ci.`key`"
+
+const sessionJoins = "FROM `session` s " +
 	"JOIN `project` p ON p.`id` = s.`project_uuid` " +
 	"JOIN `member` m ON m.`id` = s.`member_uuid` " +
 	"JOIN `agent` a ON a.`id` = s.`agent_uuid` " +
-	"LEFT JOIN `intent` ci ON ci.`id` = s.`current_intent_uuid` " +
+	"LEFT JOIN `intent` ci ON ci.`id` = s.`current_intent_uuid` "
+
+const sessionQuery = "SELECT " + sessionColumns + " " + sessionJoins +
 	"WHERE s.`team_uuid` = ? AND s.`key` = ? LIMIT 1"
 
-// loadSession reads one session by its short key, served by the
-// (team_uuid, key) unique index.
-func loadSession(ctx context.Context, tx *sql.Tx, teamUUID, key string) (string, sessionWire, error) {
+// rowScanner is *sql.Row or *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanSessionCore reads sessionColumns, then any extra columns the query
+// selected after them. The uuid it returns is for follow-up queries only and
+// never leaves this package.
+func scanSessionCore(row rowScanner, extra ...any) (string, sessionCore, error) {
 	var (
 		id                                                      string
-		s                                                       sessionWire
-		branch, goal, statusLine                                sql.NullString
+		s                                                       sessionCore
+		branch, goal, statusLine, outcomeNote                   sql.NullString
 		started, heartbeat, ended                               sql.NullTime
 		status, outcome                                         sql.NullInt64
 		projectKey, memberKey, memberName, agentLabel, clientKd sql.NullString
 		currentIntent                                           sql.NullString
 	)
-	err := tx.QueryRowContext(ctx, sessionQuery, teamUUID, key).Scan(
-		&id, &s.Key, &branch, &goal, &status, &statusLine,
-		&started, &heartbeat, &ended, &outcome,
-		&projectKey, &memberKey, &memberName, &agentLabel, &clientKd, &currentIntent)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", sessionWire{}, errSessionNotFound
-	}
-	if err != nil {
-		return "", sessionWire{}, err
+	dest := []any{&id, &s.Key, &branch, &goal, &status, &statusLine,
+		&started, &heartbeat, &ended, &outcome, &outcomeNote,
+		&projectKey, &memberKey, &memberName, &agentLabel, &clientKd, &currentIntent}
+	if err := row.Scan(append(dest, extra...)...); err != nil {
+		return "", sessionCore{}, err
 	}
 
 	s.Branch, s.Goal, s.StatusLine = branch.String, goal.String, statusLine.String
@@ -131,13 +150,25 @@ func loadSession(ctx context.Context, tx *sql.Tx, teamUUID, key string) (string,
 	if outcome.Valid && enums.SessionOutcome(outcome.Int64) != enums.SESSION_OUTCOME_INVALID {
 		s.Outcome = enums.SessionOutcome(outcome.Int64).String()
 	}
+	s.OutcomeNote = outcomeNote.String
 	s.StartedAt, s.LastHeartbeatAt, s.EndedAt = rfc3339(started), rfc3339(heartbeat), rfc3339(ended)
 	s.ProjectKey, s.MemberKey, s.MemberName = projectKey.String, memberKey.String, memberName.String
 	s.AgentLabel, s.ClientKind = agentLabel.String, clientKd.String
 	s.CurrentIntentKey = currentIntent.String
-	s.Intents = []intentWire{}
-	s.Claims = []claimWire{}
 	return id, s, nil
+}
+
+// loadSession reads one session by its short key, served by the
+// (team_uuid, key) unique index.
+func loadSession(ctx context.Context, tx *sql.Tx, teamUUID, key string) (string, sessionWire, error) {
+	id, core, err := scanSessionCore(tx.QueryRowContext(ctx, sessionQuery, teamUUID, key))
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", sessionWire{}, errSessionNotFound
+	}
+	if err != nil {
+		return "", sessionWire{}, err
+	}
+	return id, sessionWire{sessionCore: core, Intents: []intentWire{}, Claims: []claimWire{}}, nil
 }
 
 const sessionEventsQuery = "SELECT e.`sequence`, e.`kind`, e.`structural`, e.`subject_kind`, " +

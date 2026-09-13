@@ -372,27 +372,7 @@ func (s *Server) decisions(w http.ResponseWriter, r *http.Request) {
 	s.page(w, r, t, snap, view.TabDecisions, view.DecisionsPage(snap))
 }
 
-func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
-	t, snap, r, ok := s.team(w, r)
-	if !ok {
-		return
-	}
-	s.page(w, r, t, snap, view.TabRuns, view.RunsPage(snap))
-}
-
-func (s *Server) run(w http.ResponseWriter, r *http.Request) {
-	t, snap, r, ok := s.team(w, r)
-	if !ok {
-		return
-	}
-	sess := snap.Session(chi.URLParam(r, "session"))
-	if sess == nil {
-		w.WriteHeader(http.StatusNotFound)
-		s.page(w, r, t, snap, view.TabRuns, view.RunsPage(snap))
-		return
-	}
-	s.page(w, r, t, snap, view.TabRuns, view.RunPage(snap, sess))
-}
+// runs and run, the Runs page and one run, are in runs.go.
 
 // ---------------------------------------------------------------- controls
 

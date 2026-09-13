@@ -719,7 +719,7 @@ func TestUnknownTeamIs404(t *testing.T) {
 	db := testDB(t)
 	srv := newBoardServer(t, db)
 
-	for _, p := range []string{"", "/conflicts", "/contracts", "/decisions", "/sessions/S-1"} {
+	for _, p := range []string{"", "/conflicts", "/contracts", "/decisions", "/sessions", "/sessions/S-1"} {
 		resp, err := http.Get(srv.URL + "/v1/teams/no-such-team" + p)
 		if err != nil {
 			t.Fatalf("get: %v", err)
@@ -869,7 +869,7 @@ func newGuardedServer(t *testing.T, db *sql.DB) *httptest.Server {
 // Each new case below walks the whole list: a gate that covers four routes
 // out of five is not a gate.
 func boardPaths() []string {
-	return []string{"", "/conflicts", "/contracts", "/decisions", "/sessions/S-1", "/stream?after=41"}
+	return []string{"", "/conflicts", "/contracts", "/decisions", "/sessions", "/sessions/S-1", "/stream?after=41"}
 }
 
 // get issues a request, optionally bearing a token, and returns the status
@@ -974,7 +974,7 @@ func TestPrivateTeamWithAMemberTokenIs200AndStreams(t *testing.T) {
 	fx := seedBoardVisibility(t, db, enums.TEAM_VISIBILITY_PRIVATE)
 	srv := newGuardedServer(t, db)
 
-	for _, p := range []string{"", "/conflicts", "/contracts", "/decisions", "/sessions/S-1"} {
+	for _, p := range []string{"", "/conflicts", "/contracts", "/decisions", "/sessions", "/sessions/S-1"} {
 		code, body := get(t, srv.URL+"/v1/teams/"+fx.slug+p, fx.memberToken)
 		if code != http.StatusOK {
 			t.Fatalf("%q on a PRIVATE team with a MEMBER token: got %d, want 200 (body %s)", p, code, body)

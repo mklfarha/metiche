@@ -39,7 +39,10 @@ type claimWire struct {
 	Paths     []string `json:"paths"`
 }
 
-type sessionWire struct {
+// sessionCore is a session as every endpoint names it. The snapshot and the
+// session page add what it holds right now (sessionWire); the history list
+// adds counts over its whole life instead (sessionSummaryWire).
+type sessionCore struct {
 	Key        string `json:"key"`
 	ProjectKey string `json:"project_key,omitempty"`
 	MemberKey  string `json:"member_key,omitempty"`
@@ -58,11 +61,53 @@ type sessionWire struct {
 	LastHeartbeatAt *string `json:"last_heartbeat_at,omitempty"`
 	EndedAt         *string `json:"ended_at,omitempty"`
 	Outcome         string  `json:"outcome,omitempty"`
+	// OutcomeNote is the agent's own line on how the run ended.
+	OutcomeNote string `json:"outcome_note,omitempty"`
 
 	CurrentIntentKey string `json:"current_intent_key,omitempty"`
+}
+
+type sessionWire struct {
+	sessionCore
 
 	Intents []intentWire `json:"intents"`
 	Claims  []claimWire  `json:"claims"`
+}
+
+// sessionSummaryWire is one row of the run history list.
+type sessionSummaryWire struct {
+	sessionCore
+
+	Counts sessionCountsWire `json:"counts"`
+}
+
+// sessionCountsWire counts over a session's whole life, whatever its status.
+type sessionCountsWire struct {
+	Intents      int64 `json:"intents"`
+	ClaimedPaths int64 `json:"claimed_paths"` // distinct normalized patterns
+	Conflicts    int64 `json:"conflicts"`     // distinct conflicts it was a participant in
+}
+
+// runHistoryWire is what one session declared, claimed and collided on.
+type runHistoryWire struct {
+	Intents   []runIntentWire `json:"intents"`
+	Claims    []runClaimWire  `json:"claims"`
+	Conflicts []conflictWire  `json:"conflicts"`
+}
+
+type runIntentWire struct {
+	intentWire
+
+	StartedAt *string `json:"started_at,omitempty"`
+	EndedAt   *string `json:"ended_at,omitempty"`
+}
+
+type runClaimWire struct {
+	claimWire
+
+	Status     string  `json:"status"`
+	ClaimedAt  *string `json:"claimed_at,omitempty"`
+	ReleasedAt *string `json:"released_at,omitempty"`
 }
 
 type participantWire struct {

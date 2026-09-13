@@ -629,6 +629,17 @@ tr.r-unconsumed td:first-child { box-shadow: inset 3px 0 0 var(--idle); }
 }
 .runrow.live { border-left-color: var(--indigo-ink); }
 .runrow:hover { background: var(--panel-2); }
+/* run history: section heads, the counts column, the "Load older" control */
+.runs-h { margin: 16px 0 6px; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+.runrow .runmeta { color: var(--ink-3); font-size: 11px; text-align: right; max-width: 300px; }
+.runs-more { grid-column: 1 / -1; display: flex; justify-content: center; padding: 4px 0 8px; }
+.runs-note { font-size: 12px; color: var(--ink-3); margin: 2px 0 8px; }
+.runs-note a { color: var(--accent); }
+.page h2.run-h { margin-top: 18px; }
+.run-item + .run-item { border-top: 1px solid var(--line-soft); margin-top: 9px; padding-top: 9px; }
+@media (max-width: 720px) {
+  .runrow .runmeta { text-align: left; max-width: none; }
+}
 .log { list-style: none; margin: 0; padding: 0; }
 
 /* the cadence control: a setting that changes what the board tells people to

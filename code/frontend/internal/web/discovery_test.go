@@ -121,6 +121,10 @@ func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if sub == "sessions" || strings.HasPrefix(sub, "sessions/") {
+		b.serveRuns(w, r, slug, sub)
+		return
+	}
 	switch sub {
 	case "":
 		if gate != nil {

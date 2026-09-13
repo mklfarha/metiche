@@ -76,16 +76,32 @@ func (a *API) handleConflicts(w http.ResponseWriter, r *http.Request) {
 //
 // nil statuses means every status.
 func loadConflicts(ctx context.Context, tx *sql.Tx, teamUUID string, statuses []any, limit int) ([]conflictWire, error) {
+	if len(statuses) == 0 {
+		return loadConflictsWhere(ctx, tx, teamUUID, "", nil, limit)
+	}
+	return loadConflictsWhere(ctx, tx, teamUUID,
+		" AND c.`status` IN ("+placeholders(len(statuses))+")", statuses, limit)
+}
+
+// loadSessionConflicts reads every conflict one session took part in, in any
+// status, for that session's run history.
+func loadSessionConflicts(ctx context.Context, tx *sql.Tx, teamUUID, sessionUUID string, limit int) ([]conflictWire, error) {
+	return loadConflictsWhere(ctx, tx, teamUUID,
+		" AND c.`id` IN (SELECT sp.`conflict_uuid` FROM `conflict_participant` sp "+
+			"WHERE sp.`team_uuid` = ? AND sp.`session_uuid` = ?)",
+		[]any{teamUUID, sessionUUID}, limit)
+}
+
+// loadConflictsWhere is the shared read. where is appended verbatim, so it is
+// only ever one of the literal fragments above; every value in it is a bound
+// parameter from whereArgs.
+func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string, whereArgs []any, limit int) ([]conflictWire, error) {
 	q := "SELECT c.`id`, c.`key`, c.`kind`, c.`severity`, c.`status`, c.`detected_by`, " +
 		"c.`detector_rule`, c.`suggested_action`, c.`occurrence_count`, " +
 		"c.`first_detected_at`, c.`last_detected_at`, " +
 		"c.`resolution`, c.`resolution_note`, c.`dismiss_reason`, c.`resolved_at` " +
-		"FROM `conflict` c WHERE c.`team_uuid` = ?"
-	args := []any{teamUUID}
-	if len(statuses) > 0 {
-		q += " AND c.`status` IN (" + placeholders(len(statuses)) + ")"
-		args = append(args, statuses...)
-	}
+		"FROM `conflict` c WHERE c.`team_uuid` = ?" + where
+	args := append([]any{teamUUID}, whereArgs...)
 	// Severity first: a board that sorted by time would bury the critical one
 	// under a stream of low-severity noise, which is the failure mode the
 	// whole noise-control section of the plan exists to avoid.

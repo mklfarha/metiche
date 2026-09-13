@@ -140,7 +140,7 @@ func ProvideCustomRoutes(coreImpl *core.Implementation, logger *zap.Logger) rest
 		// Both take the root router and spell full /v1 paths themselves, for
 		// the two chi reasons in the contract above.
 		if metichemcp.RoleFromEnv(logger).ServesAPI() {
-			webapi.Register(r, coreImpl, logger) // GET /v1/teams/{slug}, /conflicts, /contracts, /decisions, /sessions/{key}
+			webapi.Register(r, coreImpl, logger) // GET /v1/teams/{slug}, /conflicts, /contracts, /decisions, /sessions, /sessions/{key}
 			stream.Register(r, coreImpl, logger) // GET /v1/teams/{slug}/stream (SSE)
 			// Board sign-in (docs/BOARD_LOGIN.md §2.4, §2.7, §2.8): the
 			// exchange, the session check, sign out and the "your teams"
@@ -183,6 +183,9 @@ var AllowedRoutes = map[string]string{
 	webapi.PathContracts: "board contracts",
 	webapi.PathDecisions: "board decisions",
 	webapi.PathSession:   "board session",
+	// The run history (GET). Same guard as the four above, and like them not
+	// routed by any ingress: TestBrowserRoutesAreNotRoutedByAnyIngress pins it.
+	webapi.PathSessions: "board run history",
 
 	// Board sign-in (docs/BOARD_LOGIN.md §6.1). BOARD ONLY; NOT ROUTED BY ANY
 	// INGRESS. They must be listed here or this layer would 404 the board's

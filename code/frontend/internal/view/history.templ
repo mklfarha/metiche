@@ -1,0 +1,223 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// RunsHistoryPage is the Runs page of a board read from the backend: the
+// sessions this board is showing live, then every run the team has had,
+// newest first, a page at a time. A demo board keeps RunsPage.
+templ RunsHistoryPage(p RunsParams) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>Runs</h2>
+				<div class="sub">One row per session: the live ones first, then every run this team has had, newest first.</div>
+				if len(p.Live) > 0 {
+					<h3 class="runs-h">Live now</h3>
+					<div class="runlist" id="runs-live">
+						for _, row := range p.Live {
+							@runRow(p, row)
+						}
+					</div>
+				}
+				<h3 class="runs-h">History</h3>
+				if p.Older {
+					<div class="runs-note"><a href={ templ.SafeURL(fmt.Sprintf("/t/%s/runs", p.Slug)) }>← Back to the newest runs</a></div>
+				}
+				if p.HistoryUnavailable {
+					<div class="runs-note">Older runs could not be loaded right now. Reload the page to try again.</div>
+				} else if len(p.History) == 0 && len(p.Live) == 0 {
+					<div class="empty">
+						<div class="glyph">▷</div>
+						<div class="title">No sessions yet</div>
+						<div class="hint">A run appears the first time an agent calls <code>start_session</code>.</div>
+					</div>
+				} else if len(p.History) == 0 && p.OlderURL == "" {
+					<div class="runs-note">No other runs yet.</div>
+				}
+				<div class="runlist" id="runs-history">
+					@RunsHistoryRows(p)
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+// RunsHistoryRows is one page of history and the control for the next page.
+// It is also the whole answer to that control's htmx request, which replaces
+// the control with it, so each page lands below the last. Without JavaScript
+// the same control is a link to a page that starts there.
+templ RunsHistoryRows(p RunsParams) {
+	for _, row := range p.History {
+		@runRow(p, row)
+	}
+	if p.OlderURL != "" {
+		<div class="runs-more" id="runs-more">
+			<a
+				class="btn"
+				href={ templ.SafeURL(p.OlderURL) }
+				hx-get={ p.OlderURL }
+				hx-target="#runs-more"
+				hx-swap="outerHTML"
+			>Load older runs</a>
+		</div>
+	}
+}
+
+templ runRow(p RunsParams, row RunRow) {
+	<a
+		class={ "runrow", templ.KV("live", row.Live) }
+		href={ templ.SafeURL(fmt.Sprintf("/t/%s/runs/%s", p.Slug, row.Key)) }
+	>
+		<span>
+			<span class="mono" style="font-weight:600">{ row.Key }</span>
+			<span class="badge plain" style="margin-left:6px">{ row.Status }</span>
+			if row.Outcome != "" {
+				<span class={ "badge", outcomeBadge(row.Outcome) } style="margin-left:4px">{ row.Outcome }</span>
+			}
+		</span>
+		<span>
+			<span style="font-weight:500">{ row.Agent }</span>
+			if row.Project != "" {
+				<span class="badge kind" style="margin-left:6px">{ row.Project }</span>
+			}
+			if row.Headline != "" {
+				<span style="color:var(--ink-3)"> — { row.Headline }</span>
+			}
+		</span>
+		<span class="mono runmeta">
+			{ runWhen(p.Now, row) }
+			<br/>
+			{ runCounts(row) }
+		</span>
+	</a>
+}
+
+// HistoricalRunPage is one run the board does not hold, told from the
+// backend: the session, what it declared, what it claimed, the conflicts it
+// was in (settled ones with how they were settled) and its event log.
+templ HistoricalRunPage(s state.Snapshot, p RunDetailParams) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>{ p.Detail.Run.Key } — { p.Detail.Run.Agent() }</h2>
+				<div class="sub">{ p.Detail.Run.Goal }</div>
+				<div class="card">
+					<div class="card-head">
+						<span class={ runPip(p.Detail.Run.Status) }></span>
+						<span class="key">{ p.Detail.Run.Status }</span>
+						if p.Detail.Run.Outcome != "" {
+							<span class={ "badge", outcomeBadge(p.Detail.Run.Outcome) }>{ p.Detail.Run.Outcome }</span>
+						}
+						<div class="right">
+							if p.Detail.Run.ProjectKey != "" {
+								<span class="badge kind">{ p.Detail.Run.ProjectKey }</span>
+							}
+							if p.Detail.Run.Branch != "" {
+								<span class="badge kind">{ p.Detail.Run.Branch }</span>
+							}
+						</div>
+					</div>
+					if p.Detail.Run.StatusLine != "" {
+						<div class="statusline">{ p.Detail.Run.StatusLine }</div>
+					}
+					if p.Detail.Run.OutcomeNote != "" {
+						<div class="suggest settled-note">
+							<span class="tag">how it ended</span>
+							<span class="text">{ p.Detail.Run.OutcomeNote }</span>
+						</div>
+					}
+					<div class="kv">
+						<span>started <b>{ runStamp(p.Detail.Run.StartedAt) }</b></span>
+						if !p.Detail.Run.EndedAt.IsZero() {
+							<span>· ended <b>{ runStamp(p.Detail.Run.EndedAt) }</b></span>
+						} else {
+							<span>· last heartbeat { state.Ago(s.Now, p.Detail.Run.LastHeartbeatAt) } ago</span>
+						}
+					</div>
+				</div>
+				<h2 class="run-h">Intents</h2>
+				<div class="sub">{ countOf(len(p.Detail.Intents), "intent", "intents") } declared in this run.</div>
+				if len(p.Detail.Intents) > 0 {
+					<div class="card">
+						for _, in := range p.Detail.Intents {
+							<div class="run-item">
+								<div class="intent">
+									<span class={ "chip", in.Status }>{ in.Status }</span>
+									<span class="summary"><span class="mono">{ in.Key }</span> { in.Summary }</span>
+								</div>
+								<div class="kv">
+									<span>declared <b>{ runStamp(in.DeclaredAt) }</b></span>
+									if !in.EndedAt.IsZero() {
+										<span>· ended <b>{ runStamp(in.EndedAt) }</b></span>
+									}
+									if in.ExternalRef != "" {
+										<span>· { in.ExternalRef }</span>
+									}
+								</div>
+							</div>
+						}
+					</div>
+				}
+				<h2 class="run-h">Paths claimed</h2>
+				<div class="sub">{ countOf(len(p.Detail.Claims), "claim", "claims") } taken in this run.</div>
+				if len(p.Detail.Claims) > 0 {
+					<div class="card">
+						for _, c := range p.Detail.Claims {
+							<div class="run-item">
+								<div class="card-head">
+									<span class="key">{ c.Key }</span>
+									<span class="badge kind">{ c.Mode }</span>
+									<span class="badge plain">{ c.Status }</span>
+								</div>
+								<div class="paths">
+									for _, path := range c.Paths {
+										<div class="path" title={ path }>
+											<span class="mode">{ modeAbbrev(c.Mode) }</span>
+											<span>{ path }</span>
+										</div>
+									}
+								</div>
+								<div class="kv">
+									<span>claimed <b>{ runStamp(c.ClaimedAt) }</b></span>
+									if !c.ReleasedAt.IsZero() {
+										<span>· released <b>{ runStamp(c.ReleasedAt) }</b></span>
+									} else {
+										<span>· expires <b>{ runStamp(c.ExpiresAt) }</b></span>
+									}
+								</div>
+							</div>
+						}
+					</div>
+				}
+				<h2 class="run-h">Conflicts this run took part in</h2>
+				<div class="sub">{ countOf(len(p.Detail.Conflicts), "conflict", "conflicts") }.</div>
+				for _, c := range p.Detail.Conflicts {
+					@conflictCard(s, c, c.Open())
+				}
+				<h2 class="run-h">Event log</h2>
+				<div class="sub">{ countOf(len(p.Detail.Events), "event", "events") } logged in this run.</div>
+				<div class="card" style="padding:4px 0">
+					<ul class="log">
+						for _, ev := range p.Detail.Events {
+							<li class={ eventClass(ev) } data-seq={ fmt.Sprint(ev.Sequence) }>
+								<span class="seq">{ fmt.Sprint(ev.Sequence) }</span>
+								<span class="body">
+									<span class="line">{ ev.Summary }</span>
+									<br/>
+									<span class="kind">{ ev.Kind }</span>
+									<span class="who"> · { runStamp(ev.OccurredAt) }</span>
+								</span>
+							</li>
+						}
+					</ul>
+				</div>
+				if p.Detail.MoreEvents {
+					<div class="runs-note">This run logged more events than one page holds; the first { fmt.Sprint(len(p.Detail.Events)) } are shown.</div>
+				}
+			</div>
+		</div>
+	</div>
+}
