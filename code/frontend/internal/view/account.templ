@@ -1,0 +1,169 @@
+package view
+
+import (
+	"net/url"
+	"strings"
+	"time"
+)
+
+// AccountSession is one signed-in browser of the viewer's account, from
+// GET /v1/browser/sessions. It has no field for a secret or a hash.
+type AccountSession struct {
+	Key        string
+	UserAgent  string
+	IPHint     string // truncated prefix: IPv4 /24, IPv6 /48
+	CreatedAt  time.Time
+	LastSeenAt *time.Time // nil until the first check writes it
+	ExpiresAt  time.Time
+	// Current marks the session of the browser viewing the page.
+	Current bool
+}
+
+// AccountParams is everything /account renders besides the viewer, which it
+// reads from the context (display name and CSRF token). The web layer only
+// renders it for a signed-in viewer; anonymous is a redirect to /signin.
+type AccountParams struct {
+	Sessions []AccountSession
+}
+
+// AccountPage is GET /account: who you are signed in as, every browser signed
+// in to this account, and the ways to end them. Every action is a POST form
+// carrying the CSRF token.
+templ AccountPage(p AccountParams) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="csrf-token" content={ ViewerFrom(ctx).CSRFToken }/>
+			<title>account · metiche</title>
+			<link rel="icon" href="/static/metiche-icon.png" type="image/png"/>
+			<link rel="stylesheet" href="/static/app.css"/>
+		</head>
+		<body>
+			<div class="join account">
+				<div class="join-inner">
+					<a class="brandbig" href="/">
+						<img src="/static/metiche-icon.png" alt="" width="46" height="46"/>
+						<h1>metiche<span class="dot">.</span></h1>
+					</a>
+					<div class="tag">Signed in as <b data-viewer-name>{ ViewerFrom(ctx).DisplayName }</b></div>
+					<h2 class="sect">Signed-in browsers</h2>
+					<ul class="sessions">
+						for _, s := range p.Sessions {
+							<li class={ "sess", templ.KV("current", s.Current) } data-session={ s.Key }>
+								<div class="sess-main">
+									<div class="nm">
+										<span title={ s.UserAgent }>{ browserHint(s.UserAgent) }</span>
+										if s.Current {
+											<span class="badge good">this browser</span>
+										}
+									</div>
+									<div class="sl">{ s.Key }{ ipSuffix(s.IPHint) }</div>
+									<div class="sl">
+										signed in <time datetime={ stamp(s.CreatedAt) }>{ when(s.CreatedAt) }</time>
+										· last seen
+										if s.LastSeenAt != nil {
+											<time datetime={ stamp(*s.LastSeenAt) }>{ when(*s.LastSeenAt) }</time>
+										} else {
+											not yet
+										}
+									</div>
+								</div>
+								if !s.Current {
+									<form method="post" action={ revokeURL(s.Key) }>
+										<input type="hidden" name="csrf" value={ ViewerFrom(ctx).CSRFToken }/>
+										<button class="btn" type="submit">Revoke</button>
+									</form>
+								}
+							</li>
+						}
+					</ul>
+					if len(p.Sessions) == 0 {
+						<div class="note">No signed-in browsers are listed right now.</div>
+					}
+					<div class="acct-actions">
+						<form method="post" action="/signout">
+							<input type="hidden" name="csrf" value={ ViewerFrom(ctx).CSRFToken }/>
+							<button class="btn" type="submit">Sign out</button>
+						</form>
+						<form method="post" action="/account/signout-all">
+							<input type="hidden" name="csrf" value={ ViewerFrom(ctx).CSRFToken }/>
+							<button class="btn" type="submit">Sign out everywhere</button>
+						</form>
+					</div>
+					<div class="note">
+						A browser signs in with a one-time link from one of your agents. Sign out ends this
+						browser; sign out everywhere ends every browser listed above. Retiring the agent
+						that opened a browser also signs that browser out.
+					</div>
+					<div class="note"><a class="nf-link" href="/teams">Your teams →</a></div>
+				</div>
+			</div>
+		</body>
+	</html>
+}
+
+// revokeURL is POST /account/sessions/{key}/revoke, with the key escaped as
+// one path segment.
+func revokeURL(key string) templ.SafeURL {
+	return templ.SafeURL("/account/sessions/" + url.PathEscape(key) + "/revoke")
+}
+
+func ipSuffix(hint string) string {
+	if hint == "" {
+		return ""
+	}
+	return " · " + hint
+}
+
+func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+
+func when(t time.Time) string { return t.UTC().Format("2 Jan 2006, 15:04 UTC") }
+
+// browserHint turns a user agent into "Chrome on macOS": enough to answer "is
+// that browser mine?" The full string is in the title attribute.
+func browserHint(ua string) string {
+	has := func(s string) bool { return strings.Contains(ua, s) }
+	browser := ""
+	switch {
+	case has("Edg/"):
+		browser = "Edge"
+	case has("OPR/"):
+		browser = "Opera"
+	case has("Firefox/") || has("FxiOS/"):
+		browser = "Firefox"
+	case has("Chrome/") || has("CriOS/"):
+		browser = "Chrome"
+	case has("Safari/"):
+		browser = "Safari"
+	case has("curl/"):
+		browser = "curl"
+	}
+	os := ""
+	switch {
+	case has("iPhone"):
+		os = "iPhone"
+	case has("iPad"):
+		os = "iPad"
+	case has("Android"):
+		os = "Android"
+	case has("Mac OS X") || has("Macintosh"):
+		os = "macOS"
+	case has("Windows"):
+		os = "Windows"
+	case has("CrOS"):
+		os = "ChromeOS"
+	case has("Linux"):
+		os = "Linux"
+	}
+	switch {
+	case browser != "" && os != "":
+		return browser + " on " + os
+	case browser != "":
+		return browser
+	case os != "":
+		return "a browser on " + os
+	}
+	return "Unknown browser"
+}

@@ -797,3 +797,85 @@ svg.graph { display: block; min-width: 720px; }
   .join input, .join .btn { min-height: 44px; }
   .empty .hint a { display: inline-flex; align-items: center; min-height: 40px; }
 }
+
+/* ---------------------------------------------------------------- viewer
+ *
+ * Board login (BOARD_LOGIN §5.5). The signed-in indicator sits at the end of
+ * the topbar: "signed in as <name>" linking to /account, and a Sign out POST
+ * form. Anonymous viewers get a "Sign in" link in the same place. It lives
+ * inside .topbar, so the .app grid rows (topbar, demo banner, page) are
+ * untouched. */
+.who {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding-left: 12px; border-left: 1px solid var(--line); font-size: 12px;
+}
+.who .who-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--ink-2); }
+.who .who-name .k { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
+.who .who-name b {
+  font-weight: 600; color: var(--ink); min-width: 0; max-width: 14em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.who .who-name:hover b { color: var(--accent); }
+.who form, .join .who form { display: flex; margin: 0; gap: 0; }
+.who-btn {
+  display: inline-flex; align-items: center; white-space: nowrap; cursor: pointer;
+  font: inherit; font-size: 11.5px; color: var(--ink-2); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px;
+}
+.who-btn:hover { border-color: var(--accent); color: var(--ink); }
+
+/* /teams, signed in: "Your teams" above the demo recordings */
+.join .yours { margin-bottom: 8px; }
+.join .yours-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.join .yours-head .who { border-left: 0; padding-left: 0; }
+.join .yours h2, .join h2.sect { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.join .yours h2.demos-h { margin: 18px 0 10px; }
+
+/* the 404, signed in: the indicator above the brand */
+.join .nf-who { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.join .nf-who .who { border-left: 0; padding-left: 0; }
+.empty .hint.nf-signin { overflow-wrap: anywhere; }
+
+/* /signin: one state at a time. .empty is display:grid, which would beat the
+ * UA's [hidden] rule, and the page's CSP allows no inline style. */
+.signin-state[hidden] { display: none; }
+.signin .note a.nf-link { color: var(--accent); }
+
+/* /account */
+.join .join-inner:has(.sessions) { max-width: 640px; }
+.join h2.sect { margin: 4px 0 10px; }
+.sessions { list-style: none; margin: 0; padding: 0; }
+.sess {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+}
+.sess.current { border-color: var(--accent); }
+.sess .sess-main { flex: 1 1 auto; min-width: 0; }
+.sess .nm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.sess .sl { font-family: var(--mono); font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; }
+.join .sess form, .join .acct-actions form { display: block; margin: 0; }
+.join .sess .btn, .join .acct-actions .btn { font: inherit; font-size: 12px; }
+.acct-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+
+@media (max-width: 1180px) {
+  .topbar .who { margin-left: auto; align-self: center; }
+  .who .who-name .k { display: none; }
+  .who .who-name b { max-width: 10em; }
+}
+
+/* Phone: the indicator joins the brand's row, so the pace/cursor row keeps
+ * the width it had. The zero-height ::before is a line break: brand and
+ * indicator come first (negative order), the break forces everything else
+ * onto the next row, and the tabs keep order 10. */
+@media (max-width: 600px) {
+  .topbar::before { content: ""; order: -1; flex: 0 0 100%; height: 0; }
+  .topbar .brand { order: -3; flex: 1 1 0; }
+  .topbar .who { order: -2; border-left: 0; padding-left: 0; }
+  .who .who-name b { max-width: 7em; }
+  .sess { flex-wrap: wrap; }
+}
+
+@media (max-width: 1180px), (pointer: coarse) {
+  .who-btn, .who .who-name { min-height: 40px; }
+  .who-btn { padding: 0 12px; }
+}

@@ -15,8 +15,33 @@ type TeamCard struct {
 	Severity string
 }
 
-// JoinPage is the front door: pick a team, or paste a join code.
-templ JoinPage(teams []TeamCard) {
+// YourTeam is one of a signed-in viewer's own teams, from
+// GET /v1/browser/teams.
+type YourTeam struct {
+	Slug       string
+	Name       string
+	Visibility string // "public" | "private"
+	Role       string // "owner" | "member"
+}
+
+// TeamsParams is everything /teams renders besides the viewer.
+type TeamsParams struct {
+	// Demos are the demo recordings every visitor sees.
+	Demos []TeamCard
+	// Mine is the signed-in viewer's own teams. It is rendered ONLY when the
+	// context carries a signed-in viewer: a page rendered for an anonymous
+	// visitor never names a live team, even if Mine is filled by mistake.
+	Mine []YourTeam
+}
+
+// JoinPage is /teams for an anonymous visitor: demo recordings only.
+func JoinPage(teams []TeamCard) templ.Component {
+	return TeamsPage(TeamsParams{Demos: teams})
+}
+
+// TeamsPage is the front door: pick a team, or paste a join code. A signed-in
+// viewer also gets "Your teams", with a board link per team.
+templ TeamsPage(p TeamsParams) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
@@ -35,7 +60,10 @@ templ JoinPage(teams []TeamCard) {
 						<h1>metiche<span class="dot">.</span></h1>
 					</div>
 					<div class="tag">What everyone's agents are doing, right now.</div>
-					for _, t := range teams {
+					if ViewerFrom(ctx).SignedIn {
+						@yourTeams(ViewerFrom(ctx), p.Mine)
+					}
+					for _, t := range p.Demos {
 						<a class="teamlink" href={ templ.SafeURL("/t/" + t.Slug) }>
 							<span>
 								<div class="nm">{ t.Name }</div>
@@ -56,10 +84,7 @@ templ JoinPage(teams []TeamCard) {
 							</span>
 						</a>
 					}
-					<div class="note">
-						These are demo recordings. This page never lists real teams: your own
-						team&#39;s board is at <b>/t/&lt;your-team-slug&gt;</b>.
-					</div>
+					@demosNote(ViewerFrom(ctx).SignedIn)
 					<form method="get" action="/join">
 						<input name="code" placeholder="join code — e.g. MET-4QX7-PLUM" autocomplete="off"/>
 						<button class="btn primary" type="submit">Join</button>
@@ -75,7 +100,72 @@ templ JoinPage(teams []TeamCard) {
 	</html>
 }
 
-// NotFound is the miss page for an unknown slug.
+// yourTeams is the signed-in half of /teams.
+templ yourTeams(v Viewer, mine []YourTeam) {
+	<section class="yours" aria-labelledby="yours-h" data-section="your-teams">
+		<div class="yours-head">
+			<h2 id="yours-h">Your teams</h2>
+			@ViewerIndicator(v)
+		</div>
+		for _, t := range mine {
+			<a class="teamlink" href={ templ.SafeURL("/t/" + t.Slug) }>
+				<span>
+					<div class="nm">{ t.Name }</div>
+					<div class="sl">/t/{ t.Slug } · { teamFacts(t) }</div>
+				</span>
+				<span class="st">
+					<span class="sl">open board →</span>
+				</span>
+			</a>
+		}
+		if len(mine) == 0 {
+			<div class="note">
+				You are signed in, but this account is not a member of any team yet.
+			</div>
+		}
+		<h2 class="demos-h">Demo recordings</h2>
+	</section>
+}
+
+// demosNote is the line under the demo recordings. Anonymous visitors get the
+// original sentence, byte for byte; for a signed-in viewer "never lists real
+// teams" would be false, since "Your teams" is on the same page.
+templ demosNote(signedIn bool) {
+	if signedIn {
+		<div class="note">
+			The teams under “Demo recordings” are not real. Real teams are listed only to
+			their own signed-in members, as “Your teams” above.
+		</div>
+	} else {
+		<div class="note">
+			These are demo recordings. This page never lists real teams: your own
+			team&#39;s board is at <b>/t/&lt;your-team-slug&gt;</b>.
+		</div>
+	}
+}
+
+// teamFacts is "private · owner", leaving out whatever the backend did not say.
+func teamFacts(t YourTeam) string {
+	switch {
+	case t.Visibility != "" && t.Role != "":
+		return t.Visibility + " · " + t.Role
+	case t.Visibility != "":
+		return t.Visibility
+	}
+	return t.Role
+}
+
+// SignInHint is the one line every 404 under /t/ carries, identically.
+const SignInHint = "If this is your team's board, sign in from a terminal where metiche is installed:"
+
+// NotFound is the one miss page under /t/: an unknown slug, a private team
+// seen anonymously, and a private team seen by a signed-in non-member all
+// render it (BOARD_LOGIN §4.3).
+//
+// Its inputs are the requested slug and the viewer on the context — nothing
+// that depends on whether the team exists — so for the same request and the
+// same viewer the bytes are the same whatever the cause. A signed-in viewer
+// also sees the indicator, which is identical across causes too.
 templ NotFound(slug string) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -89,6 +179,11 @@ templ NotFound(slug string) {
 		<body>
 			<div class="join">
 				<div class="join-inner">
+					if ViewerFrom(ctx).SignedIn {
+						<div class="nf-who">
+							@ViewerIndicator(ViewerFrom(ctx))
+						</div>
+					}
 					<div class="brandbig">
 						<img src="/static/metiche-icon.png" alt="" width="46" height="46"/>
 						<h1>metiche<span class="dot">.</span></h1>
@@ -96,6 +191,9 @@ templ NotFound(slug string) {
 					<div class="empty">
 						<div class="glyph">?</div>
 						<div class="title">No team called “{ slug }”</div>
+						<div class="hint nf-signin" data-hint="signin">
+							{ SignInHint } <code>metiche open</code>, or ask your assistant to open the metiche board.
+						</div>
 						<div class="hint"><a class="nf-link" href="/teams">Pick one from the list →</a></div>
 					</div>
 				</div>

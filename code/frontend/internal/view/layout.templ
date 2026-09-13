@@ -1,9 +1,54 @@
 package view
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/mklfarha/metiche/frontend/internal/state"
 )
+
+// Viewer is who is looking at a page: anonymous (the zero value), or a
+// browser signed in to one account.
+//
+// It travels on the context, like WithDemo, and not as a parameter of every
+// page: the web layer resolves it once per request and every page's chrome
+// reads the same value. That also keeps NotFound honest: its only inputs are
+// the slug that was asked for and this viewer, so it cannot render
+// differently for an unknown team, a private team seen anonymously, or a
+// private team seen by a signed-in non-member.
+type Viewer struct {
+	// SignedIn is false for an anonymous viewer, and then nothing else is read.
+	SignedIn bool
+	// DisplayName is the account's display name, shown in the indicator.
+	DisplayName string
+	// CSRFToken is the synchronizer token for this session (BOARD_LOGIN §6.3).
+	// Every POST form carries it as the "csrf" field; htmx sends it as
+	// X-CSRF-Token from the <body>'s hx-headers.
+	CSRFToken string
+}
+
+type viewerKey struct{}
+
+// WithViewer attaches the resolved viewer to a render.
+func WithViewer(ctx context.Context, v Viewer) context.Context {
+	return context.WithValue(ctx, viewerKey{}, v)
+}
+
+// ViewerFrom returns the viewer WithViewer attached, or the anonymous viewer.
+func ViewerFrom(ctx context.Context) Viewer {
+	v, _ := ctx.Value(viewerKey{}).(Viewer)
+	if !v.SignedIn {
+		return Viewer{}
+	}
+	return v
+}
+
+// csrfHeaders is the hx-headers value: JSON, so htmx attaches the token to
+// every request it makes from this page.
+func csrfHeaders(v Viewer) string {
+	b, _ := json.Marshal(map[string]string{"X-CSRF-Token": v.CSRFToken})
+	return string(b)
+}
 
 // Layout is the page chrome. The SSE connection is opened once, here, on the
 // <body>: both named event types arrive on the same stream, and the two swap
@@ -18,6 +63,9 @@ templ Layout(s state.Snapshot, tab Tab, streamURL string, body templ.Component) 
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			if ViewerFrom(ctx).SignedIn {
+				<meta name="csrf-token" content={ ViewerFrom(ctx).CSRFToken }/>
+			}
 			if IsDemo(ctx) {
 				<title>demo · { s.Team.Name } · metiche</title>
 			} else {
@@ -31,6 +79,9 @@ templ Layout(s state.Snapshot, tab Tab, streamURL string, body templ.Component) 
 		<body
 			hx-ext="sse"
 			sse-connect={ streamURL }
+			if ViewerFrom(ctx).SignedIn {
+				hx-headers={ csrfHeaders(ViewerFrom(ctx)) }
+			}
 		>
 			<div class="app">
 				@topbar(s, tab)
@@ -88,7 +139,30 @@ templ topbar(s state.Snapshot, tab Tab) {
 			</span>
 		</div>
 		<div class="conn"><span class="pip"></span><span id="conn-label">live</span></div>
+		@ViewerIndicator(ViewerFrom(ctx))
 	</header>
+}
+
+// ViewerIndicator says who this browser is signed in as, with a way out; for
+// an anonymous viewer it is a way in. Sign out is a POST form carrying the
+// CSRF token: GET never changes state (BOARD_LOGIN §6.3).
+templ ViewerIndicator(v Viewer) {
+	if v.SignedIn {
+		<div class="who" data-viewer="signed-in">
+			<a class="who-name" href="/account" title="Your account and signed-in browsers">
+				<span class="k">signed in as</span>
+				<b>{ v.DisplayName }</b>
+			</a>
+			<form class="who-out" method="post" action="/signout">
+				<input type="hidden" name="csrf" value={ v.CSRFToken }/>
+				<button class="who-btn" type="submit">Sign out</button>
+			</form>
+		</div>
+	} else {
+		<div class="who" data-viewer="anonymous">
+			<a class="who-btn" href="/signin">Sign in</a>
+		</div>
+	}
 }
 
 // cadenceLabel is visible on every page on purpose. Cadence silently changes
