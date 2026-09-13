@@ -167,7 +167,6 @@ templ agentCard(s state.Snapshot, l state.AgentLane) {
 					// because MCP cannot be pushed to.
 					<button
 						class="badge plain"
-						style="cursor:pointer"
 						hx-post={ fmt.Sprintf("/t/%s/sessions/%s/nudge", s.Team.Slug, l.Session.Key) }
 						hx-vals={ `{"nudge":"ask"}` }
 						hx-swap="none"

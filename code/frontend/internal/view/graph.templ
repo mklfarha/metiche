@@ -112,6 +112,11 @@ templ graphNode(n state.GraphNode) {
 	<g class={ graphNodeClass(n) }>
 		if n.Href != "" {
 			<a href={ templ.SafeURL(n.Href) }>
+				// A transparent hit area under the shape. The drawn nodes are
+				// 26–50 units across and the drawing scales down to ~0.7 on a
+				// tablet, so the shape alone is a 18–25px target. r=30 is ≥40px
+				// at that scale and still clear of the next row (76 apart).
+				<circle class="ghit" cx={ f(n.X) } cy={ f(n.Y) } r={ f(max(30, n.R+8)) }></circle>
 				@graphShape(n)
 			</a>
 		} else {

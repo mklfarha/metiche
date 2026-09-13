@@ -45,8 +45,8 @@ templ ContractsPage(s state.Snapshot) {
 						<table class="matrix">
 							<thead>
 								<tr>
-									<th style="min-width:230px">Contract</th>
-									<th style="min-width:240px">Verdict</th>
+									<th class="col-contract">Contract</th>
+									<th class="col-verdict">Verdict</th>
 									for _, col := range s.ContractMatrix().Columns {
 										<th class="who">
 											<span class="m">{ col.Member }</span>

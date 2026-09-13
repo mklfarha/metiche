@@ -241,8 +241,16 @@ body.lp {
 
 .lede { margin-top: 20px; font-size: clamp(15.5px, 2vw, 18px); color: var(--ink-2); max-width: 34em; }
 .lede b { color: var(--ink); font-weight: 600; }
+/* what it is, under what it does */
+.def { margin-top: 12px; font-size: clamp(14px, 1.6vw, 15.5px); color: var(--ink-3); max-width: 38em; }
+.def b { color: var(--ink-2); font-weight: 600; }
 
 .cta-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+/* Below 960px the header's "Live demo" link is gone and the header keeps only
+ * "Get your team on it" — so in the hero the demo goes first, and both calls
+ * to action are on the first screen exactly once. Wider, the order is as
+ * written: join first. */
+@media (max-width: 960px) { .hero .cta-row .btn.demo { order: -1; } }
 
 .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 24px; font-size: 12.5px; color: var(--ink-3); }
 .facts span { display: inline-flex; align-items: center; gap: 7px; }
@@ -441,6 +449,25 @@ body.lp {
   margin-top: 12px; font-size: 13px; color: var(--ink-3);
   border-left: 2px solid var(--line); padding-left: 11px;
 }
+.cc .why > p { margin: 0; }
+/* The note behind each card is a <details>: a 40px toggle on a phone, where
+ * four cards of it were ~3000px of scrolling. */
+.cc .why > summary {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer;
+  list-style: none; font-size: 13px; font-weight: 600; color: var(--ink-2);
+}
+.cc .why > summary::-webkit-details-marker { display: none; }
+.cc .why > summary::before { content: "+"; font-family: var(--mono); color: var(--ink-3); width: 1ch; }
+.cc .why[open] > summary::before { content: "−"; }
+.cc .why[open] > summary { margin-bottom: 2px; }
+/* Two columns of cards: the note is simply there, as it always was — no
+ * toggle. Browsers that cannot style ::details-content keep the toggle. */
+@media (min-width: 901px) {
+  @supports selector(::details-content) {
+    .cc .why > summary { display: none; }
+    .cc .why::details-content { content-visibility: visible; height: auto; }
+  }
+}
 
 .two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
 @media (max-width: 760px) { .two-up { grid-template-columns: 1fr; } }
@@ -569,6 +596,27 @@ body.lp {
   .jstep { padding-left: 0; }
   .jstep::before { position: static; margin-bottom: 10px; }
 }
+.jstep .manual { margin-top: 4px; }
+.jstep .manual a {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 40px;
+  color: var(--accent); font-size: 14px; font-weight: 550;
+}
+.jstep .manual a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* the copy button on the install line — code-block colours, not page colours,
+ * because the block is dark in both themes */
+.code .code-head .copy {
+  margin-left: auto; min-height: 26px; padding: 2px 11px; cursor: pointer;
+  font: inherit; font-family: var(--sans); font-size: 12px; font-weight: 600;
+  letter-spacing: 0; text-transform: none;
+  color: #cdc2f0; background: transparent; border: 1px solid #ffffff2e; border-radius: 5px;
+}
+.code .code-head .copy:hover { color: #fff; border-color: #9282ff; }
+@media (max-width: 960px), (pointer: coarse) {
+  .code.install .code-head { padding-top: 4px; padding-bottom: 4px; }
+  .code .code-head .copy { min-height: 40px; min-width: 72px; }
+}
+
 .jstep .soon {
   display: inline-block; margin-left: 7px; vertical-align: 2px;
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
@@ -615,11 +663,13 @@ body.lp {
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
+/* Parked above the page rather than 9999px to its left, so it never reads as
+ * horizontal overflow; it drops into view on focus. */
 .skip {
-  position: absolute; left: -9999px; top: 0;
+  position: absolute; left: 12px; top: -200px;
   background: var(--panel); color: var(--ink); padding: 10px 14px; border-radius: 6px; z-index: 100;
   border: 1px solid var(--accent);
 }
-.skip:focus { left: 12px; top: 12px; }
+.skip:focus { top: 12px; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }

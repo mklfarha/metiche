@@ -402,6 +402,7 @@ nav.tabs a .n.hot { background: var(--violet); color: #fff; font-weight: 700; }
 .badge.alert    { color: #04222b; border-color: var(--cyan); background: var(--cyan); font-weight: 700; }
 .badge.good     { color: var(--good);   border-color: var(--good-line); background: var(--good-bg); }
 .badge.plain    { color: var(--ink-3); }
+button.badge    { cursor: pointer; }
 .badge.kind     { font-family: var(--mono); font-weight: 500; font-size: 10px; color: var(--ink-3); }
 .badge.sideA    { color: var(--coral-ink);  border-color: var(--sev-high-line); background: var(--coral-bg); }
 .badge.sideB    { color: var(--indigo-ink); border-color: var(--good-line);     background: var(--indigo-bg); }
@@ -506,6 +507,9 @@ table.matrix thead th {
   border-bottom: 1px solid var(--line);
 }
 table.matrix thead th.who { text-align: center; min-width: 96px; }
+/* the two leading columns; narrowed on a phone, see the 760px block */
+table.matrix thead th.col-contract { min-width: 230px; }
+table.matrix thead th.col-verdict  { min-width: 240px; }
 table.matrix thead th.who .m { display: block; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 11.5px; font-weight: 600; }
 table.matrix thead th.who .a { display: block; font-family: var(--mono); font-size: 9.5px; text-transform: none; color: var(--ink-3); }
 table.matrix td { padding: 7px 10px; vertical-align: top; }
@@ -584,6 +588,23 @@ tr.r-unconsumed td:first-child { box-shadow: inset 3px 0 0 var(--idle); }
 }
 .join input:focus { outline: none; border-color: var(--accent); }
 .join .note { margin-top: 18px; font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
+/* the 404's way back: a whole-row target, not a 15px line of text */
+.empty .hint a.nf-link { display: flex; align-items: center; justify-content: center; min-height: 40px; color: var(--accent); }
+
+/* Every page of a demo board says so. One row on a wide screen; below that
+ * the sentence wraps and the link drops under it as a 40px target, so the
+ * banner grows by one line rather than turning into a block of text. */
+.demo-banner {
+  display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px;
+  margin: 10px 16px 0; padding: 2px 4px 2px 12px;
+  border: 1px dashed currentColor; border-radius: 6px; font-size: 13px; line-height: 1.4;
+}
+.demo-banner .what { flex: 1 1 24em; min-width: 0; padding: 6px 0; }
+.demo-banner a {
+  display: inline-flex; align-items: center; min-height: 40px; padding: 0 8px;
+  color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap;
+}
+@media (max-width: 600px) { .demo-banner a { padding-left: 0; } }
 
 /* ---------------------------------------------------------------- misc */
 
@@ -643,6 +664,8 @@ svg.graph { display: block; min-width: 720px; }
 
 /* nodes */
 .gsh { stroke-width: 2; }
+/* the invisible tap area under a linked node; transparent still takes the pointer */
+.ghit { fill: transparent; stroke: none; }
 .gn-quiet .gsh  { fill: var(--panel-2); stroke: var(--line); }
 .gn-sideA .gsh  { fill: var(--coral-bg);  stroke: var(--coral); }
 .gn-sideB .gsh  { fill: var(--indigo-bg); stroke: var(--indigo-ink); }
@@ -736,10 +759,10 @@ svg.graph { display: block; min-width: 720px; }
 
   .runrow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 
-  /* The two leading columns carry inline min-widths sized for a desktop
-   * table; on a phone they would leave no room for the session columns.
-   * The table still scrolls inside .matrix-wrap. */
-  table.matrix thead th[style] { min-width: 150px !important; }
+  /* The two leading columns are sized for a desktop table; on a phone they
+   * would leave no room for the session columns. The table still scrolls
+   * inside .matrix-wrap. */
+  table.matrix thead th.col-contract, table.matrix thead th.col-verdict { min-width: 150px; }
   /* badge above its sentence, so the sentence gets the column's full width */
   .verdict { flex-wrap: wrap; row-gap: 4px; }
 

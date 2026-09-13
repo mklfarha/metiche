@@ -81,6 +81,7 @@ templ NotFound(slug string) {
 	<html lang="en">
 		<head>
 			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>no such team · metiche</title>
 			<link rel="icon" href="/static/metiche-icon.png" type="image/png"/>
 			<link rel="stylesheet" href="/static/app.css"/>
@@ -95,7 +96,7 @@ templ NotFound(slug string) {
 					<div class="empty">
 						<div class="glyph">?</div>
 						<div class="title">No team called “{ slug }”</div>
-						<div class="hint"><a href="/" style="color:var(--accent)">Pick one from the list →</a></div>
+						<div class="hint"><a class="nf-link" href="/teams">Pick one from the list →</a></div>
 					</div>
 				</div>
 			</div>

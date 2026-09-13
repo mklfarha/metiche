@@ -196,20 +196,20 @@ func NotFound(slug string) templ.Component {
 			templ_7745c5c3_Var10 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>no such team · metiche</title><link rel=\"icon\" href=\"/static/metiche-icon.png\" type=\"image/png\"><link rel=\"stylesheet\" href=\"/static/app.css\"></head><body><div class=\"join\"><div class=\"join-inner\"><div class=\"brandbig\"><img src=\"/static/metiche-icon.png\" alt=\"\" width=\"46\" height=\"46\"><h1>metiche<span class=\"dot\">.</span></h1></div><div class=\"empty\"><div class=\"glyph\">?</div><div class=\"title\">No team called “")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>no such team · metiche</title><link rel=\"icon\" href=\"/static/metiche-icon.png\" type=\"image/png\"><link rel=\"stylesheet\" href=\"/static/app.css\"></head><body><div class=\"join\"><div class=\"join-inner\"><div class=\"brandbig\"><img src=\"/static/metiche-icon.png\" alt=\"\" width=\"46\" height=\"46\"><h1>metiche<span class=\"dot\">.</span></h1></div><div class=\"empty\"><div class=\"glyph\">?</div><div class=\"title\">No team called “")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(slug)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/join.templ`, Line: 97, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/join.templ`, Line: 98, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "”</div><div class=\"hint\"><a href=\"/\" style=\"color:var(--accent)\">Pick one from the list →</a></div></div></div></div></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "”</div><div class=\"hint\"><a class=\"nf-link\" href=\"/teams\">Pick one from the list →</a></div></div></div></div></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

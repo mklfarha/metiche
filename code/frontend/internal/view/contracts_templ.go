@@ -63,7 +63,7 @@ func ContractsPage(s state.Snapshot) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " <div class=\"matrix-wrap\"><table class=\"matrix\"><thead><tr><th style=\"min-width:230px\">Contract</th><th style=\"min-width:240px\">Verdict</th>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " <div class=\"matrix-wrap\"><table class=\"matrix\"><thead><tr><th class=\"col-contract\">Contract</th><th class=\"col-verdict\">Verdict</th>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

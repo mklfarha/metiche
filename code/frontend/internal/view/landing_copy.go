@@ -69,4 +69,11 @@ const envelopeHTML = `<span class="c">// the response to the declare_intent your
 // installHTML is the one command. It is the whole of step two: the installer
 // registers the MCP server AND installs the skill, which is why the landing
 // page no longer walks through those as separate things to do.
-const installHTML = `<span class="c-dim">#</span> <span class="c-str">curl</span> -fsSL https://metiche.xyz/install.sh <span class="c-dim">|</span> sh`
+//
+// No prompt glyph in front of it: a reader who selects the line by hand
+// should get exactly the command, the same bytes the copy button writes.
+const installHTML = `<span class="c-str">curl</span> -fsSL https://metiche.xyz/install.sh <span class="c-dim">|</span> sh`
+
+// installCommand is installHTML as plain text — what the copy button puts on
+// the clipboard. landing_test.go keeps the two from drifting apart.
+const installCommand = `curl -fsSL https://metiche.xyz/install.sh | sh`
