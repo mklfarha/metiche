@@ -294,8 +294,18 @@ the installer; the final proof is their two clients on the board without typing 
 
 - Tools 8–12 (`publish_contract`, `record_decision`, `get_review_context`, `report_judgement`,
   `resolve_conflict`): contract mismatch and the model-judged checks do not fire yet.
-- Frontend viewer gate: the board service authenticates to the API, but nothing gates who may
-  load `metiche.xyz/t/<slug>`. The demo team is public for exactly that reason.
+- Frontend viewer gate: **built, not yet deployed** (`docs/BOARD_LOGIN.md`, commits 1fa2216,
+  4cb2850, ed6adc9, 95cad88, 48a0f5b, 0655144, 949d4b5). A member signs a browser in with a
+  single-use link from `open_board`; private boards are read with that viewer's own session, and
+  the board holds no backend credential (it refuses to start with `METICHE_BOARD_TOKEN` set).
+  Remaining: the Wave 2 smoke and the Wave 3 deploy (`docs/BOARD_LOGIN.md` §8).
+- A database outage on the bearer path returns 401/404; it should be 503. `mcp.AccountByToken`
+  folds a DB error into "unauthenticated", so the MCP edge answers 401 and `app/authz`'s bearer
+  branch answers the "no such team" 404. The browser-session branch already separates the two
+  (`browser.ErrUnavailable` → 503). A client told 401 may conclude its token is dead, and the
+  installer already needs a `health` call to tell them apart (`docs/LEARNINGS.md` §4). Fix:
+  `IdentityByToken` returns a distinct unavailable error, `authMiddleware` answers 503, and
+  `authz.Guard.accountFor` returns it unwrapped instead of `ErrDenied`.
 - The kind-gate worktree (19 uncommitted `deploy/` files: helm test hooks,
   `local-cluster-test.sh`, `--atomic`) overlaps `values.yaml`, `lib.sh` and `helm-deploy.sh` on
   main — a reconcile, not a merge.

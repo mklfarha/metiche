@@ -115,6 +115,45 @@ Useful flags: `--dry-run`, `--only claude,cursor,windsurf`, `--url <endpoint>`,
 `--dry-run` makes **no** network call. Creating a team and joining a team both mutate, so under
 `--dry-run` the installer prints the call it would make and skips it.
 
+### The last step: your board, signed in
+
+Boards of private teams are for their members, after signing in (`docs/BOARD_LOGIN.md`). There is
+no password: the installer's last step, "Your board", asks
+
+```
+    Open your board in a browser now, signed in? [Y/n]
+```
+
+and on yes (the default) calls `open_board` with the first client's own token. The server returns
+a sign-in link, `https://metiche.xyz/signin#mbl_<secret>`. It signs **one** browser in as you,
+works **once**, and expires after **10 minutes**.
+
+- **On this machine's desktop** (macOS `open`, or Linux `xdg-open` with a display, and not over
+  SSH): the link goes into a 0600 file in the run's private temporary directory. The installer
+  opens **that file**, never the link itself, because a link on a command line is visible in `ps`.
+  The file is removed 10 seconds later. The link is also printed once, with its expiry, in case
+  nothing opened.
+- **Over SSH, or with no desktop:** the link and its expiry are printed, to open in a browser on
+  your own machine.
+- **An older server** without `open_board`: one line saying so, and the install still succeeds.
+  Any other failure is a warning. Joining is the product, so the board step never fails an install.
+
+It asks only in a terminal and never when `CI` is set. Without a terminal, or under CI, no link is
+created at all, since a CI log is the worst place for a secret. `--open` skips the question
+(still only in a terminal), `--no-open` never creates a link, and
+`METICHE_OPEN_BOARD=ask|yes|no` says the same (default `ask`).
+
+Later, ask your assistant to "open the metiche board": it calls `open_board` the same way, and
+`sign_out_browsers` lists (or, when asked, signs out) your signed-in browsers. The board's
+`/account` page does the same.
+
+**A stale token in this shell.** An install that starts a new identity rewrites `~/.metiche/env`
+and keeps the old file as a backup, but the shell that ran it still exports the old
+`METICHE_TOKEN`. A re-run in that shell used to treat it as a token you passed on purpose, and
+refused. Now a `METICHE_TOKEN` that matches a backup of `~/.metiche/env` is recognised as stale:
+the current saved token is used, with a warning to open a new terminal (or run `. ~/.metiche/env`).
+The end of every run warns when this terminal still holds a different token than the one saved.
+
 ## Claude Code, by hand
 
 The plugin bundles the skill and the MCP server, so one install gets both.

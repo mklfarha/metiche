@@ -286,6 +286,27 @@ abstractly: `rotating the storage credential in deploy/prod.yaml` — never what
 
 ---
 
+## When the person asks to see the board
+
+Call `open_board` (with `team_slug` if you know it from `.metiche` or `list_teams`) and give the
+person its `login_url`. That link signs **one** browser in as them. It works **once**, for **10
+minutes**.
+
+- If you can run commands, write the link into a private temporary file and open that file with
+  the OS opener. Never put the link itself on a command line.
+- Otherwise show it to the person once.
+- Never paste it anywhere shared: not the repository, a commit, an issue, a PR, a chat channel,
+  or any metiche field. `board_url` is the plain address, and that one is safe to share.
+
+`sign_out_browsers` with no arguments only **lists** the browsers signed in to the account and
+changes nothing. `session_key` signs one out; `all=true` signs out every one. Do either only when
+the person asks.
+
+Never pass a token in chat, yours or theirs. The sign-in link is the only thing you hand over, and
+only to the person.
+
+---
+
 ## Worked example: two agents, one collision
 
 Ana and Beto are on the same repo with their own agents. Both have this skill and both are

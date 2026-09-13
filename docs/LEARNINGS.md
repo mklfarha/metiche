@@ -89,6 +89,15 @@ model's guess. When one looks free-text in a tool schema, that is a bug.
   like a pass. → Build to an explicit binary path; confirm the listener with `lsof`.
 - **Prod state is checked from outside**: served `install.sh` hash vs the commit, tool
   count, CRUD probes, DB counts — not the deploy log.
+- **MySQL's `RowsAffected` counts changed rows, not matched rows (board login).**
+  - **What happened:** the sign-in link's single-use guard is `UPDATE … SET consumed_at = now
+    WHERE … AND consumed_at IS NULL`, and `RowsAffected == 1` or refuse. A reuse replayed in the
+    same second writes an identical `consumed_at`, changes nothing, affects 0 rows and is refused
+    **even with `consumed_at IS NULL` deleted**. So a same-second reuse test cannot fail, and the
+    mutation check would pass against broken code. Timestamps are `DATETIME(0)`.
+  - **Rule:** a test of an atomic check-and-spend replays at least 1 s later, or backdates the
+    spent column first (`browser_mysql_test.go` backdates `consumed_at` by a minute).
+    `docs/BOARD_LOGIN.md` §8 verification 5 says the same for the smoke.
 
 ---
 
@@ -229,3 +238,17 @@ model's guess. When one looks free-text in a tool schema, that is a bug.
 - **When a demo breaks, fix the structure, not the symptom.** The night's header-of-the-hour
   fix added a second identity channel that failed the same way; the durable fix removed the
   need for it.
+- **A mutation check that never mutated anything (board login).**
+  - **What happened:** the orchestrator's mutation check ran after a `cd` that failed. The
+    backup step never happened, the mutation was committed, and the tests "passed" because,
+    without `METICHE_TEST_MYSQL_DSN`, they were skipped. It was caught before push and the commit
+    was amended.
+  - **Why:** each step assumed the one before it had worked. A skipped test prints `ok`.
+  - **Rule:** use absolute paths, not `cd`. Check the backup exists before mutating. Treat a
+    skipped test as **not run**: paste `-v` output that shows the test ran and failed under the
+    mutation.
+- **API spend limits killed parallel agents mid-task, twice (board login).**
+  - **What happened:** agents stopped partway through their files. The work on disk survived, and
+    resuming the same agents finished it.
+  - **Rule:** work in small steps, and leave every file consistent (compiling, tests runnable) at
+    the end of each step, so an agent stopped at any point can be resumed or its files handed on.

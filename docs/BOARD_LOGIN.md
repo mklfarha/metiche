@@ -1,7 +1,9 @@
 # Board login: a sign-in link from the terminal
 
-Status: **design, owner-approved 2026-09-13 (decisions in §9). Nothing here is implemented.** The schema
-in §3 was approved and published in nuzur as `v5-browser-login` on 2026-09-13; codegen is pending.
+Status: **implemented and committed, not yet deployed.** The design was owner-approved on 2026-09-13
+(decisions in §9). Wave 0 and Wave 1 are done (§8). The Wave 2 smoke and the Wave 3 deploy remain.
+Where the code differs from the design below, **§10 "As built" is authoritative**, and the sections
+it corrects point to it.
 
 ## Why
 
@@ -265,7 +267,8 @@ script. Headers:
    ask your assistant to open the metiche board") and stops.
 4. Otherwise sends `fetch("/signin", {method:"POST", credentials:"same-origin",
    headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:"link=" + secret})`.
-5. On `200 {"redirect": "/t/<slug>"}` calls `location.replace(redirect)`. On anything else, shows
+5. (As built, §10.7: a network error with no answer is treated as unavailable and keeps the link
+   for one retry.) On `200 {"redirect": "/t/<slug>"}` calls `location.replace(redirect)`. On anything else, shows
    the one failure message.
 
 `POST /signin` (board):
@@ -347,12 +350,12 @@ pages, and at 60 s for a stream that is already open.
 
 ---
 
-## 3. Data model — approved and published in nuzur 2026-09-13, codegen pending
+## 3. Data model — approved and published in nuzur 2026-09-13, generated in 1fa2216
 
 **Approved.** The owner approved this model as nuzur version `v5-browser-login`, and it was published
-in nuzur on 2026-09-13. Codegen into `code/backend/metiche` is pending (Wave 0 step 3).
+in nuzur on 2026-09-13. Codegen into `code/backend/metiche` is done (1fa2216, Wave 0 step 3).
 
-The process mirrored `docs/IDENTITY.md` Step 1 (every step except codegen is done):
+The process mirrored `docs/IDENTITY.md` Step 1 (every step is done):
 - `searchProjectsByName("metiche")`;
 - find the latest **published** version (do not trust remembered names or uuids; it follows
   `v4-agent-tokens`);
@@ -573,6 +576,22 @@ Backend changes:
     three not-found causes for that viewer, so it tells them nothing about the slug.
 - A test compares full response bodies and status codes pairwise for the same viewer (§8).
 
+**Decision (2026-09-13, as built): the board's 404 page echoes the requested slug** ("No team
+called “x”"), and that is fine.
+- **The privacy property is per slug:** for the same slug and the same viewer state, three cases
+  give **byte-identical** responses:
+  - a private team seen anonymously;
+  - a team the signed-in viewer is not a member of;
+  - a team that does not exist.
+
+  So probing slug X cannot tell the three apart.
+- **Across different slugs the board's bytes differ**, by the echoed slug. So comparing
+  `/t/<slug>` with `/t/no-such-team-7q` cannot be byte-identical, and tests do not attempt it.
+  Instead they either compare the same slug in different team states (before and after the team is
+  deleted, or flipped private), or compare with the slug normalised out.
+- **The backend's 404 bodies do not echo the slug** (`/v1/teams/{slug}` and `/access`:
+  `{"title":"not found","detail":"no such team"}`), so those stay byte-identical across slugs.
+
 ### 4.4 SSE gating
 
 - **Browser → board (`/t/{slug}/stream`):** a same-origin `EventSource` sends the cookie, so no
@@ -633,7 +652,9 @@ A new `board_step`, called from `main` after `note_unverified`, printed as its o
 - `--no-open` never mints.
 - `METICHE_OPEN_BOARD=ask|yes|no` (default `ask`).
 
-**Decision table:**
+**Decision table** (the design; **as built**, the link file is a 0600 file in the run's private
+temporary directory, removed after 10 s, not `~/.metiche/signin.html` with `sleep 120`, and
+`--open` also needs a TTY and `CI` unset: §10.6):
 
 | situation | behaviour |
 |---|---|
@@ -750,7 +771,7 @@ Registered in `server.go` `newServer` next to `list_teams`, through `addTool`, s
 | tool | params | annotations | authorization | result |
 |---|---|---|---|---|
 | `open_board` | `team_slug?`, `requested_via?` (`agent` default) | additive | agent token (§2.3), `RequireTeam` when a slug is given | §2.3 |
-| `sign_out_browsers` | `session_key?` (empty = all) | DestructiveHint **true**, IdempotentHint true | `requireAccount`; only the caller's account's sessions; another account's key → `not_found:` | `{"ok":true,"revoked":N,"note":"…"}` |
+| `sign_out_browsers` | `session_key?`, `all?`. **As built: empty = list only**, `all=true` = revoke all (§10.2) | DestructiveHint **true**, IdempotentHint true | `requireAccount`; only the caller's account's sessions; another account's key → `not_found:` | `{"ok":true,"revoked":N,"sessions":[…],"note":"…"}` |
 
 `open_board` description (for models):
 
@@ -892,15 +913,26 @@ The execution rules of `docs/IDENTITY.md` apply:
 - commits are authored by the owner with no trailers;
 - no credential in any file, no hand edit of a `DO NOT EDIT` file, and the forbidden names rule.
 
-### Wave 0 — schema (owner-approved and published 2026-09-13; codegen pending)
+### Wave 0 — schema: **done**
 
 1. Done: the coordinator modelled §3 as the nuzur draft `v5-browser-login` and sent it for review.
 2. Done: the owner approved it, and it was published in nuzur on 2026-09-13.
-3. One agent runs codegen and reports the generated diff: expected `entity/board_login_link`,
-   `entity/browser_session`, three enums, `core/module/...`, and `create.sql`. It also writes
-   `deploy/sql/2026-09-browser-login.sql` from the generated DDL.
+3. Done in **1fa2216**: codegen, with `entity/board_login_link`, `entity/browser_session`, three
+   enums, `core/module/...` and `create.sql`. `deploy/sql/2026-09-browser-login.sql` landed with
+   the charts in **4cb2850**.
 
-### Wave 1 — parallel, after codegen
+### Wave 1 — parallel, after codegen: **done**
+
+| agent | commit |
+|---|---|
+| A · browser core, B · authz + read API + stream, C · MCP tools | 0655144 |
+| D · sweeper | ed6adc9 |
+| E · board server | 949d4b5 (it was still in progress when Wave 2 started; it has since landed) |
+| F · board views | 48a0f5b |
+| G · installer | 95cad88 |
+| H · deploy (charts, `/signin` ingress limit, `METICHE_BOARD_BASE_URL`, migration file, XFF preflight) | 4cb2850 |
+
+What was built, including where it differs from this plan, is in §10. The original assignments:
 
 | agent | owns (exclusively) | proof |
 |---|---|---|
@@ -916,7 +948,15 @@ The execution rules of `docs/IDENTITY.md` apply:
 E and F code against A/B's endpoint shapes (§2, §4). C codes against A's package API. All are
 re-verified once A and B land.
 
-### Wave 2 — after Wave 1
+### Wave 2 — after Wave 1: **in progress**
+
+Status (2026-09-13):
+- J · docs is this update.
+- I · smoke has not run: `deploy/scripts/smoke-board-login.sh` does not exist yet.
+- K · CLI waits for `code/cli`.
+- Wave 3 (deploy) has not started.
+
+Board server E (949d4b5) was still being written when Wave 2 began, and has since landed.
 
 - **I · smoke** `deploy/scripts/smoke-board-login.sh` (POSIX sh, `lib.sh` helpers), the proof below.
   It runs on top of `smoke-install.sh` from `docs/IDENTITY.md` Step 7 if that exists; otherwise it
@@ -976,12 +1016,26 @@ locally built board (`-backend http://127.0.0.1:8080 -dev-insecure-cookie`, stdo
      the board.
 4. **Private board visible to the member, 404 to others.**
    - A second identity (another scratch HOME, its own team) redeems its own link.
-   - `GET /t/<slug>` and `/t/<slug>/stream` with its cookie → 404, **byte-identical** to
-     `/t/no-such-team-7q` with the same cookie.
-   - Anonymous → 404, byte-identical to anonymous `/t/no-such-team-7q`.
+   - **Compare the same slug across team states, not two different slugs.** The board's 404 page
+     echoes the slug (§4.3 decision), so `/t/<slug>` against `/t/no-such-team-7q` can never be
+     byte-identical. For the same viewer state:
+     - Capture `GET /t/<slug>` and `/t/<slug>/stream` for the non-member's cookie and for no
+       cookie while the team is private: both 404.
+     - Delete the team (or rename its slug away) in the scratch database, and capture the same two
+       requests again. Each response is **byte-identical** to its earlier capture: private and
+       nonexistent look the same.
+     - Alternatively, compare against `/t/no-such-team-7q` with the slug replaced by a placeholder
+       in both bodies before comparing, and assert the status and headers are equal.
    - Directly against the backend: `/v1/teams/<slug>` and `/access` with no header, with the
-     non-member's session, and with a garbage session → the same 404 bytes.
+     non-member's session, and with a garbage session → the same 404 bytes. These bodies do not
+     echo the slug, so they are also byte-identical to `/v1/teams/no-such-team-7q`.
 5. **Reuse refused:** POST the same link again → the one failure body, no `Set-Cookie`.
+   - **Replay at least 1 s after the first exchange**, or backdate `consumed_at` first
+     (`UPDATE board_login_link SET consumed_at = NOW() - INTERVAL 1 MINUTE`).
+   - MySQL's `RowsAffected` counts **changed** rows, and the timestamps are `DATETIME(0)`. A replay
+     in the same second writes an identical `consumed_at`, affects 0 rows and is refused even with
+     `consumed_at IS NULL` removed, so the test would not exercise the guard, and the mutation
+     check below would pass against broken code (`docs/LEARNINGS.md` §3).
 6. **Expiry refused:** mint, then `UPDATE board_login_link SET expires_at = NOW() - INTERVAL 1 SECOND`
    in the scratch database → refused.
 7. **Retired agent.**
@@ -1052,3 +1106,261 @@ Every recommendation was approved as written. The owner also confirmed there is 
 13. **Viewer-scoped hubs (B) vs a shared hub with a privileged board credential (A):** B (§4.2). The extra upstream streams are small at this team size, and the backend stays the only authority.
 14. **Entity names:** `board_login_link` and `browser_session`. `session` already means a piece of agent work, and `browser_session` stays correct once GitHub creates the same rows.
 15. **"Your teams" for a signed-in viewer:** on `/teams`, not only `/account`. It is where `open_board` sends a person on several teams, and it stays `private, no-store` and invisible to anonymous visitors.
+
+---
+
+## 10. As built (2026-09-13)
+
+Read from the committed code:
+- 1fa2216: codegen
+- 4cb2850: charts and migration
+- ed6adc9: sweeper
+- 95cad88: installer
+- 48a0f5b: board views
+- 0655144: backend
+- 949d4b5: board server
+
+Where this section and §2–§6 disagree, this section is right.
+
+### 10.1 `open_board` (`app/mcp/openboard.go`)
+
+- **Input:** `{team_slug?, requested_via?}`. `requested_via` is `agent` (the default), `cli` or
+  `installer`; anything else is `invalid_request`.
+- **Token:** it needs an agent token. The agent is re-read, and must be ACTIVE and belong to the
+  account. A legacy account token is refused with
+  `not_permitted: open_board needs this client's own token; re-run the metiche installer`.
+- **Destination:**
+  - a given slug goes through `RequireTeam` and lands on `/t/<slug>`;
+  - with no slug, exactly one live membership of an ACTIVE team lands on `/t/<slug>`;
+  - zero or several land on `/teams`.
+- **Link:** `<METICHE_BOARD_BASE_URL>/signin#mbl_<secret>`, valid for 10 minutes
+  (`browser.LinkTTL`). An invalid base URL on the server is `unavailable:`.
+- **Limits:**
+  - `METICHE_OPEN_BOARD_PER_HOUR`, default 30 per account.
+  - At most 5 outstanding links (`browser.MaxOutstandingLinks`); a 6th is `rate_limited:`. The
+    count is exact because `MintLink` locks the account row (`SELECT … FOR UPDATE`) inside its
+    transaction.
+- **Result:** not an `Envelope`. It is
+  `{ok, team?, board_url, login_url, login_expires_at, single_use, note}`, and `team` is absent
+  when the link lands on `/teams`.
+- **Server instructions:** they carry "If the person asks to see the board, call open_board."
+
+### 10.2 `sign_out_browsers` (deviation from §5.4)
+
+- **Input:** `{session_key?, all?}`.
+  - **An empty call only LISTS.**
+  - `all=true` revokes every live session of the account.
+  - `session_key` revokes one.
+  - Both at once is `invalid_request`.
+- **Why it differs from §5.4, which had "empty = revoke all":** an agent that only wants to look
+  must not sign the person out everywhere.
+- **Result:** `{ok, revoked, sessions, note}`. `sessions` is what is still signed in after the
+  call: `key`, `auth_method`, `created_at`, `last_seen_at`, `expires_at`, `user_agent` and
+  `from_this_agent`.
+- **Keys:** an unknown key, or another account's key, is `not_found:`. An own key that already
+  ended gives `revoked: 0` and a note.
+- **Limit:** `METICHE_SIGN_OUT_BROWSERS_PER_HOUR`, default 60 per account.
+- **Annotations and reason:** destructive and idempotent; `end_reason` is `REVOKED_BY_AGENT`.
+
+### 10.3 Backend `/v1/browser/*` (`app/browser/rest.go`, `link.go`, `session.go`)
+
+Every response carries `Cache-Control: no-store`. Errors are problem+json.
+
+| request | credential | success | refusal / failure |
+|---|---|---|---|
+| `POST /v1/browser/sessions`, JSON `{link_secret, user_agent, ip_hint}`, body ≤ 8 KiB | none | `201 {session_secret, session_key, expires_at, redirect_path, account_key, display_name}` | `404 {"title":"not found","detail":"no such sign-in link"}` for everything: unknown, used, expired, retired agent, inactive account, malformed body. `503` on a DB failure. `503` with `Retry-After` from the process-wide backstop (`METICHE_BROWSER_EXCHANGE_PER_HOUR`, 600). |
+| `GET /v1/browser/session` | session | `200 {session_key, account_key, display_name, expires_at}` | `401` / `503` (below) |
+| `DELETE /v1/browser/session` | session | `200 {"revoked":1}`, `signed_out` | `401` / `503` |
+| `GET /v1/browser/sessions` | session | `200 {"sessions":[…]}`, newest first, ≤ 100 | `401` / `503` |
+| `DELETE /v1/browser/sessions` | session | `200 {"revoked":N}`, `signed_out_everywhere`, this session included | `401` / `503` |
+| `DELETE /v1/browser/sessions/{key}` | session | `200 {"revoked":0\|1}`, `revoked` | `404 {"title":"not found","detail":"no such browser session key"}` for another account's key |
+| `GET /v1/browser/teams` | session | `200 {"teams":[{slug, name, visibility, role}]}` | `401` / `503` |
+
+- **Session credential:** the `X-Metiche-Browser-Session` header only. A request that also
+  carries `Authorization` or `X-Metiche-Token` is refused.
+- **Refusals and failures:** every session refusal is one
+  `401 {"title":"unauthorized","detail":"no such browser session"}`. Every DB failure is
+  `503 {"title":"unavailable","detail":"browser sign-in is unavailable"}`.
+- **The session list includes ended rows.** Revoked and expired sessions still in the table are
+  listed, each with `state` (`live` | `ended` | `expired`), `current`, `revoked_at` and
+  `end_reason`. `live` reflects revocation and expiry only: a session whose origin agent was
+  retired is listed `live` but no longer validates.
+- **A refused exchange does not consume the link.** The exchange is one transaction, and the
+  conditional UPDATE runs first. A refusal found after it (retired agent, inactive account) rolls
+  the transaction back, so the link is not consumed.
+- **The backend enforces the IP prefix itself.** `ip_hint` is reduced to IPv4 /24 or IPv6 /48
+  whatever the board sent, and an unparseable value is stored as NULL. `user_agent` is cut to 200
+  printable characters.
+- **Timestamps** are truncated to the second (`DATETIME(0)`). This matters for reuse tests: see
+  §8 verification 5.
+
+### 10.4 Authorization (`app/authz/authz.go`, `app/webapi/access.go`, `app/stream/sse.go`)
+
+- **Credential source:** headers only. `Authorization: Bearer` or `X-Metiche-Token` is the
+  bearer, and `X-Metiche-Browser-Session` is the session. Never the query string, never a cookie.
+- **Order:** the public short-circuit comes first, and ignores both credentials.
+- **Refusals, all the same 404 bytes as an unknown team:**
+  - a bearer and a session together;
+  - a session that does not resolve;
+  - a non-member.
+
+  Membership is read on every request and never cached.
+- **Outages:**
+  - A failure to read the session (`browser.ErrUnavailable`) is **503**, as is a failure to read
+    the team row. The latter happens for an unknown slug too, so it is not an oracle.
+  - **The bearer branch still maps a DB error to 404.** `mcp.AccountByToken` folds it into
+    "unauthenticated". This is on the `docs/IDENTITY.md` backlog.
+- **`GET /v1/teams/{slug}/access`:**
+  - It returns `{visibility, role}` with `Cache-Control: no-store`. `role` is `null` without a
+    membership.
+  - On a **public** team the role lookup is best-effort. If the credential lookup is down, it
+    answers `role: null` (and logs it), never 503, so a public board stays up.
+- **Backend 404 bodies:** those for `/v1/teams/{slug}` and `/access` are
+  `{"title":"not found","detail":"no such team"}`. They do not echo the slug, so they are
+  byte-identical across slugs.
+- **Backend streams:** they re-authorize every 60 s (`reauthInterval`, `SetReauthInterval` for
+  tests). A stream ends:
+  - on a refusal;
+  - on an outage, failing closed;
+  - when the slug now names a different team (deleted and re-created).
+
+  The client's reconnect then meets the gate: 404 or 503.
+
+### 10.5 Sweeper (`app/sweeper/logins.go`)
+
+- **Switch:** `Options.LoginSweepEnabled` is a `*bool`, so an omitted key (nil) means **on**. With
+  a plain `bool`, an omitted YAML key would read as off.
+- **Placement:** step 5 of `RunOnce`, not gated on `RetentionEnabled`.
+- **What it deletes:** links 24 h past expiry; sessions 7 d past expiry or revocation, or 14 d past
+  `last_seen_at`.
+- **Report:** `logins.{enabled, links_deleted, sessions_deleted, batches}`.
+
+### 10.6 Installer (`install.sh`, 95cad88), replacing §5.1 where they differ
+
+- **Order of checks:**
+  1. `--no-open` / `no` → no link.
+  2. `CI` set → no link.
+  3. No TTY → no link.
+  4. Only then, with `ask`, the prompt `Open your board in a browser now, signed in? [Y/n]`, read
+     from `/dev/tty`.
+
+  So `--open` also needs a TTY and `CI` unset.
+- **Options:** `--open` / `--no-open` / `METICHE_OPEN_BOARD=ask|yes|no`. Any other value stops the
+  installer.
+- **Token:** the first client's own token, or the anchor if there is none.
+- **Local desktop, not SSH:**
+  - The link must match the shape `open_board` makes.
+  - `printf` writes it into `metiche-signin.html`, mode **0600**, inside the run's private
+    temporary directory, which the exit trap also removes.
+  - The opener is given the file path, and the link is printed once with its expiry.
+  - After **10 s** the file is removed.
+
+  This **replaces** the §5.1 table's `~/.metiche/signin.html` and `(sleep 120; rm …) &`. With no
+  file that outlives the run, the "stale file" step is gone too.
+- **Over SSH, or with no desktop:** the link is printed with its expiry.
+- **Failures:**
+  - A server without `open_board` gets **one** info line.
+  - Any other failure is a warning, plus the "Later" line.
+  - The installer always exits 0.
+- **The "Later" line:** "ask your assistant to "open the metiche board", or re-run this installer
+  in a terminal". It does not mention `metiche open`, because `code/cli` does not exist yet.
+- **§5.2, as built:**
+  - A `METICHE_TOKEN` that matches a backup (`~/.metiche/env.metiche-backup-*` or
+    `~/.metiche.metiche-backup-*/env`) is stale.
+  - If a token is saved, the current saved token is used, with a warning to open a new terminal.
+  - If none is saved, the stale value is an anchor candidate.
+  - The end of the run warns when this terminal still has a different token.
+
+### 10.7 Board views (48a0f5b)
+
+- **`signin.js`:**
+  - It reads the fragment and calls `replaceState` before any request.
+  - It keeps the link in `sessionStorage`, then POSTs a form body `link=<secret>` to `/signin`.
+  - It expects `{"redirect": …}` (followed only when it is a same-origin path) or
+    `{"error":"unavailable"}` (shows "unavailable" and keeps the link for a reload).
+  - Any other answer shows the one failure message and discards the link.
+  - **A network error (no answer at all) is treated as unavailable**, and the link is kept for one
+    retry on reload. §2.5 step 5 said "anything else → failure".
+- **Topbar:** an anonymous viewer sees **"Sign in"** on every board, demo boards included. A
+  signed-in viewer sees "signed in as <name>" (linking to `/account`) and a Sign out POST form.
+- **`/account`:** **the current session has no Revoke button**; Sign out covers it. There is also
+  "Sign out everywhere".
+- **`/teams`:** "Your teams" appears only when signed in. The anonymous text is byte-identical to
+  what it was before.
+
+### 10.8 Board server (949d4b5)
+
+- **No board credential:**
+  - The process **refuses to start when `METICHE_BOARD_TOKEN` is set, even to an empty value**.
+  - `-backend-token-env` is gone.
+  - Discovery probes are always anonymous.
+- **New flags:**
+  - `-base-url`: default `https://metiche.xyz`; with `-dev-insecure-cookie`,
+    `http://localhost:<port>`. Every POST's `Origin` is checked against it.
+  - `-dev-insecure-cookie`: refused unless the base URL is `http://localhost` / `http://127.0.0.1`.
+    The cookie is then named `metiche_session`, without `Secure`.
+  - `-trust-proxy-hops`: default 0. N takes the Nth `X-Forwarded-For` entry from the right.
+  - `-viewer-reauth`: default 60 s, floor 1 s.
+  - `-max-viewer-boards`: default 200.
+- **Feeds:** `feed.Live` stops for good on a 404, and on a 401 when it carries a browser session.
+- **Viewers:**
+  - A positive session check is cached for **15 s**, keyed by the sha256 of the secret.
+  - `/access` is never cached.
+  - **Only an explicit backend 401 clears the cookie.** An outage is a 503 page, and the cookie is
+    kept.
+- **Private boards:**
+  - They are keyed by (session key, slug) and never registered in `Server.teams`.
+  - A private board is closed:
+    - after 2 minutes idle;
+    - on an upstream 401 or 404;
+    - on sign-out, revoke or sign-out-everywhere;
+    - at the cap, choosing the least recently used idle board. With nothing idle the request gets
+      a **503**.
+- **`resolveTeam`, in order:**
+  1. a registered shared (demo or public) team;
+  2. the negative cache, for anonymous requests only;
+  3. a signed-in viewer gets `/access`:
+     - 404 → NotFound;
+     - 401 → session ended, NotFound;
+     - outage → 503;
+     - private → that viewer's board;
+     - public → shared discovery, skipping the negative cache;
+  4. a viewer whose session could not be checked → 503;
+  5. otherwise, anonymous discovery.
+- **F2 fix:** a discovered shared team is unregistered when its feed reads a 404 or a re-probe
+  answers 404.
+- **F1:** on a live board, `resolve`, `nudge` and `cadence` answer the NotFound page (404). Demo
+  boards keep them.
+- **`POST /signin` responses:**
+
+  | condition | answer |
+  |---|---|
+  | missing or foreign `Origin`, or `Sec-Fetch-Site` not `same-origin` | `403 {"error":"forbidden"}` |
+  | more than 30 per client address in 10 min | `429 {"error":"rate_limited"}` |
+  | malformed link, or the backend's 404 | `200 {"error":"link"}` |
+  | backend outage | `503 {"error":"unavailable"}` |
+  | success | `Set-Cookie`, then `200 {"redirect": …}` |
+
+  **An old session cookie is revoked only after a successful exchange** (best-effort, 2 s).
+- **Methods:** a method a path does not accept gets **404, not 405**.
+- **Private streams:**
+  - They carry `Cache-Control: private, no-store, …`.
+  - They re-check the session and `/access` every `-viewer-reauth`.
+  - A stream ends on a session 401 or a 404, and **also if the team turns public**. All three
+    close the board. An outage ends only the stream.
+- **Sign-out forms:** `POST /signout`, `/account/signout-all` and
+  `/account/sessions/{key}/revoke` need the CSRF token (`X-CSRF-Token` or the `csrf` field) and
+  pass the Origin / `Sec-Fetch-Site` check; otherwise 403. With no cookie they redirect to `/`. A
+  backend outage is 503 and keeps the cookie.
+- **Anonymous `/account`:** redirects to `/signin`.
+
+### 10.9 Gaps noticed while writing this (not fixed; code owners to decide)
+
+- **`/account` shows ended sessions as if live.**
+  - `feed.SessionListing` drops the backend's `state`, `revoked_at` and `end_reason`.
+  - `accountSessions` does not filter.
+  - So revoked and expired rows still in the table (up to their 7-day tail) render like live ones,
+    each with a Revoke button, which answers `revoked: 0`.
+- **`signin.js` handles the board's 403 and 429 as the "already used or expired" message**, and
+  discards the link, although the link was never sent to the backend. A rate-limited person with
+  a good link is told it is dead.

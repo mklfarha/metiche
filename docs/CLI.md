@@ -384,20 +384,13 @@ remediation.
 ### 1.5 `metiche open`
 
 ```
-metiche open [<slug>] [--print]
+metiche open [<slug>] [--print] [--signin]
+metiche signout [--all | <session-key>]
 ```
 
-> **This command changes when board login lands** (`docs/BOARD_LOGIN.md` §5.3, a design the owner
-> approved on 2026-09-13). What changes:
-> - a private team: `open` calls `open_board`, writes the single-use sign-in link into a 0600
->   redirect file in a private temp directory, opens that file, and removes it;
-> - `--print` prints the link and its expiry;
-> - a public team: `--signin` also signs the browser in;
-> - a new `metiche signout` command;
-> - §7 gains that temp file as a second write exception, and `open_board` and `sign_out_browsers`
->   join the tool allowlist.
->
-> Team resolution below does not change. Until board login ships, the behaviour below stands.
+> **Board login is built** (`docs/BOARD_LOGIN.md`, committed 2026-09-13, not yet deployed; its §10
+> records what was built). `code/cli` does not exist yet, so this section is the spec agent K
+> implements. It replaces the earlier "`open` declines private teams".
 
 The team is resolved in this order, never guessed (the same order `invite`, `teams show|rename|leave`
 and `status --team` use):
@@ -411,26 +404,45 @@ with `metiche init`". When the slug came from a `.metiche` and the server answer
 exit-5 message names the file and the two ways out: join that team, or rebind with
 `metiche init --force`.
 
-**Decision: `open` opens only boards a browser can show.** Once the slug is resolved, it always calls
-`get_team_state` for that team (`scope=projects`, `limit=1`). That confirms you are a member, and the
-response's `team.visibility` (§4.2) decides:
+**Decision: `open` signs the browser in to a private team's board** (board login). Once the slug is
+resolved, it calls `get_team_state` for that team (`scope=projects`, `limit=1`). That confirms you
+are a member, and the response's `team.visibility` (§4.2) decides:
 
 - **Public team:** opens `<board>/t/<slug>` with `open` (darwin) or `xdg-open` (linux). `--print`
-  only prints the URL. Exit 0.
-- **Private team:** opens nothing and prints the URL nowhere, because that page is a 404 in a
-  browser today. Exit 1 (nothing to open). `--json` gives `"visibility":"private","board_url":null`.
+  only prints the URL. `--signin` also signs the browser in, exactly as for a private team. Exit 0.
+- **Private team:**
+  - It calls `open_board` with `{"team_slug":<slug>,"requested_via":"cli"}`, using an agent token
+    (§3).
+  - It writes the returned `login_url` into a **0600** redirect file inside `os.MkdirTemp` (0700)
+    and opens **that file**, never the link on argv.
+  - About 10 seconds later it removes the directory, as the installer does, and exits 0.
+  - It prints the plain `board_url`, and says the link works once, for 10 minutes, and must not
+    be shared.
+  - `--print` prints `login_url` and its expiry and opens nothing. So does a run over SSH
+    (`SSH_CONNECTION`/`SSH_TTY`) or with no opener.
+  - `--json` gives `visibility`, `board_url`, `login_url` and `login_expires_at`. The help says
+    that output holds a live sign-in link.
 
   ```
   $ metiche open
-  taqueria-tracker is a private team (from /Users/me/work/taqueria/.metiche).
-  Its board is not viewable in a browser yet: the board has no login, so it only shows public teams.
-  See it from here instead:  metiche status --team taqueria-tracker
+  taqueria-tracker is private (from /Users/me/work/taqueria/.metiche): opening its board signed in.
+  opened https://metiche.xyz/t/taqueria-tracker in your browser.
+  If nothing opened: metiche open --print (a new link, which works once, for 10 minutes).
   ```
+- **`open_board` refusals:**
+  - `not_permitted` (only a legacy account token is available) is exit 3, "re-run the installer".
+  - `rate_limited` (30 an hour, or 5 unused links outstanding) is exit 5.
+  - An older server without the tool is exit 1, pointing to `metiche status --team <slug>`.
 - **Not a member, or no such team:** exit 5 with the server's error. No URL is guessed.
 
-The CLI never makes a private board viewable itself: it holds no board token and adds no link that
-carries one. Showing a private board needs a viewer gate in the board service, which does not exist
-yet.
+The CLI holds no board token. The only thing it hands a browser is the single-use link `open_board`
+returns, and only through the file.
+
+**`metiche signout`** calls `sign_out_browsers`:
+- with no argument it **only lists** the browsers signed in to the account (key, created, last
+  seen, user agent) and changes nothing;
+- `<session-key>` signs that one out;
+- `--all` signs out every one, and asks for confirmation (`--yes` without a TTY).
 
 ```
 $ metiche open hack-night
@@ -1066,6 +1078,10 @@ token.
   client's agent token too (§1.4.1).
 - `doctor` reports `machine.anchor.token` as an error and continues with every client token
   independently.
+- `open` for a private team (or with `--signin`) also needs an **agent** token, because
+  `open_board` refuses a legacy account token with `not_permitted`. A legacy account anchor falls
+  back to a client's agent token under the same one-account rule. `signout` works with any token
+  of the account.
 - Recovery is the installer's job. Re-running it with a rejected saved anchor starts a new identity
   (`dead_token_note`) and needs a join code or a team name. The doctor's remediation is always
   "re-run the installer", never a command that handles a token.
@@ -1825,8 +1841,13 @@ lands, or when the CLI gains behaviour that drifts with the server.
   never the list forms, which contact every configured server). No telemetry.
 - **HTTPS** is required, except `localhost` / `127.0.0.1` with a warning.
 - **The binary must never:**
-  - write any file other than a `.metiche` from `metiche init`. Board login will add one more
-    exception, its sign-in redirect file (`docs/BOARD_LOGIN.md` §5.3);
+  - write any file other than two exceptions:
+    - a `.metiche` from `metiche init`;
+    - the **sign-in redirect file** from `metiche open`, used for a private team or `--signin`
+      (§1.5, `docs/BOARD_LOGIN.md` §5.3). It is mode 0600, inside a fresh `os.MkdirTemp` directory
+      (0700), and holds only a redirect to `open_board`'s `login_url`. The CLI opens the file, not
+      the link, and removes the directory about 10 seconds later, before exit; a test asserts it
+      is gone. The link is never on argv, never logged, and never written anywhere else;
   - run sudo, or any `git` subcommand outside the §5 allowlist;
   - modify a client config, or run `claude mcp add|remove`, `codex mcp add|remove`,
     `cursor-agent mcp enable|login` or `claude plugin …`;
@@ -1840,7 +1861,8 @@ lands, or when the CLI gains behaviour that drifts with the server.
   - execute a downloaded script.
 
   The MCP tool allowlist (`health`, `whoami`, `list_teams`, `get_team_state`, `list_invites`,
-  `create_invite`, `revoke_invite`, `create_team`, `rename_team`, `leave_team`) is a compile-time
+  `create_invite`, `revoke_invite`, `create_team`, `rename_team`, `leave_team`, `open_board`,
+  `sign_out_browsers`) is a compile-time
   list with a test.
 
 ---
@@ -2166,8 +2188,9 @@ C, D and E are written against B's interfaces; D and E wait for A's deploy for t
 - Windows builds and paths.
 - Cosign keyless signing of the checksums, and an SBOM.
 - `retire_agent` and `metiche agents` (§10 Q4: later, not phase 2).
-- `metiche open` for private teams, once the board service has a viewer gate (browser login,
-  `docs/BOARD_LOGIN.md`). Until then `open` declines private teams (§1.5).
+- ~~`metiche open` for private teams, once the board service has a viewer gate~~. The viewer gate
+  is built (`docs/BOARD_LOGIN.md` §10, not yet deployed), and `open`/`signout` are specified in
+  §1.5. They ship with `code/cli` (board login's agent K), after the board-login deploy.
 - After board login's deploy: `set_team_visibility`, `remove_member`, `set_member_role` (ownership
   transfer, which unblocks `teams leave` for a sole owner) and `archive_team`, as owner-only MCP
   tools with `metiche teams` subcommands (§1.4.5). The board stays read-only.
@@ -2181,7 +2204,7 @@ C, D and E are written against B's interfaces; D and E wait for A's deploy for t
 
 1. **Invites by plain members:** members may create invites, capped (`max_uses` ≤ 25, `expires_in_hours` ≤ 168, defaults 10 and 72) and revoking only their own; owners are unrestricted (§4.4). Adding a teammate need not wait on the owner, and the caps bound what a member's invite can admit.
 2. **Tags:** bare `v*` tags are reserved for CLI releases. The repo has no tags, images are tagged by short commit, and GoReleaser OSS has no monorepo tag prefix (§6.1).
-3. **The board viewer gate:** a separate board-service plan, `docs/BOARD_LOGIN.md` (sign-in links minted by `open_board`, no board token; owner-approved 2026-09-13, not implemented), not a phase here; until it ships `metiche status` is the private-team view and `open` declines private teams, and its §5.3 lists what then changes here. The gate must exist before any private board is served, and that design serves them without ever configuring a board token.
+3. **The board viewer gate:** a separate board-service plan, `docs/BOARD_LOGIN.md` (sign-in links minted by `open_board`, no board token; owner-approved 2026-09-13), not a phase here. **Status: built and committed 2026-09-13, not yet deployed** (its §10). `open` now signs a browser in to a private team through `open_board` and `signout` wraps `sign_out_browsers` (§1.5); until the deploy, `metiche status` remains the private-team view. The gate exists before any private board is served, and the board refuses to start with a board token configured.
 4. **Stale server-side agents:** `retire_agent` and `metiche agents list|retire` are left for later, not phase 2 (§4.7, "Later"). Doctor already detects stale and collapsed identities from per-token `whoami`, and retiring is a destructive server write that needs its own design.
 5. **`project` in `.metiche` versus the repository URL:** the repository wins (§1.10.4): the server matches by normalized `repo_url`, a disagreeing `project_key` is reported, never used, and the key decides only without a remote. This agrees with commit `1b44075` on precedence and refusal; the report in the note is not implemented yet, the sent key still reaches the event summary, and the key also names the project when no project has the repository yet (§1.10.4, "Gap"). One stale or copied file must not recreate the split for every clone.
 6. **`project` in a parent-directory `.metiche`:** ignored with a doctor warning, `init --parent` refuses to write one, and `PLAN.md`'s example drops its `project` line and says "defaults to the name the server derives from the repository's remote" (owned in `PLAN.md`). A parent file covers several repositories; a project is one.

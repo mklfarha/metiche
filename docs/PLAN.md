@@ -345,6 +345,14 @@ plus `conflicts[]` and `review` where applicable. **Never the board, never every
 Annotations matter: MCP's `destructiveHint` **defaults to true when omitted**, so every tool declares
 `readOnly` / `idempotent` / `additive` explicitly or clients gate the whole surface.
 
+**Board sign-in tools** (`docs/BOARD_LOGIN.md` §2.3, §5.4). These are account-scoped and outside
+the loop above. Their results are not the `Envelope`: there is no team sequence to report.
+
+| tool | when | note |
+|---|---|---|
+| `open_board` — `team_slug?`, `requested_via?` (`agent` default, `cli`, `installer`) | the person asks to see the board | additive. Needs an **agent** token; a legacy account token is `not_permitted`. Returns `login_url` (`<board>/signin#mbl_…`, single use, 10 min) and `board_url`. The link lands on `/t/<slug>` for a given slug or the only team, and `/teams` for none or several. 30/hour and ≤5 outstanding links per account. |
+| `sign_out_browsers` — `session_key?`, `all?` | the person asks to see or end their browser sessions | destructive, idempotent. **No arguments only lists**; `session_key` revokes one, `all=true` revokes every one. 60/hour per account. |
+
 ---
 
 ## Frontend — Go, templ + htmx + SSE
@@ -366,6 +374,18 @@ Pages: `/` landing + join · `/t/{slug}` the live board (a lane per member → t
 status line, held paths, live conflict badges) · `/t/{slug}/conflicts` · `/t/{slug}/contracts` (the
 produces/consumes matrix — this is the view that shows the bottleneck) · `/t/{slug}/decisions` ·
 `/t/{slug}/runs/{session_key}` history. Humans raise nudges and resolve conflicts from the board.
+
+Sign-in pages (`docs/BOARD_LOGIN.md`, built, not yet deployed):
+- `/signin`: redeems a link from `open_board` (`/signin#mbl_…`), and explains how to get one when
+  there is none.
+- `/account`: the viewer's signed-in browsers, with sign out and sign out everywhere.
+- `/teams`: gains "Your teams" for a signed-in viewer.
+- `POST /signout`: signs this browser out.
+
+A private team's board is served only to a signed-in live member, read with that viewer's own
+session. For everyone else it is the same 404 as a team that does not exist. Until backend-backed
+controls exist, a live board's nudge, resolve and cadence controls answer 404; they still work on
+demo boards (§4.6 there).
 
 ---
 
