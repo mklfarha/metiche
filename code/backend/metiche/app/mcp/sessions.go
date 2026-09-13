@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,7 +34,7 @@ const DefaultClaimTTLSeconds = 900
 type StartSessionParams struct {
 	ProjectKey     string `json:"project_key" jsonschema:"A short stable key for the repository you are working in - the repo name is the obvious choice. Claims are scoped to it, so a team working across several repos does not collide with itself. Created on first use."`
 	TeamSlug       string `json:"team_slug,omitempty" jsonschema:"Which team this work is for, by slug. Omit it if you are only on one team; required if you are on several, because guessing would put your work on the wrong board."`
-	ClientKey      string `json:"client_key,omitempty" jsonschema:"Usually unnecessary: if your MCP config sends an X-Metiche-Client-Key header, which the metiche installer sets up, this is already known and you should omit it. Pass it only if you are deliberately driving several of your own agents over one connection. Do NOT guess a value -- an agent that does not know its own client_key should omit the field and let the connection answer."`
+	ClientKey      string `json:"client_key,omitempty" jsonschema:"Your token identifies this agent. You never need client_key; omit it. Several terminals of one client are several sessions of one agent — start_session tells you about your other live sessions."`
 	Branch         string `json:"branch,omitempty" jsonschema:"The git branch you are working on, exactly as git reports it. Self-reported: metiche never runs git."`
 	BaseCommit     string `json:"base_commit,omitempty" jsonschema:"The commit you branched from, full or short sha."`
 	Goal           string `json:"goal,omitempty" jsonschema:"One sentence on what this whole session is for, written for a teammate skimming the board. Max 280 characters."`
@@ -93,6 +94,20 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 		Summary:        fmt.Sprintf("%s started work on %s", ag.Label, projectKey),
 		Payload:        payload_entity.EventPayload{Message: nullString(truncate(args.Goal, 280))},
 		Apply: func(ctx context.Context, tc *TxContext, env *Envelope) error {
+			// Counted HERE, under the team lock, so the cap is exact: two
+			// terminals racing to open the ninth session serialize on the team
+			// row, and the second one sees the first one's insert.
+			open, err := openSessionsOfAgent(ctx, tc.Tx, team.ID, ag.ID, maxLiveSessionsPerAgent)
+			if err != nil {
+				return err
+			}
+			if len(open) >= maxLiveSessionsPerAgent {
+				return fmt.Errorf(
+					"this agent already has %d open sessions, the most one agent may hold: %s — "+
+						"end the ones that are not this terminal with end_session, then call start_session again",
+					len(open), describeOpenSessions(open, tc.Now))
+			}
+
 			proj, found, err := h.projectByKey(ctx, tc.Tx, team.ID, projectKey)
 			if err != nil {
 				return err
@@ -162,8 +177,14 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			// after commit returns. The bytes commit renders are the bytes it
 			// stores for a replay, so anything added afterwards would be
 			// present in the first answer and missing from the retry.
+			// The note about this agent's other sessions is built here too, from
+			// the rows counted under the lock, so a replay repeats the world as
+			// it was when the session started rather than as it is now.
 			env.Key = sessionKey
 			env.Note = "heartbeat every ~60s with this session_key, or your claims lapse"
+			if len(open) > 0 {
+				env.Note = otherSessionsNote(open, sessionKey, tc.Now) + "; " + env.Note
+			}
 			if projectMade {
 				env.Note = fmt.Sprintf("project %q created; ", projectKey) + env.Note
 			}
@@ -176,6 +197,99 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 	_ = sessionID
 	_ = projectID
 	return jsonResult(response)
+}
+
+// maxLiveSessionsPerAgent bounds how many sessions one agent may hold open
+// (live or stale) on one team at once.
+//
+// Every terminal of a client shares one token, so a terminal is a SESSION and
+// an agent may legitimately hold several. What it must not do is pile them up:
+// a terminal that vanished without end_session leaves a lane on the board
+// until the sweeper abandons it, and a client restarted in a loop would fill
+// the board with ghosts. Eight is more terminals than a person drives, and few
+// enough that the refusal can list every one of them.
+const maxLiveSessionsPerAgent = 8
+
+// openSession is one of an agent's sessions that has not ended.
+type openSession struct {
+	Key       string
+	Branch    string
+	Status    enums.SessionStatus
+	StartedAt time.Time
+}
+
+// openSessionsOfAgent lists an agent's live and stale sessions on one team,
+// oldest first, at most limit of them.
+//
+// Scoped to the team because session keys are: S-7 names a session only
+// within its team, so a key from another team would be one end_session could
+// not act on. It runs inside the team lock, so it is bounded twice — by the
+// team's open sessions (idx_session_liveness) and by limit.
+func openSessionsOfAgent(ctx context.Context, tx *sql.Tx, teamUUID, agentUUID uuid.UUID, limit int) ([]openSession, error) {
+	rows, err := tx.QueryContext(ctx,
+		"SELECT `key`, COALESCE(`branch`, ''), `status`, COALESCE(`started_at`, `created_at`) FROM `session` "+
+			"WHERE `team_uuid` = ? AND `status` IN (?, ?) AND `agent_uuid` = ? "+
+			"ORDER BY COALESCE(`started_at`, `created_at`) ASC, CHAR_LENGTH(`key`) ASC, `key` ASC LIMIT ?",
+		teamUUID.String(), enums.SESSION_STATUS_LIVE, enums.SESSION_STATUS_STALE, agentUUID.String(), limit)
+	if err != nil {
+		return nil, retryable(err, "counting this agent's open sessions")
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []openSession
+	for rows.Next() {
+		var s openSession
+		var status int64
+		if err := rows.Scan(&s.Key, &s.Branch, &status, &s.StartedAt); err != nil {
+			return nil, err
+		}
+		s.Status = enums.SessionStatus(status)
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, retryable(err, "counting this agent's open sessions")
+	}
+	return out, nil
+}
+
+// describeOpenSessions renders "S-7 live on feat/a (12m ago), S-8 stale on
+// feat/b (3h ago)".
+func describeOpenSessions(open []openSession, now time.Time) string {
+	parts := make([]string, 0, len(open))
+	for _, s := range open {
+		where := "with no branch"
+		if s.Branch != "" {
+			where = "on " + s.Branch
+		}
+		parts = append(parts, fmt.Sprintf("%s %s %s (%s)", s.Key, s.Status.String(), where, sessionAge(now.Sub(s.StartedAt))))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// otherSessionsNote is what a second terminal is told about the first.
+func otherSessionsNote(open []openSession, thisKey string, now time.Time) string {
+	which := "one of those"
+	if len(open) == 1 {
+		which = open[0].Key
+	}
+	return fmt.Sprintf("you already have %s; this is %s — if %s was this terminal's earlier run, end_session it",
+		describeOpenSessions(open, now), thisKey, which)
+}
+
+// sessionAge is a coarse, model-readable age. Coarse on purpose: the note is
+// stored for replay, and a precise age would be precisely wrong on a retry.
+func sessionAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		// Not "<1m": encoding/json escapes '<', and the note is read by a model.
+		return "under a minute ago"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d/time.Minute))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d/time.Hour))
+	default:
+		return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
+	}
 }
 
 // ─────────────────────────────────────────────

@@ -634,7 +634,14 @@ func TestIntegrationInviteRedemption(t *testing.T) {
 // last writer to commit writes back a value it read before the others landed.
 func TestIntegrationConcurrentWritesAreGapless(t *testing.T) {
 	hs := newHarness(t)
-	ctx := hs.join(t, "Ana", "client-a").ctx
+	// Four agents rather than one: an agent may hold at most
+	// maxLiveSessionsPerAgent open sessions, and this test is about the lock,
+	// not that cap. Four people on one team still serialize on one team row.
+	names := []string{"Ana", "Bob", "Cai", "Dee"}
+	ctxs := make([]context.Context, len(names))
+	for i, name := range names {
+		ctxs[i] = hs.join(t, name, fmt.Sprintf("client-%d", i)).ctx
+	}
 
 	const n = 24
 	var (
@@ -650,7 +657,7 @@ func TestIntegrationConcurrentWritesAreGapless(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start // release them all at the same instant
-			res, _, err := hs.h.StartSession(ctx, nil, StartSessionParams{
+			res, _, err := hs.h.StartSession(ctxs[i%len(ctxs)], nil, StartSessionParams{
 				ProjectKey:     "metiche",
 				Branch:         fmt.Sprintf("feat/%d", i),
 				Goal:           fmt.Sprintf("piece of work %d", i),
@@ -686,8 +693,8 @@ func TestIntegrationConcurrentWritesAreGapless(t *testing.T) {
 		seen[s] = true
 	}
 
-	// The log itself is gapless. join_team wrote member_joined and
-	// agent_joined first, so the log is 1..n+2 with nothing missing.
+	// The log itself is gapless. Each join_team wrote member_joined and
+	// agent_joined first, so the log is 1..n+2*agents with nothing missing.
 	rows, err := hs.core.DB().Query(
 		"SELECT `sequence` FROM `team_event` WHERE `team_uuid` = ? ORDER BY `sequence` ASC", hs.teamID.String())
 	if err != nil {
@@ -702,7 +709,7 @@ func TestIntegrationConcurrentWritesAreGapless(t *testing.T) {
 		}
 		log = append(log, s)
 	}
-	wantLen := n + 2 // member_joined + agent_joined
+	wantLen := n + 2*len(names) // member_joined + agent_joined, per agent
 	if len(log) != wantLen {
 		t.Fatalf("the log has %d events, want %d", len(log), wantLen)
 	}
