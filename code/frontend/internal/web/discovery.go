@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"math/rand/v2"
 	"regexp"
 	"sync"
@@ -19,9 +20,12 @@ import (
 // only if the backend answers 200, registers a live feed and serves the board.
 //
 // The backend answers 404 for a team that does not exist AND for a private
-// team this board may not read (app/authz, deliberately indistinguishable), so
-// in practice discovery finds the teams the board's own credential can read —
-// with no METICHE_BOARD_TOKEN, public teams only.
+// team (app/authz, deliberately indistinguishable). Discovery asks with no
+// credential at all, so it finds public teams only, and everything it
+// remembers is an ANONYMOUS answer. A signed-in viewer never reads that
+// memory: their access is asked per request (resolveTeam), and a private
+// team they may read becomes a board of their own (viewerboards.go), never a
+// registered one.
 //
 // Every request that reaches the backend is one a stranger can cause by typing
 // a URL, so the safeguards are the point rather than a detail:
@@ -143,25 +147,88 @@ type discovery struct {
 	inflight   map[string]*flight
 }
 
-// resolveTeam finds the team for a request, registering it on demand if
-// discovery is on. A registered slug — demo or live — always wins and is not
-// looked up on the backend per request, which is what reserves demo slugs.
-// A DISCOVERED team stays registered only while the backend keeps confirming
-// it: see unregister.
-func (s *Server) resolveTeam(ctx context.Context, slug string) (*Team, resolveResult) {
+// resolveTeam finds the team for a request (§4.2):
+//
+//  1. A registered slug — demo or public live — always wins and is not looked
+//     up on the backend per request, which is what reserves demo slugs. A
+//     DISCOVERED team stays registered only while the backend keeps
+//     confirming it: see unregister.
+//  2. A signed-in viewer: the backend's /access, uncached. Private and allowed
+//     → that viewer's own board; public → ordinary discovery; 404 → not
+//     found, remembered nowhere.
+//  3. A viewer whose session could not be checked: unavailable, not a 404.
+//  4. Anonymous: discovery, with its negative cache.
+func (s *Server) resolveTeam(ctx context.Context, v *Viewer, vs viewerStatus, slug string) (*Team, resolveResult) {
 	if t, ok := s.Lookup(slug); ok {
 		return t, resolveFound
 	}
-	if s.disc == nil || !ValidSlug(slug) {
+	if !ValidSlug(slug) {
 		return nil, resolveNotFound
 	}
-	return s.disc.discover(ctx, s, slug)
+	anonymous := vs == viewerAnonymous
+	// The negative cache holds anonymous answers, for anonymous requests.
+	if s.disc != nil && anonymous {
+		if res, hit := s.disc.recall(slug); hit {
+			return nil, res
+		}
+	}
+	switch vs {
+	case viewerSignedIn:
+		return s.resolveForViewer(ctx, v, slug)
+	case viewerUnavailable:
+		return nil, resolveUnavailable
+	}
+	if s.disc == nil {
+		return nil, resolveNotFound
+	}
+	return s.disc.discover(ctx, s, slug, true)
 }
 
-func (d *discovery) discover(ctx context.Context, s *Server, slug string) (*Team, resolveResult) {
+// resolveForViewer is step 2 of resolveTeam.
+func (s *Server) resolveForViewer(ctx context.Context, v *Viewer, slug string) (*Team, resolveResult) {
+	acc, err := s.login.cfg.Backend.Access(ctx, v.secret, slug)
+	switch {
+	case errors.Is(err, feed.ErrNotFound):
+		return nil, resolveNotFound
+	case errors.Is(err, feed.ErrSessionInvalid):
+		s.login.sessionEnded(v.hash)
+		return nil, resolveNotFound
+	case err != nil:
+		s.log.Warn("asking the backend about a viewer's access failed", "err", err)
+		return nil, resolveUnavailable
+	case acc.Private():
+		return s.login.boards.get(ctx, v, slug)
+	case s.disc == nil:
+		return nil, resolveNotFound
+	default:
+		// Public: the shared board every anonymous visitor gets too. The probe
+		// discovery makes is itself anonymous; this request only skips the
+		// negative cache, and teaches it nothing.
+		return s.disc.discover(ctx, s, slug, false)
+	}
+}
+
+// recall returns a remembered, unexpired negative answer for slug.
+func (d *discovery) recall(slug string) (resolveResult, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	m, ok := d.negative[slug]
+	if !ok {
+		return 0, false
+	}
+	if !d.cfg.Now().Before(m.until) {
+		delete(d.negative, slug)
+		return 0, false
+	}
+	return m.result, true
+}
+
+// discover probes and registers slug. anonymous says whether the request may
+// read and write the negative cache.
+func (d *discovery) discover(ctx context.Context, s *Server, slug string, anonymous bool) (*Team, resolveResult) {
 	d.mu.Lock()
 	now := d.cfg.Now()
-	if m, ok := d.negative[slug]; ok {
+	if m, ok := d.negative[slug]; ok && anonymous {
 		if now.Before(m.until) {
 			d.mu.Unlock()
 			return nil, m.result
@@ -204,10 +271,14 @@ func (d *discovery) discover(ctx context.Context, s *Server, slug string) (*Team
 	case resolveFound:
 	case resolveNotFound:
 		d.discovered--
-		d.remember(slug, resolveNotFound, d.cfg.NotFoundTTL)
+		if anonymous {
+			d.remember(slug, resolveNotFound, d.cfg.NotFoundTTL)
+		}
 	default:
 		d.discovered--
-		d.remember(slug, resolveUnavailable, d.cfg.ErrorTTL)
+		if anonymous {
+			d.remember(slug, resolveUnavailable, d.cfg.ErrorTTL)
+		}
 	}
 	close(f.done)
 	d.mu.Unlock()
@@ -226,14 +297,19 @@ func (d *discovery) register(s *Server, slug string) (*Team, resolveResult) {
 	}
 	f := d.cfg.NewFeed(slug)
 	// The feed reports a 404 on any of its reads. It can fire before addTeam
-	// returns (the first snapshot read) or after the team is long gone (a
-	// straggling reconnect); registered is empty in the first case, and
-	// unregister's identity check makes the second a no-op. A 404 missed
-	// because it landed before registered was set is not lost: the stream
-	// reconnects and 404s again, and the re-probe catches it regardless.
-	var registered atomic.Pointer[Team]
+	// returns (the first snapshot read, or the stream's first connection) or
+	// after the team is long gone (a straggler); registered is empty in the
+	// first case, and unregister's identity check makes the second a no-op.
+	// A 404 is terminal for the feed's stream, so one that landed before
+	// registered was set is not repeated: reported remembers it, and the
+	// takedown happens as soon as the team is registered.
+	var (
+		registered atomic.Pointer[Team]
+		reported   atomic.Bool
+	)
 	if r, ok := f.(feed.NotFoundReporter); ok {
 		r.OnNotFound(func() {
+			reported.Store(true)
 			if t := registered.Load(); t != nil {
 				d.unregister(s, t, "feed read a 404")
 			}
@@ -248,6 +324,10 @@ func (d *discovery) register(s *Server, slug string) (*Team, resolveResult) {
 		return nil, resolveUnavailable
 	}
 	registered.Store(t)
+	if reported.Load() {
+		d.unregister(s, t, "feed read a 404")
+		return nil, resolveNotFound
+	}
 	go d.recheck(s, t)
 	s.log.Info("team discovered", "slug", slug, "feed", t.Feed.Name())
 	return t, resolveFound

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	frontend "github.com/mklfarha/metiche/frontend"
 	"github.com/mklfarha/metiche/frontend/internal/feed"
@@ -165,6 +166,73 @@ func TestDemoSlug(t *testing.T) {
 	for in, want := range map[string]string{"demo": "demo", "tidewater": "demo-tidewater", "demo-x": "demo-x"} {
 		if got := demoSlug(in); got != want {
 			t.Errorf("demoSlug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestRefusesBoardToken: the board refuses to start with METICHE_BOARD_TOKEN
+// set — even empty — and never repeats its value.
+func TestRefusesBoardToken(t *testing.T) {
+	unset := func(string) (string, bool) { return "", false }
+	if err := refuseBoardToken(unset); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	for _, v := range []string{"", "not-a-real-token"} {
+		err := refuseBoardToken(func(k string) (string, bool) {
+			if k == "METICHE_BOARD_TOKEN" {
+				return v, true
+			}
+			return "", false
+		})
+		if err == nil {
+			t.Fatalf("METICHE_BOARD_TOKEN=%q accepted", v)
+		}
+		if v != "" && strings.Contains(err.Error(), v) {
+			t.Fatal("the error repeats the token")
+		}
+	}
+}
+
+// TestLoginOptionsAreChecked: -viewer-reauth has a 1s floor, and the dev
+// cookie is refused off localhost.
+func TestLoginOptionsAreChecked(t *testing.T) {
+	_, stub, ctx, log := setup(t)
+	for _, c := range []struct {
+		name string
+		mod  func(*options)
+		good bool
+	}{
+		{"defaults", func(*options) {}, true},
+		{"reauth 2s", func(o *options) { o.viewerReauth = 2 * time.Second }, true},
+		{"reauth below the floor", func(o *options) { o.viewerReauth = 500 * time.Millisecond }, false},
+		{"dev cookie on localhost", func(o *options) { o.devInsecureCookie, o.baseURL = true, "http://localhost:8787" }, true},
+		{"dev cookie on the real host", func(o *options) { o.devInsecureCookie, o.baseURL = true, "https://metiche.xyz" }, false},
+		{"plain http base", func(o *options) { o.baseURL = "http://metiche.xyz" }, false},
+		{"dev cookie without a backend", func(o *options) { o.backend, o.devInsecureCookie = "", true }, false},
+	} {
+		o := options{backend: stub.URL, client: stub.Client(), fixtures: frontend.Fixtures(), demo: false}
+		c.mod(&o)
+		err := registerTeams(ctx, web.NewServer(frontend.Static(), log), o, log)
+		if (err == nil) != c.good {
+			t.Errorf("%s: err = %v", c.name, err)
+		}
+	}
+}
+
+func TestDefaultBaseURL(t *testing.T) {
+	for _, c := range []struct {
+		given    string
+		insecure bool
+		addr     string
+		want     string
+	}{
+		{"", false, ":8787", "https://metiche.xyz"},
+		{"", true, ":8787", "http://localhost:8787"},
+		{"", true, "127.0.0.1:9000", "http://localhost:9000"},
+		{"https://board.example", true, ":8787", "https://board.example"},
+	} {
+		if got := defaultBaseURL(c.given, c.insecure, c.addr); got != c.want {
+			t.Errorf("defaultBaseURL(%q, %v, %q) = %q, want %q", c.given, c.insecure, c.addr, got, c.want)
 		}
 	}
 }

@@ -7,6 +7,11 @@
 // recordings stay up as clearly labelled demo boards (-demo, default true), and
 // a request for any other slug asks the backend whether that team exists and
 // may be shown (-discover, default true). -teams is only a pre-warm list.
+//
+// With -backend, people sign in with a link minted from their terminal
+// (docs/BOARD_LOGIN.md), and a private team's board is read with that viewer's
+// own browser session. The board holds no credential of its own, and it
+// refuses to start when METICHE_BOARD_TOKEN is set.
 package main
 
 import (
@@ -46,18 +51,29 @@ func main() {
 			"with -backend, register a live team the first time its board is requested, if the backend confirms it")
 		maxTeams    = flag.Int("max-discovered-teams", 50, "cap on teams registered through -discover")
 		notFoundTTL = flag.Duration("discover-notfound-ttl", 30*time.Second, "how long a backend 404 for a slug is remembered")
-		// The flag names the VARIABLE, never the value. A bearer token passed
-		// as an argument lands in shell history and in every `ps` on the box,
-		// and a token in a file lands in a commit eventually.
-		tokenEnv = flag.String("backend-token-env", "METICHE_BOARD_TOKEN",
-			"name of the environment variable holding the backend read-API bearer token")
-		backfill = flag.Int64("backfill", 200,
+		baseURL     = flag.String("base-url", "",
+			"the board's own public base URL, whose origin every POST must come from (default https://metiche.xyz; with -dev-insecure-cookie, http://localhost:<port of -addr>)")
+		devInsecureCookie = flag.Bool("dev-insecure-cookie", false,
+			"LOCAL DEVELOPMENT ONLY: a session cookie without Secure or the __Host- prefix; refused unless -base-url is http://localhost or http://127.0.0.1")
+		trustProxyHops = flag.Int("trust-proxy-hops", 0,
+			"proxies in front of the board that append to X-Forwarded-For; 1 takes the rightmost entry (never the leftmost, which the client writes). 0 uses the connection's address")
+		viewerReauth = flag.Duration("viewer-reauth", 60*time.Second,
+			"how often an open private-board stream re-checks its viewer's session and access; lower it only in tests (floor 1s)")
+		maxViewerBoards = flag.Int("max-viewer-boards", 200, "cap on private boards open for signed-in viewers")
+		backfill        = flag.Int64("backfill", 200,
 			"events of history to pull into the timeline behind the snapshot cursor, when -backend is set")
 	)
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
+
+	// Before anything else, so a misconfigured deploy fails loudly instead of
+	// serving with a credential it must not hold.
+	if err := refuseBoardToken(os.LookupEnv); err != nil {
+		log.Error("refusing to start", "err", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -69,20 +85,15 @@ func main() {
 		teams: splitCSV(*teamsCSV), discover: *discover, maxTeams: *maxTeams,
 		notFoundTTL: *notFoundTTL, backfill: *backfill,
 		fixtures: frontend.Fixtures(),
+
+		baseURL:           defaultBaseURL(*baseURL, *devInsecureCookie, *addr),
+		devInsecureCookie: *devInsecureCookie,
+		trustProxyHops:    *trustProxyHops,
+		viewerReauth:      *viewerReauth,
+		maxViewerBoards:   *maxViewerBoards,
 	}
 	if *fixtures != "" {
 		opts.fixtures = os.DirFS(*fixtures)
-	}
-	if *backend != "" {
-		// Read once, keep it in memory, and never log it or put it in a flag
-		// value. The variable is then cleared from this process's environment
-		// so it is not inherited by anything spawned later and does not show
-		// up in /proc/self/environ.
-		opts.token = strings.TrimSpace(os.Getenv(*tokenEnv))
-		_ = os.Unsetenv(*tokenEnv)
-		if opts.token == "" {
-			log.Warn("no backend token; only PUBLIC teams can be shown", "expected_env", *tokenEnv)
-		}
 	}
 	if err := registerTeams(ctx, srv, opts, log); err != nil {
 		log.Error("register teams", "err", err)
@@ -116,11 +127,46 @@ func main() {
 	}
 }
 
+// boardTokenEnv is the variable that once held the board's own backend
+// credential. It is retired (docs/BOARD_LOGIN.md, decision 7): a credential
+// that can read private teams without a viewer is exactly how a private team
+// ends up on a shared board.
+const boardTokenEnv = "METICHE_BOARD_TOKEN"
+
+// minViewerReauth is the floor for -viewer-reauth. It exists for tests; a
+// lower value would only hammer the backend.
+const minViewerReauth = time.Second
+
+// refuseBoardToken fails when a board token is configured at all — even an
+// empty one: the variable must be deleted, not blanked. The value is never
+// read into anything that could log it.
+func refuseBoardToken(lookup func(string) (string, bool)) error {
+	if _, set := lookup(boardTokenEnv); set {
+		return fmt.Errorf("%s is set; the board no longer holds a backend credential. "+
+			"Private boards are read with each signed-in viewer's own session. Delete the variable", boardTokenEnv)
+	}
+	return nil
+}
+
+// defaultBaseURL fills -base-url when it was not given.
+func defaultBaseURL(given string, devInsecureCookie bool, addr string) string {
+	if given != "" {
+		return given
+	}
+	if devInsecureCookie {
+		port := addr
+		if i := strings.LastIndex(addr, ":"); i >= 0 {
+			port = addr[i+1:]
+		}
+		return "http://localhost:" + port
+	}
+	return "https://metiche.xyz"
+}
+
 // options is everything registerTeams needs, taken out of flag parsing so the
 // modes can be tested without a process.
 type options struct {
 	backend  string
-	token    string
 	backfill int64
 
 	fixtures fs.FS
@@ -134,6 +180,12 @@ type options struct {
 	maxTeams    int
 	notFoundTTL time.Duration
 
+	baseURL           string
+	devInsecureCookie bool
+	trustProxyHops    int
+	viewerReauth      time.Duration
+	maxViewerBoards   int
+
 	client *http.Client // nil: http.DefaultClient
 }
 
@@ -141,13 +193,20 @@ type options struct {
 //
 //	no -backend          the recordings, as demo boards. Nothing else exists.
 //	-backend             MIXED: the recordings as demo boards (unless -demo=false),
-//	                     then -teams pre-warmed as live boards, then discovery.
+//	                     then -teams pre-warmed as live boards, then discovery,
+//	                     then sign-in and private boards for signed-in viewers.
 //
 // Demo boards are registered FIRST, and that order is what reserves their
 // slugs: a registered slug is never looked up on the backend, and a pre-warmed
 // live team whose slug a demo already holds is refused (logged, not fatal)
 // rather than silently shadowing — or being shadowed by — a recording.
 func registerTeams(ctx context.Context, srv *web.Server, o options, log *slog.Logger) error {
+	if o.viewerReauth != 0 && o.viewerReauth < minViewerReauth {
+		return fmt.Errorf("-viewer-reauth %v is below its floor of %v", o.viewerReauth, minViewerReauth)
+	}
+	if o.baseURL == "" {
+		o.baseURL = defaultBaseURL("", o.devInsecureCookie, ":8787")
+	}
 	live := o.backend != ""
 	if !live || o.demo {
 		// A demo left up next to real teams should never go still, so with a
@@ -157,6 +216,9 @@ func registerTeams(ctx context.Context, srv *web.Server, o options, log *slog.Lo
 		}
 	}
 	if !live {
+		if o.devInsecureCookie {
+			return errors.New("-dev-insecure-cookie needs -backend: there is nothing to sign in to without one")
+		}
 		return nil
 	}
 
@@ -176,7 +238,7 @@ func registerTeams(ctx context.Context, srv *web.Server, o options, log *slog.Lo
 	if o.discover {
 		srv.EnableDiscovery(ctx, web.Discovery{
 			Probe: func(ctx context.Context, slug string) (feed.ProbeResult, error) {
-				return feed.ProbeTeam(ctx, o.client, o.backend, o.token, slug)
+				return feed.ProbeTeam(ctx, o.client, o.backend, slug)
 			},
 			NewFeed:     func(slug string) feed.Feed { return newLive(o, slug, log) },
 			MaxTeams:    o.maxTeams,
@@ -184,12 +246,30 @@ func registerTeams(ctx context.Context, srv *web.Server, o options, log *slog.Lo
 		})
 		log.Info("live team discovery on", "max_teams", o.maxTeams, "notfound_ttl", o.notFoundTTL)
 	}
+
+	if err := srv.EnableLogin(ctx, web.Login{
+		Backend: &feed.BrowserClient{BaseURL: o.backend, Client: o.client},
+		NewViewerFeed: func(slug, session string) feed.Feed {
+			l := newLive(o, slug, log)
+			l.BrowserSession = session
+			return l
+		},
+		BaseURL:         o.baseURL,
+		InsecureCookie:  o.devInsecureCookie,
+		TrustProxyHops:  o.trustProxyHops,
+		Reauth:          o.viewerReauth,
+		MaxViewerBoards: o.maxViewerBoards,
+	}); err != nil {
+		return fmt.Errorf("sign-in: %w", err)
+	}
+	log.Info("board sign-in on", "base_url", o.baseURL, "dev_insecure_cookie", o.devInsecureCookie,
+		"trust_proxy_hops", o.trustProxyHops, "viewer_reauth", o.viewerReauth)
 	return nil
 }
 
 func newLive(o options, slug string, log *slog.Logger) *feed.Live {
 	return &feed.Live{
-		BaseURL: o.backend, Slug: slug, Token: o.token, Client: o.client,
+		BaseURL: o.backend, Slug: slug, Client: o.client,
 		TimelineBackfill: o.backfill, Logger: log,
 	}
 }

@@ -155,3 +155,29 @@ func TestDemoBoardIsLabelled(t *testing.T) {
 		}
 	}
 }
+
+// TestPrivateBoardNeverAppearsOnPublicPages: with a member's private board
+// open, the public pages name it to nobody — anonymous or signed in — except
+// the member's own "Your teams" on /teams, which comes from the backend for
+// that session.
+func TestPrivateBoardNeverAppearsOnPublicPages(t *testing.T) {
+	x := newLoginHarness(t, Discovery{}, Login{})
+	x.world(t)
+	if rec := x.getAs(memberSecret, "/t/"+privSlug); rec.Code != http.StatusOK {
+		t.Fatalf("member: %d", rec.Code)
+	}
+	check := func(who, secret string, paths []string) {
+		t.Helper()
+		for _, p := range paths {
+			rec := x.getAs(secret, p)
+			for _, secretText := range []string{privSlug, privName} {
+				if strings.Contains(rec.Body.String(), secretText) || strings.Contains(rec.Header().Get("Location"), secretText) {
+					t.Errorf("%s GET %s: names %q", who, p, secretText)
+				}
+			}
+		}
+	}
+	check("anonymous", "", []string{"/", "/teams", "/join", "/join?code=", "/healthz", "/signin"})
+	check("non-member", outsiderSecret, []string{"/", "/teams", "/join", "/healthz", "/signin"})
+	check("member", memberSecret, []string{"/", "/join", "/healthz", "/signin"})
+}

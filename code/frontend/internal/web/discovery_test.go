@@ -35,11 +35,14 @@ type stubBackend struct {
 	// sessions and conflicts, when non-nil, are what every snapshot carries.
 	sessions  []any
 	conflicts []any
+
+	// login is the browser-session half of the backend (login_stub_test.go).
+	login stubLogin
 }
 
 func newStubBackend() *stubBackend {
 	return &stubBackend{public: map[string]string{}, failing: map[string]bool{},
-		hits: map[string]int{}, streams: map[string]int{}}
+		hits: map[string]int{}, streams: map[string]int{}, login: newStubLogin()}
 }
 
 func (b *stubBackend) setPublic(slug, name string) {
@@ -64,16 +67,29 @@ func (b *stubBackend) streamsFor(slug string) int {
 }
 
 func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/browser/") {
+		b.serveBrowser(w, r)
+		return
+	}
 	rest, ok := strings.CutPrefix(r.URL.Path, "/v1/teams/")
 	b.mu.Lock()
 	b.total++
+	b.login.observe(r)
 	if !ok {
 		b.mu.Unlock()
 		http.NotFound(w, r)
 		return
 	}
 	slug, sub, _ := strings.Cut(rest, "/")
+	if sub == "access" {
+		b.mu.Unlock()
+		b.serveAccess(w, r, slug)
+		return
+	}
 	name, public := b.public[slug]
+	if !public {
+		name, public = b.readableLocked(slug, r)
+	}
 	failing := b.failing[slug]
 	gate := b.gate
 	if sub == "" {
@@ -179,7 +195,7 @@ func newHarness(t *testing.T, cfg Discovery) *harness {
 	x.srv = NewServer(nil, quiet())
 	cfg.Probe = func(ctx context.Context, slug string) (feed.ProbeResult, error) {
 		x.probes.Add(1)
-		return feed.ProbeTeam(ctx, x.stub.Client(), x.stub.URL, "", slug)
+		return feed.ProbeTeam(ctx, x.stub.Client(), x.stub.URL, slug)
 	}
 	cfg.NewFeed = func(slug string) feed.Feed {
 		x.newFeeds.Add(1)

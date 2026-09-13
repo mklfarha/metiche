@@ -48,19 +48,25 @@ import (
 //
 // # Auth
 //
-// The read API is not public — a team's board is not public just because the
-// repository is. Token is a bearer token supplied by the operator through the
-// environment; it is never a command-line argument (that lands in shell
-// history and in `ps`), never read from a file in the repo, and never logged.
+// The board holds no credential of its own. A public team is read with no
+// credential at all; a private team is read with ONE viewer's browser session
+// (BrowserSession), so the backend decides, on every upstream request, whether
+// that viewer may read it. The session is never logged and never part of
+// Name().
 type Live struct {
 	// BaseURL is the backend root, with or without the /v1 suffix.
 	BaseURL string
 	Slug    string
 
-	// Token is the bearer token for the read API. It comes from the
-	// environment — see cmd/metiche-web. Empty means send no Authorization
-	// header at all, which is only useful against a backend that has not
-	// turned auth on yet.
+	// BrowserSession, when set, is sent as X-Metiche-Browser-Session on every
+	// read: this feed is one signed-in viewer's view of a private team. It
+	// always wins over Token — a request is one principal, and the backend
+	// refuses a request carrying both.
+	BrowserSession string
+
+	// Token is a bearer for the read API. cmd/metiche-web never sets it (the
+	// board refuses to start with a board token configured); it remains for
+	// tests that stand in for an authenticated reader.
 	Token string
 
 	Client *http.Client
@@ -108,10 +114,14 @@ type NotFoundReporter interface {
 
 // OnNotFound implements NotFoundReporter.
 //
-// It does not change what the feed does on a 404: the stream still backs off
-// and reconnects, as it always has, because a pre-registered team is the
-// operator's to take down. Stopping a feed is its owner's decision, made by
-// cancelling the context.
+// A 404 is TERMINAL for the stream: the backend has stopped recognising this
+// team for this reader (it went private, was deleted, or the viewer lost
+// access), and reconnecting into the same answer forever only costs the
+// backend a read per backoff. The stream's channel closes and fn is called.
+// For a feed read with a BrowserSession, a 401 is treated the same way: the
+// session itself is gone.
+//
+// A snapshot read that answers 404 is reported too, and returns ErrNotFound.
 func (l *Live) OnNotFound(fn func()) { l.onNotFound.Store(&fn) }
 
 // notFound reports a 404 and returns the error that describes it.
@@ -122,8 +132,13 @@ func (l *Live) notFound(path string) error {
 	return fmt.Errorf("GET %s: %w", path, ErrNotFound)
 }
 
-// Name implements Feed. It must never grow the token: it is logged, and it is
-// rendered on /healthz.
+// gone reports whether status means this reader may no longer read the team.
+func (l *Live) gone(status int) bool {
+	return status == http.StatusNotFound || (l.BrowserSession != "" && status == http.StatusUnauthorized)
+}
+
+// Name implements Feed. It must never grow a credential: it is logged, and it
+// is rendered on /healthz.
 func (l *Live) Name() string { return "live:" + l.BaseURL }
 
 func (l *Live) root() string {
@@ -157,7 +172,10 @@ func (l *Live) request(ctx context.Context, url string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	if l.Token != "" {
+	switch {
+	case l.BrowserSession != "":
+		req.Header.Set(BrowserSessionHeader, l.BrowserSession)
+	case l.Token != "":
 		req.Header.Set("Authorization", "Bearer "+l.Token)
 	}
 	return req, nil
@@ -187,7 +205,7 @@ func (l *Live) getJSON(ctx context.Context, url string, v any) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusNotFound {
+	if l.gone(resp.StatusCode) {
 		return l.notFound(req.URL.Path)
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -251,6 +269,12 @@ func (l *Live) Stream(ctx context.Context, after int64) (<-chan model.Event, err
 		for ctx.Err() == nil {
 			n, err := l.pump(ctx, cursor, out)
 			cursor = max64(cursor, n)
+			if errors.Is(err, ErrNotFound) {
+				// Terminal: see OnNotFound. The slug is not logged — a team
+				// that just stopped being readable may be a private one.
+				l.log().Info("metiche stream ended: the backend no longer serves this team to this reader")
+				return
+			}
 			if err != nil && ctx.Err() == nil {
 				l.log().Warn("metiche stream dropped", "slug", l.Slug, "cursor", cursor, "err", err)
 			}
@@ -279,7 +303,7 @@ func (l *Live) pump(ctx context.Context, after int64, out chan<- model.Event) (i
 		return after, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusNotFound {
+	if l.gone(resp.StatusCode) {
 		return after, l.notFound(req.URL.Path)
 	}
 	if resp.StatusCode != http.StatusOK {

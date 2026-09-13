@@ -22,7 +22,11 @@ const (
 	ProbeNotFound
 )
 
-// ProbeTeam asks the backend whether the board may show slug.
+// ProbeTeam asks the backend whether ANYBODY may see slug: the read carries no
+// credential at all, so a 200 means the team is public. That is what lets
+// discovery remember its answers in a cache every anonymous request reads —
+// nothing a probe learns depends on who asked. A signed-in viewer's access is
+// asked separately (BrowserClient.Access) and never cached.
 //
 // It is one snapshot read and nothing else — no stream, no goroutine left
 // behind — so a caller can decide whether a feed is worth creating BEFORE it
@@ -33,14 +37,14 @@ const (
 // The body is discarded unread. On 200 it is the snapshot, which the feed will
 // read again for itself; on anything else it is a problem document, which is
 // never logged for the reason getJSON gives.
-func ProbeTeam(ctx context.Context, client *http.Client, baseURL, token, slug string) (ProbeResult, error) {
+func ProbeTeam(ctx context.Context, client *http.Client, baseURL, slug string) (ProbeResult, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	l := &Live{BaseURL: baseURL, Token: token}
+	l := &Live{BaseURL: baseURL}
 	req, err := l.request(ctx, l.root()+"/teams/"+url.PathEscape(slug))
 	if err != nil {
 		return 0, err

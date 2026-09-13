@@ -1,15 +1,17 @@
 // Package web is the HTTP surface: five pages, one SSE stream, no controls,
 // and — against a real backend — on-demand registration of the teams people
-// ask for (discovery.go).
+// ask for (discovery.go), sign-in with a link minted from a terminal
+// (signin.go, viewer.go), and private boards read with each signed-in viewer's
+// own session (viewerboards.go).
 //
-// Every board is READ-ONLY. There is no authentication on this service, so
-// nothing it serves may change what any viewer sees: a board shows its feed
-// and nothing else.
+// Every board is READ-ONLY. Signing in changes what a viewer may SEE, never
+// what anybody can do: nothing this service serves changes a board.
 package web
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -50,6 +52,12 @@ type Team struct {
 	Hub        *hub.Hub
 	Feed       feed.Feed
 
+	// viewer is true for a private board held for ONE signed-in viewer and
+	// read with that viewer's session. Such a team lives in viewerBoards and
+	// is never in Server.teams, never in Teams(), and never resolved for
+	// anybody else.
+	viewer bool
+
 	// ctx is the team's own lifetime: cancel ends it, which stops the feed and
 	// anything else discovery runs for this team.
 	ctx    context.Context
@@ -67,7 +75,8 @@ type Server struct {
 	static fs.FS
 	log    *slog.Logger
 
-	disc *discovery
+	disc  *discovery
+	login *login
 }
 
 // NewServer builds the server. Demo and pre-warmed teams are registered before
@@ -101,26 +110,15 @@ func (s *Server) addTeam(ctx context.Context, slug, name, joinCode string, demo,
 		}
 		return nil, fmt.Errorf("team %q is already registered as a %s board", slug, kind)
 	}
-	// Each team gets its own context so that one which loses a registration
-	// race below can be stopped without touching anybody else's feed.
-	ctx, cancel := context.WithCancel(ctx)
-	h := hub.New(slug, name, view.Renderer{}, s.log)
-	if err := h.Run(ctx, f); err != nil {
-		cancel()
-		return nil, fmt.Errorf("start feed for %s: %w", slug, err)
+	t, err := s.startTeam(ctx, slug, name, joinCode, demo, discovered, f)
+	if err != nil {
+		return nil, err
 	}
-	// A live feed learns the team's real name from its snapshot during Run;
-	// a fixture was named by its caller. Take whichever is better.
-	if loaded := h.Snapshot().Team.Name; loaded != "" {
-		name = loaded
-	}
-	t := &Team{Slug: slug, Name: name, JoinCode: joinCode, Demo: demo, Discovered: discovered,
-		Hub: h, Feed: f, ctx: ctx, cancel: cancel}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if existing, ok := s.teams[slug]; ok {
-		cancel()
+		t.cancel()
 		kind := "live"
 		if existing.Demo {
 			kind = "demo"
@@ -130,6 +128,26 @@ func (s *Server) addTeam(ctx context.Context, slug, name, joinCode string, demo,
 	s.teams[slug] = t
 	s.order = append(s.order, slug)
 	return t, nil
+}
+
+// startTeam runs a feed into a new hub. It registers nothing: addTeam puts the
+// result in the shared registry, viewerBoards keeps it for one viewer.
+func (s *Server) startTeam(ctx context.Context, slug, name, joinCode string, demo, discovered bool, f feed.Feed) (*Team, error) {
+	// Each team gets its own context so that one which loses a registration
+	// race can be stopped without touching anybody else's feed.
+	ctx, cancel := context.WithCancel(ctx)
+	h := hub.New(slug, name, view.Renderer{}, s.log)
+	if err := h.Run(ctx, f); err != nil {
+		cancel()
+		return nil, fmt.Errorf("start feed: %w", err)
+	}
+	// A live feed learns the team's real name from its snapshot during Run;
+	// a fixture was named by its caller. Take whichever is better.
+	if loaded := h.Snapshot().Team.Name; loaded != "" {
+		name = loaded
+	}
+	return &Team{Slug: slug, Name: name, JoinCode: joinCode, Demo: demo, Discovered: discovered,
+		Hub: h, Feed: f, ctx: ctx, cancel: cancel}, nil
 }
 
 // Lookup returns a registered team. It never asks the backend.
@@ -166,6 +184,10 @@ func (s *Server) demoTeams() []*Team {
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(recoverer(s.log))
+	r.Use(baseHeaders)
+	// A GET is never state-changing, and a method a path does not take is the
+	// same 404 as a path that does not exist.
+	r.MethodNotAllowed(http.NotFound)
 
 	r.Handle("/static/*", http.StripPrefix("/static/", cacheless(http.FileServer(http.FS(s.static)))))
 
@@ -198,6 +220,16 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/teams", s.join)
 	r.Get("/join", s.joinCode)
 
+	// Signing in (signin.go). /signin is served even without a backend, so the
+	// page that explains how to sign in always exists; everything else answers
+	// only when login is on.
+	r.Get("/signin", s.signinPage)
+	r.Post("/signin", s.signinPost)
+	r.Post("/signout", s.signout)
+	r.Get("/account", s.account)
+	r.Post("/account/signout-all", s.signoutAll)
+	r.Post("/account/sessions/{key}/revoke", s.revokeSession)
+
 	r.Route("/t/{slug}", func(r chi.Router) {
 		r.Get("/", s.board)
 		r.Get("/stream", s.stream)
@@ -223,14 +255,34 @@ func (s *Server) Handler() http.Handler {
 
 // ---------------------------------------------------------------- pages
 
-// join serves /teams. It lists DEMO teams only.
+// join serves /teams. It lists DEMO teams only — plus, for a signed-in viewer,
+// that viewer's own teams as the backend lists them.
 //
 // In fixture mode that was every team, and harmless. Against a real backend a
 // directory of registered teams with their live-session counts is a public
 // index of who is building what — and with discovery, of every public team
 // anybody has ever typed into the address bar. A real team's board is reached
-// by its URL, which the page says, never by browsing.
+// by its URL, which the page says, never by browsing. "Your teams" comes from
+// the backend for this viewer's session, never from the registry.
 func (s *Server) join(w http.ResponseWriter, r *http.Request) {
+	var yours []feed.BrowserTeam
+	if v, vs := s.viewer(w, r); vs == viewerSignedIn {
+		teams, err := s.login.cfg.Backend.Teams(r.Context(), v.secret)
+		switch {
+		case errors.Is(err, feed.ErrSessionInvalid):
+			s.login.sessionEnded(v.hash)
+			s.login.clearCookie(w)
+		case err != nil:
+			s.log.Warn("listing a viewer's teams failed", "err", err)
+			r = s.withViewer(r, v)
+		default:
+			yours = teams
+			if yours == nil {
+				yours = []feed.BrowserTeam{}
+			}
+			r = s.withViewer(r, v)
+		}
+	}
 	demos := s.demoTeams()
 	cards := make([]view.TeamCard, 0, len(demos))
 	for _, t := range demos {
@@ -242,7 +294,7 @@ func (s *Server) join(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	sort.SliceStable(cards, func(i, j int) bool { return cards[i].Live > cards[j].Live })
-	s.render(w, r, view.JoinPage(cards))
+	s.render(w, r, view.TeamsPage(view.TeamsParams{Demos: cards, Mine: yourTeams(yours)}))
 }
 
 // landing serves the public page. It is handed at most one board URL, for the
@@ -276,7 +328,7 @@ func (s *Server) joinCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) board(w http.ResponseWriter, r *http.Request) {
-	t, snap, ok := s.team(w, r)
+	t, snap, r, ok := s.team(w, r)
 	if !ok {
 		return
 	}
@@ -284,7 +336,7 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) graph(w http.ResponseWriter, r *http.Request) {
-	t, snap, ok := s.team(w, r)
+	t, snap, r, ok := s.team(w, r)
 	if !ok {
 		return
 	}
@@ -292,7 +344,7 @@ func (s *Server) graph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) conflicts(w http.ResponseWriter, r *http.Request) {
-	t, snap, ok := s.team(w, r)
+	t, snap, r, ok := s.team(w, r)
 	if !ok {
 		return
 	}
@@ -300,7 +352,7 @@ func (s *Server) conflicts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) contracts(w http.ResponseWriter, r *http.Request) {
-	t, snap, ok := s.team(w, r)
+	t, snap, r, ok := s.team(w, r)
 	if !ok {
 		return
 	}
@@ -308,7 +360,7 @@ func (s *Server) contracts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) decisions(w http.ResponseWriter, r *http.Request) {
-	t, snap, ok := s.team(w, r)
+	t, snap, r, ok := s.team(w, r)
 	if !ok {
 		return
 	}
@@ -316,7 +368,7 @@ func (s *Server) decisions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
-	t, snap, ok := s.team(w, r)
+	t, snap, r, ok := s.team(w, r)
 	if !ok {
 		return
 	}
@@ -324,7 +376,7 @@ func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) run(w http.ResponseWriter, r *http.Request) {
-	t, snap, ok := s.team(w, r)
+	t, snap, r, ok := s.team(w, r)
 	if !ok {
 		return
 	}
@@ -380,7 +432,8 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	// The stream resolves exactly as the page does. After a restart a browser
 	// still holding a discovered team's page reconnects HERE first, and must
 	// get the board back rather than a 404 it would retry forever.
-	t, res := s.resolveTeam(r.Context(), chi.URLParam(r, "slug"))
+	v, vs := s.viewer(w, r)
+	t, res := s.resolveTeam(r.Context(), v, vs, chi.URLParam(r, "slug"))
 	switch res {
 	case resolveFound:
 	case resolveUnavailable, resolveFull:
@@ -420,7 +473,11 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
-	h.Set("Cache-Control", "no-cache, no-transform")
+	if t.viewer {
+		h.Set("Cache-Control", "private, no-store, no-cache, no-transform")
+	} else {
+		h.Set("Cache-Control", "no-cache, no-transform")
+	}
 	h.Set("Connection", "keep-alive")
 	h.Set("X-Accel-Buffering", "no") // nginx would otherwise buffer this to death
 	w.WriteHeader(http.StatusOK)
@@ -440,10 +497,25 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	keepalive := time.NewTicker(20 * time.Second)
 	defer keepalive.Stop()
 
+	// A private board's stream re-asks the backend whether this viewer may
+	// still read it, every Reauth. Without this a member removed from the
+	// team, or a revoked session, keeps receiving events for as long as the
+	// tab stays open.
+	var reauth <-chan time.Time
+	if t.viewer {
+		tick := time.NewTicker(s.login.cfg.Reauth)
+		defer tick.Stop()
+		reauth = tick.C
+	}
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-reauth:
+			if !s.reauthorize(r.Context(), v, t) {
+				return
+			}
 		case f, open := <-sub.C:
 			if !open {
 				return
@@ -509,12 +581,16 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-func (s *Server) team(w http.ResponseWriter, r *http.Request) (*Team, state.Snapshot, bool) {
+// team resolves a board request for its viewer. The returned request carries
+// the signed-in mark for the render.
+func (s *Server) team(w http.ResponseWriter, r *http.Request) (*Team, state.Snapshot, *http.Request, bool) {
 	slug := chi.URLParam(r, "slug")
-	t, res := s.resolveTeam(r.Context(), slug)
+	v, vs := s.viewer(w, r)
+	r = s.withViewer(r, v)
+	t, res := s.resolveTeam(r.Context(), v, vs, slug)
 	switch res {
 	case resolveFound:
-		return t, t.Hub.Snapshot(), true
+		return t, t.Hub.Snapshot(), r, true
 	case resolveUnavailable, resolveFull:
 		// Not a verdict about the team — the backend is unreachable or this
 		// process is at its cap — so it must not read as "no such team".
@@ -523,7 +599,7 @@ func (s *Server) team(w http.ResponseWriter, r *http.Request) (*Team, state.Snap
 		w.WriteHeader(http.StatusNotFound)
 		s.render(w, r, view.NotFound(slug))
 	}
-	return nil, state.Snapshot{}, false
+	return nil, state.Snapshot{}, r, false
 }
 
 func (s *Server) page(w http.ResponseWriter, r *http.Request, t *Team, snap state.Snapshot, tab view.Tab, body templ.Component) {
