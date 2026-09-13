@@ -57,9 +57,9 @@ func (q *Queries) InsertAccount(ctx context.Context, arg InsertAccountParams) (s
 
 const insertAgent = `-- name: InsertAgent :execresult
 INSERT INTO ` + "`" + `agent` + "`" + `
-(` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `)
+(` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `token_hash` + "`" + `)
 VALUES
-(?,?,?,?,?,?,?,?,?,?)
+(?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type InsertAgentParams struct {
@@ -73,6 +73,7 @@ type InsertAgentParams struct {
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	AccountUUID string      `json:"account_uuid"`
+	TokenHash   null.String `json:"token_hash"`
 }
 
 func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (sql.Result, error) {
@@ -87,6 +88,7 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (sql.R
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.AccountUUID,
+		arg.TokenHash,
 	)
 }
 

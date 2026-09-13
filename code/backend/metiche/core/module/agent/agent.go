@@ -17,6 +17,7 @@ import (
 type Module interface {
 	FetchAgentByID(ctx context.Context, req types.FetchAgentByIDRequest, opts ...Option) (types.FetchAgentByIDResponse, error)
 	FetchAgentByAccountUUIDAndClientKey(ctx context.Context, req types.FetchAgentByAccountUUIDAndClientKeyRequest, opts ...Option) (types.FetchAgentByAccountUUIDAndClientKeyResponse, error)
+	FetchAgentByTokenHash(ctx context.Context, req types.FetchAgentByTokenHashRequest, opts ...Option) (types.FetchAgentByTokenHashResponse, error)
 
 	List(ctx context.Context, req types.ListRequest, opts ...Option) (types.ListResponse, error)
 

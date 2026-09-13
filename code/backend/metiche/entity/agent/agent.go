@@ -25,6 +25,7 @@ type Agent struct {
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 	AccountUUID uuid.UUID         `json:"account_uuid"`
+	TokenHash   null.String       `json:"token_hash"`
 }
 
 func (e Agent) String() string {

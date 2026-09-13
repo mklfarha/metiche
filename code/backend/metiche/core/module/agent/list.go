@@ -170,6 +170,8 @@ var listFields = []string{
 	"updated_at",
 
 	"account_uuid",
+
+	"token_hash",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Agent) any{
@@ -193,4 +195,6 @@ var listFieldRegistry = map[string]func(*repogen.Agent) any{
 	"updated_at": func(i *repogen.Agent) any { return &i.UpdatedAt },
 
 	"account_uuid": func(i *repogen.Agent) any { return &i.AccountUUID },
+
+	"token_hash": func(i *repogen.Agent) any { return &i.TokenHash },
 }

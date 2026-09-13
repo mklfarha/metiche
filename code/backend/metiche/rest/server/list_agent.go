@@ -114,6 +114,8 @@ func agentDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("account_uuid", filtering.TypeString),
+
+		filtering.DeclareIdent("token_hash", filtering.TypeString),
 	)
 	if err != nil {
 		log.Printf("error creating declarations for agent: %v", err)

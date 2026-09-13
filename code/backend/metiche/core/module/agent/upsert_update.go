@@ -111,5 +111,7 @@ func mapUpsertRequestToUpdateParams(req types.UpsertRequest) metichedb.UpdateAge
 		UpdatedAt: req.Agent.UpdatedAt,
 
 		AccountUUID: req.Agent.AccountUUID.String(),
+
+		TokenHash: req.Agent.TokenHash,
 	}
 }

@@ -74,8 +74,10 @@ CREATE TABLE IF NOT EXISTS `agent` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `account_uuid` CHAR(36) NOT NULL,
+    `token_hash` VARCHAR(64),
     PRIMARY KEY (`id`),
     UNIQUE INDEX `uq_agent_account_client` (`account_uuid`, `client_key`),
+    UNIQUE INDEX `uq_agent_token_hash` (`token_hash`),
     CONSTRAINT `account_has_agents`
         FOREIGN KEY (`account_uuid`)
         REFERENCES `account` (`id`)

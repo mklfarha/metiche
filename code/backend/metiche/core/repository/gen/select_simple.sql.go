@@ -52,7 +52,7 @@ func (q *Queries) FetchAccount(ctx context.Context) ([]Account, error) {
 }
 
 const fetchAgent = `-- name: FetchAgent :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `token_hash` + "`" + `
 FROM ` + "`" + `agent` + "`" + `
 `
 
@@ -76,6 +76,7 @@ func (q *Queries) FetchAgent(ctx context.Context) ([]Agent, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AccountUUID,
+			&i.TokenHash,
 		); err != nil {
 			return nil, err
 		}

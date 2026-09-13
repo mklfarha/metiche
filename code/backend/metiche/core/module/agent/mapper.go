@@ -32,5 +32,6 @@ func mapModelToEntity(m metichedb.Agent) main_entity.Agent {
 		CreatedAt:   m.CreatedAt,
 		UpdatedAt:   m.UpdatedAt,
 		AccountUUID: mapper.StringToUUID(m.AccountUUID),
+		TokenHash:   null.NewString(m.TokenHash.String, m.TokenHash.Valid),
 	}
 }

@@ -59,7 +59,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) er
 const updateAgent = `-- name: UpdateAgent :exec
 UPDATE ` + "`" + `agent` + "`" + `
 SET
-` + "`" + `key` + "`" + ` = ?, ` + "`" + `label` + "`" + ` = ?, ` + "`" + `client_kind` + "`" + ` = ?, ` + "`" + `client_key` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `last_seen_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `account_uuid` + "`" + ` = ?
+` + "`" + `key` + "`" + ` = ?, ` + "`" + `label` + "`" + ` = ?, ` + "`" + `client_kind` + "`" + ` = ?, ` + "`" + `client_key` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `last_seen_at` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `account_uuid` + "`" + ` = ?, ` + "`" + `token_hash` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
@@ -74,6 +74,7 @@ type UpdateAgentParams struct {
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	AccountUUID string      `json:"account_uuid"`
+	TokenHash   null.String `json:"token_hash"`
 	ID          string      `json:"id"`
 }
 
@@ -88,6 +89,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) error 
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.AccountUUID,
+		arg.TokenHash,
 		arg.ID,
 	)
 	return err

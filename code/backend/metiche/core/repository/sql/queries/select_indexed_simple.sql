@@ -95,21 +95,28 @@ FOR UPDATE;
 
 -- agent selects:
 -- name: FetchAgentByID :many
-SELECT `id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`
+SELECT `id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`,`token_hash`
 FROM `agent`
 WHERE 
     `id` = ? ;
 
         
 -- name: FetchAgentByAccountUUIDAndClientKey :many
-SELECT `id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`
+SELECT `id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`,`token_hash`
 FROM `agent`
 WHERE 
     `account_uuid` = ? AND `client_key` = ? 
 LIMIT ?, ?;
         
+-- name: FetchAgentByTokenHash :many
+SELECT `id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`,`token_hash`
+FROM `agent`
+WHERE 
+    `token_hash` = ? 
+LIMIT ?, ?;
+        
 -- name: FetchAgentByIDForUpdate :many
-SELECT `id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`
+SELECT `id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`,`token_hash`
 FROM `agent`
 WHERE 
     `id` = ? 

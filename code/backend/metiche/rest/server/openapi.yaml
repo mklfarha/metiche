@@ -5292,6 +5292,9 @@ components:
                     type: string
                 status:
                     $ref: '#/components/schemas/AgentStatus'
+                token_hash:
+                    nullable: true
+                    type: string
                 updated_at:
                     format: date-time
                     type: string

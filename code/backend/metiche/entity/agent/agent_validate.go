@@ -47,6 +47,10 @@ func (e Agent) Validate() error {
 	if e.AccountUUID.IsNil() {
 		c.Require("agent.account_uuid")
 	}
+	if e.TokenHash.Valid && e.TokenHash.String != "" {
+		c.Field("agent.token_hash", validation.String(e.TokenHash.String, 0, 64, ""))
+
+	}
 
 	return c.Result()
 }

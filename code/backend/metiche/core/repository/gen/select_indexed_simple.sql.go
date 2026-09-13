@@ -210,7 +210,7 @@ func (q *Queries) FetchAccountByKey(ctx context.Context, arg FetchAccountByKeyPa
 }
 
 const fetchAgentByAccountUUIDAndClientKey = `-- name: FetchAgentByAccountUUIDAndClientKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `token_hash` + "`" + `
 FROM ` + "`" + `agent` + "`" + `
 WHERE 
     ` + "`" + `account_uuid` + "`" + ` = ? AND ` + "`" + `client_key` + "`" + ` = ? 
@@ -249,6 +249,7 @@ func (q *Queries) FetchAgentByAccountUUIDAndClientKey(ctx context.Context, arg F
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AccountUUID,
+			&i.TokenHash,
 		); err != nil {
 			return nil, err
 		}
@@ -264,7 +265,7 @@ func (q *Queries) FetchAgentByAccountUUIDAndClientKey(ctx context.Context, arg F
 }
 
 const fetchAgentByID = `-- name: FetchAgentByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `token_hash` + "`" + `
 FROM ` + "`" + `agent` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -291,6 +292,7 @@ func (q *Queries) FetchAgentByID(ctx context.Context, id string) ([]Agent, error
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AccountUUID,
+			&i.TokenHash,
 		); err != nil {
 			return nil, err
 		}
@@ -306,7 +308,7 @@ func (q *Queries) FetchAgentByID(ctx context.Context, id string) ([]Agent, error
 }
 
 const fetchAgentByIDForUpdate = `-- name: FetchAgentByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `token_hash` + "`" + `
 FROM ` + "`" + `agent` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -333,6 +335,56 @@ func (q *Queries) FetchAgentByIDForUpdate(ctx context.Context, id string) ([]Age
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AccountUUID,
+			&i.TokenHash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchAgentByTokenHash = `-- name: FetchAgentByTokenHash :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `label` + "`" + `,` + "`" + `client_kind` + "`" + `,` + "`" + `client_key` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `last_seen_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `account_uuid` + "`" + `,` + "`" + `token_hash` + "`" + `
+FROM ` + "`" + `agent` + "`" + `
+WHERE 
+    ` + "`" + `token_hash` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchAgentByTokenHashParams struct {
+	TokenHash null.String `json:"token_hash"`
+	Offset    int32       `json:"offset"`
+	Limit     int32       `json:"limit"`
+}
+
+func (q *Queries) FetchAgentByTokenHash(ctx context.Context, arg FetchAgentByTokenHashParams) ([]Agent, error) {
+	rows, err := q.db.QueryContext(ctx, fetchAgentByTokenHash, arg.TokenHash, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Agent
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Label,
+			&i.ClientKind,
+			&i.ClientKey,
+			&i.Status,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AccountUUID,
+			&i.TokenHash,
 		); err != nil {
 			return nil, err
 		}

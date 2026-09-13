@@ -19,9 +19,9 @@ VALUES
 
 -- name: InsertAgent :execresult
 INSERT INTO `agent`
-(`id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`)
+(`id`,`key`,`label`,`client_kind`,`client_key`,`status`,`last_seen_at`,`created_at`,`updated_at`,`account_uuid`,`token_hash`)
 VALUES
-(?,?,?,?,?,?,?,?,?,?);
+(?,?,?,?,?,?,?,?,?,?,?);
 
 -- name: InsertMember :execresult
 INSERT INTO `member`

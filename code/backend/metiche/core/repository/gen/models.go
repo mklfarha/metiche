@@ -38,6 +38,7 @@ type Agent struct {
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	AccountUUID string      `json:"account_uuid"`
+	TokenHash   null.String `json:"token_hash"`
 }
 
 type Claim struct {

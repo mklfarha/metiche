@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generator": "nuzur go-code-gen",
-  "generated_at": "2026-09-12T19:46:10Z",
+  "generated_at": "2026-09-13T01:24:05Z",
   "files": [
     "AI.md",
     "Dockerfile",
@@ -30,12 +30,14 @@
     "core/module/agent/delete.go",
     "core/module/agent/fetch_agent_by_account_uuid_and_client_key.go",
     "core/module/agent/fetch_agent_by_id.go",
+    "core/module/agent/fetch_agent_by_token_hash.go",
     "core/module/agent/list.go",
     "core/module/agent/mapper.go",
     "core/module/agent/option.go",
     "core/module/agent/types/delete.go",
     "core/module/agent/types/fetch_agent_by_account_uuid_and_client_key.go",
     "core/module/agent/types/fetch_agent_by_id.go",
+    "core/module/agent/types/fetch_agent_by_token_hash.go",
     "core/module/agent/types/list.go",
     "core/module/agent/types/upsert.go",
     "core/module/agent/upsert.go",

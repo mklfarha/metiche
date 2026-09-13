@@ -18,6 +18,7 @@ func (e Agent) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 		"created_at":   entitytypes.TimestampFieldType,
 		"updated_at":   entitytypes.TimestampFieldType,
 		"account_uuid": entitytypes.StringFieldType,
+		"token_hash":   entitytypes.StringFieldType,
 	}
 }
 
@@ -33,6 +34,7 @@ func (e Agent) OrderedFieldIdentifiers() []string {
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
 	res = append(res, "account_uuid")
+	res = append(res, "token_hash")
 
 	return res
 }

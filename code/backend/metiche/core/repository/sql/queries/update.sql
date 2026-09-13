@@ -23,7 +23,7 @@ WHERE
 -- name: UpdateAgent :exec
 UPDATE `agent`
 SET
-`key` = ?, `label` = ?, `client_kind` = ?, `client_key` = ?, `status` = ?, `last_seen_at` = ?, `created_at` = ?, `updated_at` = ?, `account_uuid` = ?
+`key` = ?, `label` = ?, `client_kind` = ?, `client_key` = ?, `status` = ?, `last_seen_at` = ?, `created_at` = ?, `updated_at` = ?, `account_uuid` = ?, `token_hash` = ?
 WHERE
 `id` = ?;
 

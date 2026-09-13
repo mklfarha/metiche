@@ -47,6 +47,7 @@ type Querier interface {
 	// agent selects:
 	FetchAgentByID(ctx context.Context, id string) ([]Agent, error)
 	FetchAgentByIDForUpdate(ctx context.Context, id string) ([]Agent, error)
+	FetchAgentByTokenHash(ctx context.Context, arg FetchAgentByTokenHashParams) ([]Agent, error)
 	FetchClaim(ctx context.Context) ([]Claim, error)
 	// claim selects:
 	FetchClaimByID(ctx context.Context, id string) ([]Claim, error)
