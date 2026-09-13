@@ -118,11 +118,18 @@ func TestToolSurface(t *testing.T) {
 		// signing out a browser that is already signed out changes nothing.
 		"open_board":        {false, false},
 		"sign_out_browsers": {false, true},
+
+		// Invites (docs/CLI.md §4.3-4.5). create_invite is additive: two calls
+		// are two invites. revoke_invite is idempotent: revoking a revoked
+		// invite changes nothing.
+		"create_invite": {false, false},
+		"list_invites":  {true, false},
+		"revoke_invite": {false, true},
 	}
 
 	// destructiveByDesign is the complete list of tools allowed to declare
-	// destructiveHint=true. Exactly one, named, and every other tool must still
-	// declare false explicitly.
+	// destructiveHint=true. Each one named, with its reason, and every other
+	// tool must still declare false explicitly.
 	//
 	// sign_out_browsers ends a person's signed-in browser sessions: a signed-out
 	// browser loses the board until someone mints a new link, and that cannot
@@ -130,7 +137,13 @@ func TestToolSurface(t *testing.T) {
 	// declares it true on purpose, so a well-behaved client asks the person
 	// before an agent signs their browsers out. Adding a name here is a design
 	// decision, not a test fix.
-	destructiveByDesign := map[string]bool{"sign_out_browsers": true}
+	destructiveByDesign := map[string]bool{
+		"sign_out_browsers": true,
+		// revoke_invite ends an invite: everyone holding its code loses the
+		// way in, and nothing in the tool surface can un-revoke it (docs/CLI.md
+		// §4.5), so a well-behaved client asks the person first.
+		"revoke_invite": true,
+	}
 
 	if len(registered) != len(want) {
 		names := make([]string, 0, len(registered))
@@ -163,9 +176,9 @@ func TestToolSurface(t *testing.T) {
 		case d == nil:
 			t.Errorf("%s does not declare destructiveHint at all, and MCP defaults it to true", tool.Name)
 		case destructiveByDesign[tool.Name] && !*d:
-			t.Errorf("%s must declare destructiveHint=true: it ends a person's browser sessions (§5.4)", tool.Name)
+			t.Errorf("%s must declare destructiveHint=true: it is on the destructive-by-design list", tool.Name)
 		case !destructiveByDesign[tool.Name] && *d:
-			t.Errorf("%s declares destructiveHint=true; only sign_out_browsers may", tool.Name)
+			t.Errorf("%s declares destructiveHint=true; only sign_out_browsers and revoke_invite may", tool.Name)
 		}
 		if o := tool.Annotations.OpenWorldHint; o == nil || *o {
 			t.Errorf("%s does not declare openWorldHint=false; metiche talks to nothing but its own database", tool.Name)

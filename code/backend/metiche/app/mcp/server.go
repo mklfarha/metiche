@@ -143,6 +143,7 @@ Send your token on every call, including a later join_team for a second team - j
 your own token keeps it and adds a membership rather than a second identity. A team is a per-call
 scope: pass team_slug when you are on more than one. A join code is an invite, so it can be revoked,
 expired or used up; ask for a fresh one rather than retrying a dead one.
+To let a teammate join, call create_invite and give them the code; they run the metiche installer and paste it.
 
 Every response carries "pending": counts of instructions, conflicts and reviews waiting for you.
 MCP cannot push, so that count is how you find out anything. When it is non-zero, fetch the
@@ -273,11 +274,42 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 		Description: "List or sign out the browsers signed in to the person's metiche board. With no arguments it only lists them (key, when created and last seen, user agent) and changes nothing. " +
 			"session_key signs out that one browser; all=true signs out every browser on this account. Only ever this account's own browsers. " +
 			"Never sign anything out unless the person asked you to.",
-		// The one destructive tool on this surface: it ends a person's
-		// signed-in browsers. Idempotent: signing out a browser that is
+		// Destructive: it ends a person's signed-in browsers (revoke_invite is
+		// the other destructive tool). Idempotent: signing out a browser that is
 		// already signed out changes nothing.
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), IdempotentHint: true, OpenWorldHint: boolPtr(false)},
 	}, h.SignOutBrowsers)
+
+	// Invites (docs/CLI.md §1.6, §4.3-4.5). The code is shown once, by
+	// create_invite, and by nothing after it.
+	addTool(server, h, logger, &mcp.Tool{
+		Name: "create_invite",
+		Description: "Make a join code so a teammate can join this team. Returns code, shown ONLY on this call: give it to the person, who runs the metiche installer (curl -fsSL https://metiche.xyz/install.sh | sh), chooses join and pastes it. " +
+			"Defaults to 1 use and 7 days; owners may allow up to 100 uses and 30 days, members up to 25 uses and 7 days. " +
+			"Treat the code like a door code: never write it to the repository, a commit, an issue, a PR or a chat channel. " +
+			"Pass team_slug if you are on more than one team. An idempotency_key makes a retry return the same invite, without its code.",
+		// Additive: two calls are two invites. The optional key makes a RETRY
+		// safe, which is a different promise.
+		Annotations: additive,
+	}, h.CreateInvite)
+
+	addTool(server, h, logger, &mcp.Tool{
+		Name: "list_invites",
+		Description: "List this team's invites: label, who made each, uses and max_uses, expiry, state (active, expired, exhausted, revoked) and when it was last used. Never the codes. " +
+			"The team's owner sees every invite; a member sees only the ones they created. Pass team_slug if you are on more than one team.",
+		Annotations: readOnly,
+	}, h.ListInvites)
+
+	addTool(server, h, logger, &mcp.Tool{
+		Name: "revoke_invite",
+		Description: "Revoke an invite by its invite_id, so nobody new can join with its code. People who already joined keep their access. " +
+			"The team's owner can revoke any invite; a member only their own. Revoking an already-revoked invite changes nothing. " +
+			"Never revoke an invite unless the person asked you to.",
+		// Destructive: anyone holding the code loses the way in, and nothing
+		// in the tool surface can un-revoke it. Idempotent: a second revoke
+		// changes nothing.
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), IdempotentHint: true, OpenWorldHint: boolPtr(false)},
+	}, h.RevokeInvite)
 
 	addTool(server, h, logger, &mcp.Tool{
 		Name:        "health",

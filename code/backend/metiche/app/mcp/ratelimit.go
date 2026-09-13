@@ -56,11 +56,17 @@ const (
 
 	// defaultSignOutBrowsersPerHour bounds a loop, not a person.
 	defaultSignOutBrowsersPerHour = 60
+
+	// defaultCreateInvitePerHour bounds create_invite (docs/CLI.md §4.4). A
+	// person invites a handful of teammates; thirty an hour from one account is
+	// a loop minting door keys.
+	defaultCreateInvitePerHour = 30
 )
 
 type accountLimiterSet struct {
 	openBoard       *RateLimiter
 	signOutBrowsers *RateLimiter
+	createInvite    *RateLimiter
 }
 
 // accountLimitersByHandler holds one budget set per Handler, created on first
@@ -76,6 +82,7 @@ func (h *Handler) accountLimiters() *accountLimiterSet {
 	v, _ := accountLimitersByHandler.LoadOrStore(h, &accountLimiterSet{
 		openBoard:       NewRateLimiter(envInt("METICHE_OPEN_BOARD_PER_HOUR", defaultOpenBoardPerHour), rateWindow),
 		signOutBrowsers: NewRateLimiter(envInt("METICHE_SIGN_OUT_BROWSERS_PER_HOUR", defaultSignOutBrowsersPerHour), rateWindow),
+		createInvite:    NewRateLimiter(envInt("METICHE_CREATE_INVITE_PER_HOUR", defaultCreateInvitePerHour), rateWindow),
 	})
 	return v.(*accountLimiterSet)
 }
