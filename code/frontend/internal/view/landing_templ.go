@@ -144,7 +144,7 @@ func landingNav(boardURL string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<a href=\"https://github.com/mklfarha/metiche\">Source</a></div><a class=\"btn primary small\" href=\"#join\">Get your team on it</a></div></nav>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<a href=\"/docs\">Docs</a> <a href=\"https://github.com/mklfarha/metiche\">Source</a></div><a class=\"btn primary small\" href=\"#join\">Get your team on it</a></div></nav>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -186,7 +186,7 @@ func landingHero(boardURL string) templ.Component {
 			var templ_7745c5c3_Var5 templ.SafeURL
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 100, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 101, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -571,7 +571,7 @@ func landingBoard(boardURL string) templ.Component {
 			var templ_7745c5c3_Var16 templ.SafeURL
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 516, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 517, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -631,7 +631,7 @@ func landingJoin(boardURL string) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs("join code: <paste the code you were sent>")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 571, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 572, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -649,7 +649,7 @@ func landingJoin(boardURL string) templ.Component {
 			var templ_7745c5c3_Var19 templ.SafeURL
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 603, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 604, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -660,7 +660,7 @@ func landingJoin(boardURL string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<p class=\"manual\"><a href=\"https://github.com/mklfarha/metiche/blob/main/docs/ONBOARDING.md\">The manual route is written down <span class=\"arw\">→</span></a></p></div><div class=\"code\" style=\"margin-top:14px\"><div class=\"code-head\">what your agent then does <span class=\"fn\">· on its own, every loop</span></div><pre>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<p class=\"manual\"><a href=\"/docs/getting-started\">The manual route is written down <span class=\"arw\">→</span></a></p></div><div class=\"code\" style=\"margin-top:14px\"><div class=\"code-head\">what your agent then does <span class=\"fn\">· on its own, every loop</span></div><pre>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -698,7 +698,7 @@ func landingFoot() templ.Component {
 			templ_7745c5c3_Var20 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<footer class=\"lp-foot\"><div class=\"wrap\"><span class=\"brandbar\"><img src=\"/static/metiche-icon.png\" alt=\"\" width=\"26\" height=\"26\"> <span class=\"word\">metiche<span class=\"dot\">.</span></span></span><div class=\"links\"><a href=\"#what\">What it catches</a> <a href=\"#how\">How it works</a> <a href=\"#join\">Join</a> <a href=\"https://github.com/mklfarha/metiche\">Source</a></div></div><div class=\"wrap\" style=\"margin-top:16px\"><p class=\"said\"><b>metiche</b> — Mexican slang for the one who has to know what everybody else is up to. Open source, self-hostable, and it will never need an API key from a model provider: the checks it runs today are deterministic and run on the server, and the judgement calls coming next will run in your own agent&#39;s model.</p></div></footer>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<footer class=\"lp-foot\"><div class=\"wrap\"><span class=\"brandbar\"><img src=\"/static/metiche-icon.png\" alt=\"\" width=\"26\" height=\"26\"> <span class=\"word\">metiche<span class=\"dot\">.</span></span></span><div class=\"links\"><a href=\"#what\">What it catches</a> <a href=\"#how\">How it works</a> <a href=\"#join\">Join</a> <a href=\"/docs\">Docs</a> <a href=\"https://github.com/mklfarha/metiche\">Source</a></div></div><div class=\"wrap\" style=\"margin-top:16px\"><p class=\"said\"><b>metiche</b> — Mexican slang for the one who has to know what everybody else is up to. Open source, self-hostable, and it will never need an API key from a model provider: the checks it runs today are deterministic and run on the server, and the judgement calls coming next will run in your own agent&#39;s model.</p></div></footer>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

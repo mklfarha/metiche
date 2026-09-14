@@ -1,0 +1,156 @@
+/* metiche docs — /docs. Loaded after landing.css, whose tokens, nav, code
+ * blocks, badges and footer it reuses; this file adds only the reading layout.
+ *
+ * Nothing on these pages may push the page sideways at 390px: grid children
+ * get min-width:0, tables and code blocks scroll inside their own box, and
+ * long identifiers break.
+ */
+
+.docs-shell {
+  display: grid;
+  grid-template-columns: 13.5rem minmax(0, 1fr);
+  gap: clamp(20px, 4vw, 48px);
+  align-items: start;
+  padding-top: clamp(22px, 4vw, 40px);
+  padding-bottom: clamp(36px, 6vw, 64px);
+}
+.docs-shell > * { min-width: 0; }
+
+/* ---------------------------------------------------------------- sidebar */
+
+.docs-side { position: sticky; top: 76px; font-size: 14px; }
+.docs-side-h {
+  margin: 0 0 8px; font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.docs-side ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.docs-side a {
+  display: block; padding: 6px 10px; border-radius: 6px; color: var(--ink-2);
+  border-left: 2px solid transparent;
+}
+.docs-side a:hover { color: var(--ink); background: var(--panel-2); }
+.docs-side a[aria-current="page"] {
+  color: var(--ink); background: var(--indigo-bg); border-left-color: var(--accent); font-weight: 600;
+}
+
+@media (max-width: 860px) {
+  .docs-shell { grid-template-columns: minmax(0, 1fr); }
+  .docs-side { position: static; }
+  .docs-side ul { display: flex; flex-wrap: wrap; gap: 6px; }
+  .docs-side-h a { padding: 0; border: 0; display: inline; }
+  .docs-side ul a {
+    border: 1px solid var(--line); background: var(--panel); padding: 7px 11px; font-size: 13px;
+    min-height: 40px; display: inline-flex; align-items: center;
+  }
+  .docs-side ul a[aria-current="page"] { border-color: var(--accent); }
+}
+
+/* ---------------------------------------------------------------- article */
+
+.docs-article { max-width: 46rem; }
+.docs-article > * { min-width: 0; }
+.docs-kicker { margin: 0 0 6px !important; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.docs-kicker a:hover { color: var(--ink); }
+.docs-article h1 { font-size: clamp(28px, 4.4vw, 40px); letter-spacing: -0.03em; margin-bottom: 14px; }
+.docs-article h2 {
+  font-size: clamp(19px, 2.6vw, 23px); margin: 38px 0 12px; padding-top: 18px;
+  border-top: 1px solid var(--line-soft); scroll-margin-top: 76px;
+}
+.docs-article h3 { font-size: 16.5px; margin: 24px 0 8px; scroll-margin-top: 76px; }
+.docs-article p, .docs-article li { color: var(--ink-2); font-size: 15.5px; }
+.docs-article p { margin: 0 0 14px; }
+.docs-article strong, .docs-article b { color: var(--ink); font-weight: 650; }
+.docs-article a:not(.btn) { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.docs-article ul, .docs-article ol { margin: 0 0 16px; padding-left: 1.3em; }
+.docs-article li { margin: 0 0 6px; }
+.docs-article li > ul { margin: 6px 0 0; }
+
+.docs-lede { font-size: clamp(16px, 2vw, 18px) !important; color: var(--ink-2); }
+.docs-muted { color: var(--ink-3) !important; font-size: 14px !important; }
+
+/* inline code: breaks anywhere rather than widening the page */
+.docs-article :not(pre) > code {
+  font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--line-soft); color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* code blocks scroll inside themselves */
+.docs-code { margin: 12px 0 18px; max-width: 100%; }
+.docs-code pre { overflow-x: auto; white-space: pre; }
+
+/* ---------------------------------------------------------------- callouts */
+
+.docs-note {
+  margin: 16px 0 20px; padding: 13px 15px; border-radius: var(--r);
+  border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--panel);
+}
+.docs-note p:last-child, .docs-note ul:last-child { margin-bottom: 0; }
+.docs-note .h { display: block; color: var(--ink); font-weight: 650; margin-bottom: 4px; }
+.docs-note.warn { border-left-color: var(--coral); }
+.docs-note.soon { border-left-color: var(--violet-ink); border-style: dashed; border-left-style: solid; }
+
+/* ---------------------------------------------------------------- tables */
+
+.docs-table { max-width: 100%; overflow-x: auto; margin: 12px 0 20px; border: 1px solid var(--line); border-radius: var(--r); }
+.docs-table table { border-collapse: collapse; width: 100%; min-width: 30rem; font-size: 14px; }
+.docs-table th, .docs-table td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); }
+.docs-table th { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); background: var(--panel); }
+.docs-table td { color: var(--ink-2); }
+.docs-table tr:last-child td { border-bottom: 0; }
+
+/* ---------------------------------------------------------------- symptom list */
+
+.docs-steps { counter-reset: s; list-style: none; padding-left: 0 !important; }
+.docs-steps > li { counter-increment: s; position: relative; padding-left: 36px; margin-bottom: 12px; }
+.docs-steps > li::before {
+  content: counter(s); position: absolute; left: 0; top: 1px; width: 24px; height: 24px; border-radius: 6px;
+  display: grid; place-items: center; font-family: var(--mono); font-size: 12px; font-weight: 700;
+  background: var(--indigo-bg); color: var(--indigo-ink); border: 1px solid var(--line);
+}
+
+/* ---------------------------------------------------------------- tool reference */
+
+.tool-group { margin: 0 0 8px; }
+.tool-list { margin: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.tool-list > div { display: grid; grid-template-columns: 12.5rem minmax(0, 1fr); gap: 4px 14px; padding: 10px 13px; border-bottom: 1px solid var(--line-soft); background: var(--panel); }
+.tool-list > div:last-child { border-bottom: 0; }
+.tool-list dt { margin: 0; min-width: 0; }
+.tool-list dt code { font-weight: 600; }
+.tool-list dd { margin: 0; color: var(--ink-2); font-size: 14.5px; min-width: 0; }
+.tool-list .hint { display: inline-block; margin-left: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); }
+@media (max-width: 560px) { .tool-list > div { grid-template-columns: minmax(0, 1fr); } }
+
+.soon-list { list-style: none; padding-left: 0 !important; display: grid; gap: 10px; }
+.soon-list li { border: 1px dashed var(--line); border-radius: var(--r); padding: 11px 13px; background: var(--panel); margin: 0; }
+.soon-list b { display: block; margin-bottom: 2px; }
+
+/* ---------------------------------------------------------------- index + pager */
+
+.docs-cards { list-style: none; padding: 0 !important; margin: 22px 0 20px !important; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.docs-cards li { margin: 0; min-width: 0; }
+.docs-cards a {
+  display: block; height: 100%; padding: 14px 15px; border-radius: var(--r);
+  border: 1px solid var(--line); background: var(--panel); text-decoration: none !important;
+}
+.docs-cards a:hover { border-color: var(--accent); }
+.docs-cards .t { display: block; color: var(--ink); font-weight: 650; margin-bottom: 4px; }
+.docs-cards .s { display: block; color: var(--ink-3); font-size: 14px; line-height: 1.5; }
+@media (max-width: 640px) { .docs-cards { grid-template-columns: minmax(0, 1fr); } }
+
+.docs-pager { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 44px; }
+.docs-pager a {
+  display: block; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--panel); color: var(--ink) !important; text-decoration: none !important; font-weight: 600; min-width: 0;
+}
+.docs-pager a:hover { border-color: var(--accent); }
+.docs-pager .k { display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+.docs-pager .next { grid-column: 2; text-align: right; }
+@media (max-width: 480px) {
+  .docs-pager { grid-template-columns: minmax(0, 1fr); }
+  .docs-pager .next { grid-column: 1; }
+}
+
+/* the landing nav hides its links below 960px; on docs keep "Get started" and
+   rely on the sidebar list, which is always visible */
+.docs .lp-nav .btn.small { white-space: nowrap; }

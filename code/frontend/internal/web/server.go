@@ -220,6 +220,12 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/teams", s.join)
 	r.Get("/join", s.joinCode)
 
+	// The public docs (docs.go): static, cacheable, no script. An unknown
+	// page is the router's plain 404, like any other path.
+	r.Get("/docs", s.docsIndex)
+	r.Get("/docs/", s.docsSlash)
+	r.Get("/docs/{page}", s.docPage)
+
 	// Signing in (signin.go). /signin is served even without a backend, so the
 	// page that explains how to sign in always exists; everything else answers
 	// only when login is on.

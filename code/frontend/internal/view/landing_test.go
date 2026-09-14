@@ -122,6 +122,32 @@ func TestLandingDescribesWhatIsDeployed(t *testing.T) {
 	}
 }
 
+// TestLandingLinksToTheDocs: the landing nav and footer name the docs, and the
+// "manual route" link goes to the docs' Getting started page on this site
+// rather than to a markdown file on GitHub.
+func TestLandingLinksToTheDocs(t *testing.T) {
+	for _, boardURL := range []string{"/t/demo", ""} {
+		body := renderLanding(t, boardURL)
+
+		nav := regexp.MustCompile(`(?s)<nav class="lp-nav">.*?</nav>`).FindString(body)
+		if !strings.Contains(nav, `<a href="/docs">Docs</a>`) {
+			t.Errorf("boardURL=%q: landing nav has no Docs link", boardURL)
+		}
+		foot := regexp.MustCompile(`(?s)<footer class="lp-foot">.*?</footer>`).FindString(body)
+		if !strings.Contains(foot, `<a href="/docs">Docs</a>`) {
+			t.Errorf("boardURL=%q: landing footer has no Docs link", boardURL)
+		}
+
+		join := landingSection(t, body, "join")
+		if !regexp.MustCompile(`<a href="/docs/getting-started">The manual route is written down\b`).MatchString(join) {
+			t.Errorf("boardURL=%q: \"The manual route is written down\" does not link to /docs/getting-started", boardURL)
+		}
+		if strings.Contains(body, "ONBOARDING.md") {
+			t.Errorf("boardURL=%q: landing still links to docs/ONBOARDING.md", boardURL)
+		}
+	}
+}
+
 // comingNext is the marker every not-yet-built feature carries.
 const comingNext = "Coming next"
 

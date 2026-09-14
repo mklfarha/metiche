@@ -1,0 +1,137 @@
+package view
+
+// DocsPage is one page of the docs: the shared chrome around the page's body.
+//
+// Static on purpose: no script at all, no inline style and no form, so it runs
+// under the docs' Content-Security-Policy (web/docs.go) with nothing allowed
+// beyond this origin's stylesheets and images.
+templ DocsPage(p DocPage) {
+	@docsShell(p.Title+" · metiche docs", p.Summary, p.Slug) {
+		<article class="docs-article">
+			<p class="docs-kicker"><a href="/docs">Docs</a></p>
+			<h1>{ p.Title }</h1>
+			@p.body()
+			@docsPager(p.Slug)
+		</article>
+	}
+}
+
+// DocsIndex is /docs.
+templ DocsIndex() {
+	@docsShell("metiche docs", "How to set up metiche, invite your team, read the board and work with agents.", "") {
+		<article class="docs-article">
+			<h1>metiche docs</h1>
+			<p class="docs-lede">
+				metiche is an MCP server every teammate&#39;s coding agent connects to. Agents say what they are
+				about to do before they do it, and when two are about to write the same files, both are told
+				in their own tool responses. These pages are the manual.
+			</p>
+			<ol class="docs-cards">
+				for _, d := range DocPages() {
+					<li>
+						<a href={ templ.SafeURL(d.URL()) }>
+							<span class="t">{ d.Title }</span>
+							<span class="s">{ d.Summary }</span>
+						</a>
+					</li>
+				}
+			</ol>
+			<p class="docs-muted">
+				New here? Start with <a href="/docs/getting-started">Getting started</a>. The idea itself is on the
+				<a href="/">front page</a>.
+			</p>
+		</article>
+	}
+}
+
+templ docsShell(title, description, current string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title }</title>
+			<meta name="description" content={ description }/>
+			<meta name="color-scheme" content="dark light"/>
+			<link rel="icon" href="/static/metiche-icon.png" type="image/png"/>
+			<link rel="stylesheet" href="/static/landing.css"/>
+			<link rel="stylesheet" href="/static/docs.css"/>
+		</head>
+		<body class="lp docs">
+			<a class="skip" href="#docs-main">Skip to the page</a>
+			<nav class="lp-nav">
+				<div class="wrap">
+					<a class="brandbar" href="/" aria-label="metiche, home">
+						<img src="/static/metiche-icon.png" alt="" width="26" height="26"/>
+						<span class="word">metiche<span class="dot">.</span></span>
+					</a>
+					<div class="links">
+						<a href="/#how">How it works</a>
+						<a href="/#join">Join</a>
+						<a href="/docs" aria-current="page">Docs</a>
+						<a href="https://github.com/mklfarha/metiche">Source</a>
+					</div>
+					<a class="btn primary small" href="/docs/getting-started">Get started</a>
+				</div>
+			</nav>
+			<div class="wrap docs-shell">
+				<nav class="docs-side" aria-label="Docs pages">
+					<p class="docs-side-h"><a href="/docs">Docs</a></p>
+					<ul>
+						for _, d := range DocPages() {
+							<li>
+								if d.Slug == current {
+									<a href={ templ.SafeURL(d.URL()) } aria-current="page">{ d.Nav }</a>
+								} else {
+									<a href={ templ.SafeURL(d.URL()) }>{ d.Nav }</a>
+								}
+							</li>
+						}
+					</ul>
+				</nav>
+				<main id="docs-main" class="docs-main">
+					{ children... }
+				</main>
+			</div>
+			<footer class="lp-foot">
+				<div class="wrap">
+					<span class="brandbar">
+						<img src="/static/metiche-icon.png" alt="" width="26" height="26"/>
+						<span class="word">metiche<span class="dot">.</span></span>
+					</span>
+					<div class="links">
+						<a href="/">Home</a>
+						<a href="/docs">Docs</a>
+						<a href="https://github.com/mklfarha/metiche">Source</a>
+					</div>
+				</div>
+			</footer>
+		</body>
+	</html>
+}
+
+templ docsPager(slug string) {
+	<nav class="docs-pager" aria-label="Previous and next page">
+		if p, ok := docPrev(slug); ok {
+			<a class="prev" href={ templ.SafeURL(p.URL()) }><span class="k">Previous</span>{ p.Title }</a>
+		}
+		if n, ok := docNext(slug); ok {
+			<a class="next" href={ templ.SafeURL(n.URL()) }><span class="k">Next</span>{ n.Title }</a>
+		}
+	</nav>
+}
+
+// docCode is a code block. The text is escaped by templ, so placeholders in
+// angle brackets render as typed.
+templ docCode(head, text string) {
+	<div class="code docs-code">
+		if head != "" {
+			<div class="code-head">{ head }</div>
+		}
+		<pre>{ text }</pre>
+	</div>
+}
+
+templ soon() {
+	<span class="soon-badge">Coming next</span>
+}

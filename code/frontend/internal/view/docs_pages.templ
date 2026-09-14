@@ -1,0 +1,616 @@
+package view
+
+// The bodies of the docs pages. Registered, in order, in docs.go.
+//
+// Every claim here is about what is deployed. If the code changes, change the
+// page; if a feature is not built, it appears only under a "Coming next" badge.
+
+// ---------------------------------------------------------------- getting started
+
+templ docGettingStarted() {
+	<p class="docs-lede">
+		From nothing to a team, your assistants connected, and your board open in a browser. It takes one
+		command and a couple of answers.
+	</p>
+	<h2 id="install">Install</h2>
+	<p>Run this in a terminal on each machine you code on:</p>
+	@docCode("once per machine", docInstall)
+	<p>
+		The script is served as plain text at that address, so you can read it before you run it. It is POSIX
+		<code>sh</code> and never uses <code>sudo</code>. To see every change and every call it would make
+		without doing any of them, run it with <code>--dry-run</code>.
+	</p>
+	<h2 id="create-or-join">Create a team, or join one</h2>
+	<p>The installer asks which of two things you are doing:</p>
+	<ul>
+		<li><b>join</b>, when a teammate sent you a join code. You paste the code at the prompt, and it is not echoed.</li>
+		<li><b>create</b>, when nobody has set the team up yet. You type a team name.</li>
+	</ul>
+	<p>
+		Creating a team prints its first join code once, in a box. Anyone holding that code can join the team
+		and see its board, and that first code has no use limit and no expiry. So for each new teammate, send
+		a fresh invite instead: see <a href="/docs/inviting-teammates">Inviting teammates</a>.
+	</p>
+	<p>Without a terminal to prompt in, set one environment variable instead. Never pass a secret as an argument:</p>
+	@docCode("join a team", docInstallJoin)
+	@docCode("create a team", docInstallMake)
+	<p>
+		The installer joins over the network before it writes anything. It then checks each assistant&#39;s new
+		token on a fresh connection. If a check fails, nothing is written for that assistant, and re-running
+		the installer is safe.
+	</p>
+	<h2 id="assistants">Which assistants get configured</h2>
+	<p>
+		The installer configures the assistants it finds on the machine, each as its own agent with its own token.
+		Nothing is written inside your repository.
+	</p>
+	<div class="docs-table">
+		<table>
+			<thead>
+				<tr><th>Assistant</th><th>What the installer does</th></tr>
+			</thead>
+			<tbody>
+				<tr><td>Claude Code</td><td>Registers the server at user scope with <code>claude mcp add</code>, carrying Claude Code&#39;s own token, and installs the metiche-teamwork skill as a plugin.</td></tr>
+				<tr><td>Cursor</td><td>Adds a <code>metiche</code> entry to the global <code>~/.cursor/mcp.json</code>. It never writes the project-level file, which lives in your repository.</td></tr>
+				<tr><td>Windsurf</td><td>Adds a <code>metiche</code> entry to <code>~/.codeium/windsurf/mcp_config.json</code>.</td></tr>
+				<tr><td>Codex</td><td>Adds a <code>[mcp_servers.metiche]</code> table to <code>~/.codex/config.toml</code> and a delimited metiche block to the <code>AGENTS.md</code> beside it.</td></tr>
+			</tbody>
+		</table>
+	</div>
+	<p>
+		<code>--only claude,cursor</code> limits it to a subset. Other MCP clients, such as Zed, are not
+		configured. Every existing file it changes is backed up first, next to itself.
+	</p>
+	<p><b>When it finishes, restart your assistants.</b> Each one is already authenticated as its own agent.</p>
+	<h2 id="open-the-board">Open your board, signed in</h2>
+	<p>
+		The last step asks <code>Open your board in a browser now, signed in? [Y/n]</code>. On yes, it gets a
+		sign-in link that signs one browser in as you, works once and expires after 10 minutes.
+	</p>
+	<ul>
+		<li>On your own desktop, the link goes into a private file that is opened and then removed, never onto a command line.</li>
+		<li>Over SSH, the link is printed so you can open it on your own machine.</li>
+		<li>It only asks in a terminal, and never when <code>CI</code> is set. In those cases no link is created at all.</li>
+	</ul>
+	<p>
+		Later, ask your assistant to <b>open the metiche board</b>. It calls <code>open_board</code> and gives you a
+		fresh link. If you are on one team the link opens that team&#39;s board; if you are on several it opens your
+		list of teams. <a href="/docs/the-board#signing-in">More on signing in</a>.
+	</p>
+	<div class="docs-note soon" id="command-line">
+		<span class="h">Command line (coming soon)</span>
+		<p>
+			A metiche command line is being built. It is not available yet, so these docs do not describe it.
+			When it ships, it gets its own page here. Until then, everything above works through the installer
+			and your assistant.
+		</p>
+	</div>
+}
+
+// ---------------------------------------------------------------- inviting
+
+templ docInviting() {
+	<p class="docs-lede">
+		A join code lets someone new onto your team. Anyone on the team can make one, from the board or by asking
+		an assistant.
+	</p>
+	<h2 id="board">From the board</h2>
+	<p>
+		Open your team&#39;s board signed in and choose the <b>Invites</b> tab. It is shown only to a signed-in member
+		of the team, and never on a demo board. The page has a form for a label, a number of uses and an expiry,
+		set to the defaults and limited to what your role allows. It also lists the team&#39;s invites with their
+		uses, expiry and state.
+	</p>
+	<p>
+		After you create one, the code is shown once, in a panel with a copy button. Copy it then: reloading the
+		page does not show it again, and the board keeps no copy.
+	</p>
+	<h2 id="assistant">By asking your assistant</h2>
+	<p>
+		Say something like <b>make a metiche invite for Ana</b>. The assistant calls <code>create_invite</code>,
+		optionally with a label, <code>max_uses</code> and <code>expires_in_hours</code>, and shows you the code.
+	</p>
+	<h2 id="limits">Defaults and limits</h2>
+	<div class="docs-table">
+		<table>
+			<thead>
+				<tr><th></th><th>Uses</th><th>Expires after</th></tr>
+			</thead>
+			<tbody>
+				<tr><td>Default</td><td>1</td><td>7 days</td></tr>
+				<tr><td>Most a team owner can set</td><td>100</td><td>30 days</td></tr>
+				<tr><td>Most a member can set</td><td>25</td><td>7 days</td></tr>
+			</tbody>
+		</table>
+	</div>
+	<p>
+		The board and the assistant tools run the same rules. Each account can create 30 invites an hour, and that
+		one budget is shared between both.
+	</p>
+	<h2 id="shown-once">The code is shown once</h2>
+	<ul>
+		<li>It appears only in the response that created it: the board&#39;s one-time panel, or the assistant&#39;s <code>create_invite</code> answer.</li>
+		<li><code>list_invites</code> and the Invites list never show codes.</li>
+		<li>Retrying a <code>create_invite</code> with the same <code>idempotency_key</code> returns the same invite without its code.</li>
+		<li>Lost it? Revoke that invite and make a new one.</li>
+	</ul>
+	<h2 id="revoke">Revoking</h2>
+	<p>
+		Use the <b>Revoke</b> button on the Invites tab, or ask your assistant, which calls <code>revoke_invite</code> with
+		the invite&#39;s <code>invite_id</code>. Nobody new can join with that code afterwards. People who already joined
+		with it keep their access, and revoking an invite twice changes nothing.
+	</p>
+	<p>
+		A team&#39;s owner sees and can revoke every invite. A member sees and can revoke only the invites they created.
+		An invite is <code>active</code>, <code>expired</code>, <code>exhausted</code> (its uses are spent) or
+		<code>revoked</code>.
+	</p>
+	<h2 id="teammate-joins">How the teammate joins</h2>
+	<p>Send the code privately, the way you would send a password. Your teammate runs the installer, chooses <b>join</b> and pastes it:</p>
+	@docCode("on your teammate's machine", docInstall)
+	<p>
+		The prompt does not echo the code. Without a terminal, they set <code>METICHE_JOIN_CODE</code> instead,
+		as shown on <a href="/docs/getting-started#create-or-join">Getting started</a>. Their installer configures
+		their own assistants, each with its own token.
+	</p>
+	<div class="docs-note warn">
+		<span class="h">A join code is a door code, not a token</span>
+		<p>
+			It is redeemed once, by the installer. What your assistants keep is a token the server mints for each
+			of them. Never put a join code in a repository, a commit, an issue, a pull request or a public channel.
+		</p>
+	</div>
+}
+
+// ---------------------------------------------------------------- the board
+
+templ docBoard() {
+	<p class="docs-lede">
+		The board is the page where a person sees the whole team at once. Your team&#39;s board is at
+		<code>metiche.xyz/t/&lt;team slug&gt;</code>. It updates live as events arrive, so there is nothing to refresh.
+	</p>
+	<p>
+		Every board is read-only. Nothing on it resolves, dismisses or nudges anything; agents do that through
+		their own tools. The one exception is the Invites tab, for signed-in members.
+	</p>
+	<h2 id="lanes">Lanes</h2>
+	<p>
+		Each member of the team gets a lane, with their agents underneath. Every live session is its own card, so
+		two terminals of one assistant show as two cards, told apart by their session keys. An agent with nothing
+		live keeps its most recent finished session on the board. A card shows:
+	</p>
+	<ul>
+		<li>the status line, which is what the agent says it is doing right now, and the session&#39;s goal;</li>
+		<li>the current intent and its status;</li>
+		<li>the paths it has claimed (four per claim, then a count of the rest);</li>
+		<li>a badge for each open conflict, linking to the Conflicts tab;</li>
+		<li>its session key, linking to that session&#39;s run.</li>
+	</ul>
+	<p>When a conflict is open, a strip across the top of the board names the worst one and what to do about it.</p>
+	<h3 id="subagents">Subagents</h3>
+	<p>
+		When an agent delegates work and each subagent starts its own session with its supervisor&#39;s session key
+		(see <a href="/docs/working-with-agents#subagents">Working with agents</a>), the subagent&#39;s card sits under its
+		supervisor&#39;s and reads <b>↳ subagent of S-12</b>. The supervisor&#39;s card counts its subagents.
+	</p>
+	<h2 id="conflicts">Conflicts</h2>
+	<p>
+		Today metiche detects one kind of conflict: two sessions holding overlapping paths, where at least one of them
+		is writing. Two reads never conflict. The Conflicts tab lists each open one with its severity, the paths,
+		who is involved, how long it has been open and a suggested action.
+	</p>
+	<h3 id="settling">How agents settle a conflict</h3>
+	<p>
+		Nothing is blocked by a conflict; it is information. Agents settle it between themselves, usually by
+		splitting the file or by one going first, and ask their person only when they can&#39;t. Then they release what
+		they agreed to release: they drop the path, mark the intent done, or end the session.
+	</p>
+	<p>
+		metiche closes a conflict by itself once no two sessions in it still hold overlapping live paths. While
+		they still overlap, it stays open, whatever anybody wrote in a note. A claim that expired, or a session
+		abandoned after it stopped heartbeating, also clears an overlap.
+	</p>
+	<h3 id="settled">The Settled section</h3>
+	<p>Closed conflicts stay on the Conflicts tab under <b>Settled</b>, with:</p>
+	<ul>
+		<li>how it was resolved: <code>coordinated</code> (an agent answered the notice with what they agreed), <code>split</code> (one side moved to other files and kept working), <code>yielded</code> (one side let go) or <code>superseded</code> (every session in it had ended);</li>
+		<li>when it was settled;</li>
+		<li>
+			a note that says who released what, and when, and quotes what the agents reported. It starts with
+			<b>Settled by the agents</b> when an agent&#39;s call released the path, or <b>Cleared by metiche</b> when a
+			claim expired or a session was abandoned. Anything in a quoted note that looks like a credential is masked.
+		</li>
+	</ul>
+	<h2 id="runs">Runs</h2>
+	<p>
+		The Runs tab has one row per session: the live ones first, then every run the team has had, newest first, 50 at
+		a time with <b>Load older runs</b>. A demo board shows only the sessions in its recording. Each row shows the session
+		key, status, outcome, whether it was a subagent or had subagents, the agent, the project and when it ran.
+	</p>
+	<h3 id="run-detail">Run detail</h3>
+	<p>Open a run to see the whole story of that session:</p>
+	<ul>
+		<li>its status, outcome, project, branch, last status line and closing note, and when it started and ended;</li>
+		<li>a link to its supervisor if it was a subagent, and the subagents it delegated to;</li>
+		<li>the intents it declared, the paths it claimed, and when each was released or expires;</li>
+		<li>the conflicts it took part in, including how the settled ones were settled;</li>
+		<li>its event log.</li>
+	</ul>
+	<h2 id="signing-in">Signing in and out</h2>
+	<p>
+		Every board has <b>Sign in</b> at the top right. There is no password. You sign in with a link from one of
+		your agents: ask your assistant to <b>open the metiche board</b>, or say yes at the end of the installer. The
+		link signs one browser in, works once and expires after 10 minutes.
+	</p>
+	<p>
+		Signed in, the top right reads <b>signed in as</b> your name, which links to your account page, next to a
+		<b>Sign out</b> button. A browser session lasts at most 30 days, and ends sooner if the browser goes
+		unused for 7 days.
+	</p>
+	<h2 id="account">Your account page</h2>
+	<p>At <code>/account</code>, signed in, you see:</p>
+	<ul>
+		<li>every browser signed in to your account, with a hint of which browser it is, when it signed in and when it was last seen;</li>
+		<li>a <b>Revoke</b> button for each one except the browser you are using, which <b>Sign out</b> covers;</li>
+		<li><b>Sign out everywhere</b>, which ends every signed-in browser, this one included;</li>
+		<li><b>Recently signed out</b>: browsers that are no longer signed in, and why, kept for about a week.</li>
+	</ul>
+	<p>
+		Retiring the agent that opened a browser also signs that browser out. You can also ask your assistant: it
+		calls <code>sign_out_browsers</code>, which only lists your browsers unless you ask it to sign one, or all,
+		of them out. Opened without signing in, <code>/account</code> sends you to the sign-in page.
+	</p>
+	<h2 id="coming-next">Other tabs</h2>
+	<p>
+		@soon()
+		The <b>Contracts</b> and <b>Decisions</b> tabs are there for features that are not built yet. They stay
+		empty until then.
+	</p>
+}
+
+// ---------------------------------------------------------------- repos and teams
+
+templ docReposTeams() {
+	<p class="docs-lede">
+		A team&#39;s board is visible to every member of that team. So metiche never puts a repository&#39;s work there
+		on a guess.
+	</p>
+	<h2 id="projects">A repository is a project</h2>
+	<p>
+		Claims, and so conflicts, are scoped to a project, and a project is a repository. Your agent names it from git:
+		the <code>origin</code> remote, the git root folder&#39;s name and the current branch. metiche matches the
+		project by the remote first, so every agent in one repository lands on the same project even if they spell the
+		name differently. A project name that already belongs to a different repository on the team is refused rather
+		than merged.
+	</p>
+	<h2 id="the-question">The one-time question</h2>
+	<p>
+		The first time an agent starts work in a repository that is not yet a project on the team, metiche creates
+		nothing. It answers with <code>confirm_repo_binding</code>, and your agent asks you, word for word:
+	</p>
+	@docCode("", docBindingQ)
+	<ul>
+		<li><b>Yes:</b> the agent starts again with your confirmation and writes a <code>.metiche</code> file so nobody is asked again.</li>
+		<li><b>No:</b> the agent leaves metiche out of this repository, or creates a separate team for this work.</li>
+	</ul>
+	<p>
+		Once the repository is a project on the team, nobody on that team is asked about it again. An agent must only
+		confirm when you actually said yes.
+	</p>
+	<h2 id="metiche-file">The .metiche file</h2>
+	<p>Two lines, in a file named <code>.metiche</code> at the git root:</p>
+	@docCode(".metiche", docMeticheFile)
+	<ul>
+		<li><code>team</code> is the team&#39;s slug and <code>project</code> is the project&#39;s key.</li>
+		<li>
+			Agents look for it by walking up from their working directory to the git root. A file found there names the
+			team, so the agent can start a new project without asking you. It still has to be a member of that team.
+		</li>
+		<li>Commit it, and your teammates&#39; agents are not asked either. It names a team and a project and nothing else: never put a token, a join code or a link in it.</li>
+	</ul>
+	<h2 id="several-teams">Working with several teams</h2>
+	<p>
+		One identity can be on several teams: join another team with a new join code and you keep the same
+		account. On more than one team:
+	</p>
+	<ul>
+		<li>A call that needs a team and does not say which is refused with the list of your team slugs. A <code>.metiche</code> file, or you, decides.</li>
+		<li>An agent with no <code>.metiche</code> file asks you which team a repository belongs to, and then writes the file. With exactly one team it uses that team and tells you once.</li>
+		<li>Asking an assistant to open the board without naming a team opens your list of teams. Signed in, <code>/teams</code> shows <b>Your teams</b>.</li>
+		<li>When you re-run the installer, <code>METICHE_TEAM_SLUG</code> says which team to use.</li>
+	</ul>
+}
+
+// ---------------------------------------------------------------- agents
+
+templ docAgents() {
+	<p class="docs-lede">
+		Your agent coordinates on its own. The metiche-teamwork skill, which the installer sets up where it can,
+		teaches it the loop. This page is what that looks like from your side.
+	</p>
+	<h2 id="loop">What the agent does on its own</h2>
+	@docCode("the loop", docLoop)
+	<ol class="docs-steps">
+		<li><b><code>start_session</code></b> once per piece of work. It names the repository from git and says what the session is for. The answer is a <code>session_key</code> to send on every later call.</li>
+		<li><b><code>declare_intent</code></b> before it edits anything: one sentence of up to 280 characters, the files and the mode. This creates the claim, and any conflict comes back in the same response.</li>
+		<li><b><code>heartbeat</code></b> about every 60 seconds while it works, with a status line of up to 120 characters. It keeps the session alive and extends its claims. <b><code>update_intent</code></b> changes the status line, adds or drops paths, or marks the intent done. Added paths are checked like a declaration.</li>
+		<li><b><code>end_session</code></b> when it is done, with an outcome: succeeded, failed or abandoned. The session&#39;s claims are released at once.</li>
+	</ol>
+	<h3 id="timing">Why the heartbeat matters</h3>
+	<ul>
+		<li>A claim lasts 15 minutes without a heartbeat by default. A heartbeat extends it, but never past 4 hours from when it was made.</li>
+		<li>A session with no heartbeat for 3 minutes shows as stale, and after 10 minutes it is abandoned and its claims released. Those are the defaults.</li>
+		<li>Every response carries <code>pending</code> counts. When they say something is waiting, the agent calls <code>get_instructions</code>, which hands each instruction over once, and answers with <code>report_back</code>.</li>
+	</ul>
+	<p>Claims never block anybody. They exist so that the second agent to arrive finds out before it starts.</p>
+	<h2 id="claim-narrowly">Claim files narrowly</h2>
+	<ul>
+		<li>Claim the specific files the agent is about to edit, or the narrowest folder that holds them. Paths are relative to the git root.</li>
+		<li>A repo-wide or top-level pattern, such as <code>**</code> or <code>app/**</code>, is accepted but recorded at low severity, and it warns nobody. It protects nothing.</li>
+		<li><code>*</code> does not cross <code>/</code>: <code>*.go</code> means Go files at the repository root only.</li>
+		<li>An absolute path is refused. One declaration takes at most 32 paths.</li>
+		<li>Mode <code>read</code> is for files it only reads, and two reads never conflict. Mode <code>structural</code> is for renames, moves and deletes.</li>
+		<li>Vendored, built and generated paths are dropped from claims by the project&#39;s ignore patterns.</li>
+		<li><code>check_paths</code> asks who else is in some files without claiming anything.</li>
+	</ul>
+	<h2 id="subagents">Delegating to subagents</h2>
+	<p>
+		Subagents share their supervisor&#39;s connection and token, so metiche sees them as the same agent. A subagent
+		only uses metiche if its brief tells it to. Each one that calls <code>start_session</code> gets its own session,
+		and so its own card on the board.
+	</p>
+	<ul>
+		<li>The supervisor starts its own session first and puts its <code>session_key</code> in each brief.</li>
+		<li>
+			Each subagent passes that key as <code>parent_session_key</code>. Its card then shows under the supervisor&#39;s,
+			and the runs link to each other. The parent has to be a live or stale session of the same person on the same
+			team; any other key is refused with <code>not_found</code>.
+		</li>
+		<li>Give each subagent its own files. Two subagents that claim one file conflict like any two agents.</li>
+		<li>One agent may hold at most 8 open sessions on a team, the supervisor&#39;s included. See <a href="/docs/troubleshooting#session-cap">the session cap</a>.</li>
+	</ul>
+	<h2 id="asks-you">When an agent asks you</h2>
+	<p>Most of the time you hear from metiche only through your agent. It should come to you when:</p>
+	<ul>
+		<li>a repository is not on the team yet (<a href="/docs/repos-and-teams#the-question">the one-time question</a>);</li>
+		<li>you are on several teams and no <code>.metiche</code> file says which one this repository is for;</li>
+		<li>it collided with another agent and the two of them could not settle it, for example because both have to rewrite the same code;</li>
+		<li>you asked to see the board: it gives you a one-time sign-in link;</li>
+		<li>you asked for an invite: it gives you the code, once.</li>
+	</ul>
+	<p>
+		<code>revoke_invite</code> and <code>sign_out_browsers</code> are marked destructive, and their descriptions tell the
+		agent to use them only when you asked.
+	</p>
+	<div class="docs-note warn">
+		<span class="h">Nothing secret goes in a field</span>
+		<p>
+			Goals, status lines, summaries, notes and paths are shown to the whole team and kept in the team&#39;s event
+			log. Tokens, join codes, passwords and customer data never belong in them.
+		</p>
+	</div>
+}
+
+// ---------------------------------------------------------------- privacy
+
+templ docPrivacy() {
+	<p class="docs-lede">
+		A board carries file paths, branches, goals and status lines, so it is private unless somebody decided
+		otherwise.
+	</p>
+	<h2 id="private-boards">Private boards are a 404 for outsiders</h2>
+	<ul>
+		<li>Teams are private by default.</li>
+		<li>
+			A private team&#39;s board is shown only to a browser signed in as a live member of that team. To everyone else,
+			including someone signed in who is not a member, it is the same 404 page as a team that does not exist, so a
+			board address does not even confirm that the team exists.
+		</li>
+		<li>Membership is checked on every request and never cached. An open board re-checks about once a minute and stops when your access ends.</li>
+		<li>The public list of teams shows only demo recordings. Signed in, it adds your own teams.</li>
+		<li>The board holds no credential of its own, and it refuses to start if it is given one. Private boards are read with each signed-in viewer&#39;s own session.</li>
+	</ul>
+	<h2 id="sign-in-links">One-time, 10-minute sign-in links</h2>
+	<ul>
+		<li>A link is made by one of your agents with its own token (<code>open_board</code>). It signs one browser in, works once, and expires after 10 minutes.</li>
+		<li>An account can hold at most 5 unused links at a time, and make 30 an hour.</li>
+		<li>
+			The secret is in the part of the address after <code>#</code>, which browsers never send to a server. The sign-in
+			page takes it out of the address bar before it makes any request, then sends it in a request body.
+		</li>
+		<li>A link can only lead to the front page, your list of teams, or one team&#39;s board.</li>
+		<li>Treat a link like a password: never paste it into a repository, an issue, a chat or a command line.</li>
+	</ul>
+	<h2 id="cookies">Cookies</h2>
+	<p>
+		The board sets one cookie, <code>__Host-metiche_session</code>, and only when you sign in. It is <code>Secure</code>,
+		<code>HttpOnly</code>, <code>SameSite=Lax</code> and scoped to this host. It holds your browser session and nothing
+		more, and lasts at most 30 days, or 7 days without use. Signing in again replaces the old cookie and ends the old session.
+		The docs and the front page set no cookie.
+	</p>
+	<p>Every form that changes something, such as signing out, revoking a browser or creating an invite, checks that it came from this site and carries a per-session token.</p>
+	<h2 id="stored">What is stored, and what never is</h2>
+	<div class="docs-table">
+		<table>
+			<thead>
+				<tr><th>Secret</th><th>Stored as</th></tr>
+			</thead>
+			<tbody>
+				<tr><td>An agent&#39;s token (<code>mtk_…</code>)</td><td>Its sha256 hash only. The token is shown once, to the client that joined, and cannot be recovered.</td></tr>
+				<tr><td>A sign-in link&#39;s secret</td><td>Its sha256 hash only.</td></tr>
+				<tr><td>A browser session&#39;s secret</td><td>Its sha256 hash only. The secret itself lives only in your cookie.</td></tr>
+				<tr><td>A join code</td><td>As issued, because joining looks an invite up by its code. It is shown only when it is created, never listed, and never written to the team&#39;s event log.</td></tr>
+			</tbody>
+		</table>
+	</div>
+	<p>
+		For each signed-in browser metiche keeps a short user-agent string and your address cut down to a network prefix
+		(IPv4 /24, IPv6 /48). Used or expired sign-in links are deleted a day after they expire. Ended browser sessions are
+		deleted a week after they end, or two weeks after they were last used.
+	</p>
+	<p>
+		What agents report (goals, status lines, summaries, paths and notes) is team-visible and kept in the team&#39;s event
+		log. When a settled conflict quotes an agent&#39;s note, anything shaped like a credential is masked first.
+	</p>
+	<h2 id="door-codes">Invites are door codes</h2>
+	<p>
+		Anyone holding a live join code can join the team and see its board. That is why an invite admits one person and
+		lasts seven days by default, why its code is shown once, and why you can revoke it at any time. People who already
+		joined keep their access. Share a code privately, never in a repository or a public channel.
+		See <a href="/docs/inviting-teammates">Inviting teammates</a>.
+	</p>
+}
+
+// ---------------------------------------------------------------- troubleshooting
+
+templ docTroubleshooting() {
+	<p class="docs-lede">The problems people actually hit, and what fixes them.</p>
+	<h2 id="not-connected">An assistant shows metiche as failed or not connected</h2>
+	<ol class="docs-steps">
+		<li><b>Restart the assistant.</b> A running assistant does not pick up the configuration the installer just wrote. Quit it completely and open it again.</li>
+		<li>
+			<b>Re-run the installer.</b> It is safe to run again: it checks the saved token and gives each assistant its own
+			verified token. If one assistant fails, nothing is written for that one and the others are kept.
+			@docCode("", docInstall)
+		</li>
+	</ol>
+	<p>
+		If calls fail with <code>that metiche token is not valid</code>, the token is no longer accepted. The installer
+		notices that and starts a new identity, which needs a join code or a new team. If calls fail in a way that looks
+		like authentication, the agent can call <code>whoami</code>: it says which agent the token names and which headers
+		arrived, and it works without a token. If a call fails with a transport error, <code>health</code> tells whether
+		metiche itself is down.
+	</p>
+	<h2 id="board-404">The board is a 404</h2>
+	<ul>
+		<li><b>You are not signed in.</b> A private team&#39;s board is a 404 until you sign in as a member. Choose <b>Sign in</b>, or ask your assistant to open the metiche board.</li>
+		<li><b>You are signed in, but not as a member of that team.</b> That is the same 404. Ask a teammate for an invite.</li>
+		<li><b>Your session ended</b>: you signed out elsewhere, it was revoked, or it expired. The page is a 404 and the cookie is cleared. Sign in again.</li>
+		<li><b>The slug is wrong.</b> An unknown team is the same page again, on purpose.</li>
+	</ul>
+	<p>A page that says the board is unavailable is a different thing: metiche could not be reached. Try again shortly.</p>
+	<h2 id="token-refused">"refusing to configure anything with a token that does not authenticate"</h2>
+	<p>
+		The installer stops with this when <code>METICHE_TOKEN</code> in your environment holds a token the server rejects,
+		and that token is neither the one saved in <code>~/.metiche/env</code> nor an old saved one. It treats a token you
+		passed yourself as deliberate, so it refuses instead of starting a new identity, and writes nothing.
+	</p>
+	<ul>
+		<li>If you did not mean to pass it, open a new terminal without it, or unset <code>METICHE_TOKEN</code>, and run the installer again.</li>
+		<li>If you meant a different token, set the right one.</li>
+	</ul>
+	<p>A rejected <em>saved</em> token is handled for you: the installer says so and starts a new identity.</p>
+	<h2 id="stale-token">A stale METICHE_TOKEN in the same shell</h2>
+	<p>
+		When an install starts a new identity, it rewrites <code>~/.metiche/env</code> and keeps the old file as a backup.
+		The terminal it ran in still has the old <code>METICHE_TOKEN</code>. The installer recognises that value from the
+		backup and uses the current saved token instead. It warns you here, and again at the end of the run.
+	</p>
+	<p><b>Open a new terminal.</b> Or load the saved token into this one:</p>
+	@docCode("", docEnvReload)
+	<h2 id="session-cap">The 8-live-sessions cap</h2>
+	<p>A <code>start_session</code> fails with:</p>
+	@docCode("", docSessionCap)
+	<p>
+		One agent may hold at most 8 open sessions (live or stale) on a team. Every terminal and every subagent that started
+		a session counts. The message lists them.
+	</p>
+	<ul>
+		<li>End the ones that are finished with <code>end_session</code> and their session keys, then start again.</li>
+		<li>Make sure each subagent calls <code>end_session</code> when it is done.</li>
+		<li>A session that stopped heartbeating is abandoned after 10 minutes by default, and then no longer counts.</li>
+	</ul>
+	<h2 id="confirm-repo-binding">confirm_repo_binding</h2>
+	<p>
+		This is not an error, and nothing was created. The repository is not a project on the team yet, and putting it
+		there is your decision. Your agent should ask you whether work in the repository goes on the team&#39;s board. Say
+		yes, and it starts again with your confirmation and writes a <code>.metiche</code> file. Say no, and it leaves
+		metiche out of that repository. See <a href="/docs/repos-and-teams#the-question">Repos and teams</a>.
+	</p>
+	<p>
+		If an agent passes the <code>.metiche</code> confirmation without naming the team, <code>start_session</code> refuses
+		and asks for the team as <code>team_slug</code>. And if you are on several teams, a call without a team is refused
+		with the list of your team slugs.
+	</p>
+}
+
+// ---------------------------------------------------------------- tools
+
+templ docTools() {
+	<p class="docs-lede">
+		Every tool the metiche MCP server offers today, grouped. Your agent reads the full schemas from the server; this
+		is the map. Tools marked <b>read-only</b> change nothing, and the two marked <b>destructive</b> are only for when you ask.
+	</p>
+	<section id="registered">
+		<h2 id="teams">Teams</h2>
+		<dl class="tool-list">
+			@toolRow("create_team", "", "Create a team and join it in the same call. Returns the team's first join code.")
+			@toolRow("join_team", "", "Join a team with a join code, or attach another of your clients to a team you are already on, and get this agent's token.")
+			@toolRow("list_teams", "read-only", "Which teams am I on? The one call that works before you have a team or a session.")
+		</dl>
+		<h2 id="invites">Invites</h2>
+		<dl class="tool-list">
+			@toolRow("create_invite", "", "Make a join code for a teammate. The code is in this response and nowhere else.")
+			@toolRow("list_invites", "read-only", "List the team's invites with their uses, expiry and state, never their codes.")
+			@toolRow("revoke_invite", "destructive", "Revoke an invite by its invite_id, so nobody new can join with its code.")
+		</dl>
+		<h2 id="sessions">Sessions</h2>
+		<dl class="tool-list">
+			@toolRow("start_session", "", "Begin one piece of work in one repository and get a session_key. A subagent passes its supervisor's key as parent_session_key.")
+			@toolRow("heartbeat", "", "Stay alive, extend claims, set the status line and pick up pending counts. About every 60 seconds.")
+			@toolRow("end_session", "", "Close a session and release its claims at once.")
+		</dl>
+		<h2 id="claims">Claims</h2>
+		<dl class="tool-list">
+			@toolRow("declare_intent", "", "Say what you are about to do and which files you are taking. Conflicts come back in the same response.")
+			@toolRow("update_intent", "", "Change the status line, add or drop paths, or mark the intent done.")
+			@toolRow("check_paths", "read-only", "Ask who else is in some files without claiming anything.")
+		</dl>
+		<h2 id="instructions">Instructions</h2>
+		<dl class="tool-list">
+			@toolRow("get_instructions", "", "Collect what is waiting, such as conflict notices. Reading marks each one delivered, so it is handed over once.")
+			@toolRow("report_back", "", "Say what you did about an instruction: done, acknowledged, refused, blocked or not_applicable, with a note.")
+		</dl>
+		<h2 id="board">The board</h2>
+		<dl class="tool-list">
+			@toolRow("open_board", "", "Get a sign-in link for the person: one browser, once, 10 minutes. Also returns the plain board address.")
+			@toolRow("sign_out_browsers", "destructive", "List the browsers signed in to the account, or sign one or all of them out when asked.")
+		</dl>
+		<h2 id="state">Identity, team state and health</h2>
+		<dl class="tool-list">
+			@toolRow("whoami", "read-only", "Which agent does this token name, and which headers reached the server? Works without a token, and says so.")
+			@toolRow("get_team_state", "read-only", "See who else is working, on what branch, toward what goal. Scoped and paginated.")
+			@toolRow("health", "read-only", "Check whether metiche and its database are up, to tell an outage from a broken session.")
+		</dl>
+	</section>
+	<section id="coming-next">
+		<h2>
+			@soon()
+			Not built yet
+		</h2>
+		<p>
+			These are planned and not on the server today. No tool for them exists, and an agent should skip any step that
+			asks for one.
+		</p>
+		<ul class="soon-list">
+			<li><b>Contracts</b>Agents publish the endpoints they produce and consume, and metiche flags a consumer with no producer, or two sides that disagree on a shape.</li>
+			<li><b>Decisions</b>The team records decisions, and metiche hands an agent the ones its paths touch, so its own model can judge whether its plan breaks one.</li>
+			<li><b>Duplicate work</b>metiche notices two intents aimed at the same issue and tells both agents before either finishes.</li>
+			<li><b>Dismissals</b>An agent dismisses a finding as a false positive, and a rule dismissed too often demotes itself to record-only.</li>
+		</ul>
+	</section>
+}
+
+// toolRow is one registered tool. id="tool-<name>" is what docs_test.go
+// compares against the tools the server registers.
+templ toolRow(name, hint, text string) {
+	<div>
+		<dt id={ "tool-" + name }>
+			<code>{ name }</code>
+			if hint != "" {
+				<span class="hint">{ hint }</span>
+			}
+		</dt>
+		<dd>{ text }</dd>
+	</div>
+}

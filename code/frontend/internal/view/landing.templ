@@ -68,6 +68,7 @@ templ landingNav(boardURL string) {
 				if boardURL != "" {
 					<a href={ templ.SafeURL(boardURL) }>Live demo</a>
 				}
+				<a href="/docs">Docs</a>
 				<a href="https://github.com/mklfarha/metiche">Source</a>
 			</div>
 			<a class="btn primary small" href="#join">Get your team on it</a>
@@ -604,7 +605,7 @@ templ landingJoin(boardURL string) {
 							</p>
 						}
 						<p class="manual">
-							<a href="https://github.com/mklfarha/metiche/blob/main/docs/ONBOARDING.md">The manual route is written down <span class="arw">→</span></a>
+							<a href="/docs/getting-started">The manual route is written down <span class="arw">→</span></a>
 						</p>
 					</div>
 					<div class="code" style="margin-top:14px">
@@ -630,6 +631,7 @@ templ landingFoot() {
 				<a href="#what">What it catches</a>
 				<a href="#how">How it works</a>
 				<a href="#join">Join</a>
+				<a href="/docs">Docs</a>
 				<a href="https://github.com/mklfarha/metiche">Source</a>
 			</div>
 		</div>
