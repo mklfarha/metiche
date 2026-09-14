@@ -1,8 +1,20 @@
 # nuzur agent for metiche production data
 
-**Status:** design only. Nothing in this document exists yet: no MySQL user, no
-views, no image, no chart, no pairing, no Secret. This file is the only thing
-written.
+**Status:** built and tested locally; **not yet run in production.** The code
+exists in the repo, and §14 lists what was proven locally and what changed from
+the design:
+
+- the column policy and view generator;
+- the grants;
+- the image;
+- the chart;
+- the MySQL NetworkPolicy;
+- the setup script and its runbook.
+
+Nothing exists on the box yet: no MySQL user, no views, no Secret, no pairing.
+The production steps and the pairing follow
+[deploy/scripts/nuzur-agent-setup.md](../deploy/scripts/nuzur-agent-setup.md),
+with the owner.
 
 **Scope:** let the owner browse metiche's production MySQL in the nuzur data
 manager. Access is read-only and secret columns are removed. The nuzur agent
@@ -366,8 +378,10 @@ pod nuzur-agent-0 ──► cm.nuzur.com:443 ──► data manager (owner only)
 
 ### 5.2 Column policy and view generator
 
-**Policy file.** `deploy/nuzur-agent/columns.policy` is committed and holds no
-secrets. One line per column of `metiche`:
+**Policy file.** `deploy/sql/nuzur/columns.policy` *(as built)* is committed and holds no
+secrets. One line per column of `metiche`, and `expose!` and `redact` need a reason.
+The excerpt below is the design; the file is authoritative. As built it
+classifies 27 tables and 403 columns, with nine redactions (§14):
 
 ```
 account.token_hash                 redact     D2
@@ -392,7 +406,10 @@ notification_channel.last_error    expose     D2 capped status line (docs/MODEL.
 **Risky-name check.**
 
 - Any name matching `/(token|secret|code|key|pass|pwd|url|uri|snapshot|hash|salt|credential|cookie|signature|private|webhook|dsn|auth)/i` must be `redact` or `expose!`.
-- Today, besides the five redactions, that means:
+  - *As built*, the pattern also matches `email`, `user_agent` and a whole-word `ip`.
+  - That makes `account.email` and `browser_session.auth_method` `expose!`, and flipping
+    `browser_session.ip_hint` or `browser_session.user_agent` to plain `expose` is refused.
+- Today, besides the redactions, that means:
   - every `*.key` column, plus `contract.key_norm`;
   - `agent.client_key`, `conflict.dedupe_key`, `judgement.pair_key`, `team_event.subject_key`, `team_event.idempotency_key`;
   - `decision_token.token` and `intent_token.token`, which hold tokenized wording (`docs/MODEL.md:35,46`);
@@ -400,8 +417,22 @@ notification_channel.last_error    expose     D2 capped status line (docs/MODEL.
   - `project.repo_url`.
 - `last_error` does not match the pattern, so it is plain `expose`.
 
-**Generator.** `deploy/nuzur-agent/gen-views.sh [--check|--apply]` runs as root on
-the box. Like `deploy/scripts/apply-schema.sh`, it runs `mysql` inside the pod
+**Generator, as built.** `deploy/sql/nuzur/gen-views.sh`, POSIX sh and awk, tested
+under macOS sh and BSD awk and under busybox:
+
+| mode | database | does |
+|---|---|---|
+| `check [create.sql]` | none | total classification against the committed `create.sql`. For CI. |
+| `sql [create.sql]` | none | check, then print the view DDL |
+| `grants` | live | apply `deploy/sql/nuzur/grants.sql` with the password read on **stdin**. The server's error text is suppressed because it could quote the password. |
+| `apply` | live | classify the **live** `information_schema`, `CREATE OR REPLACE` every view, drop stale ones, then run `check-live` |
+| `check-live` | live | the daily drift check. It verifies, without selecting any row value: the live schema is classified; `metiche_nuzur` holds exactly one view per table with definer `nuzur_views@localhost` and `SQL SECURITY DEFINER`; each view's column names equal the base table's, in order; `COUNT(*)` of non-NULL values is 0 for every redacted column; and both accounts' grants, lock state and `MAX_USER_CONNECTIONS` are exactly as expected. |
+
+This replaces steps 4 and 5 below. There is **no recorded hash and no ConfigMap
+`nuzur-agent-views`**: `check-live` verifies the property itself, which also catches
+a view widened by hand or an extra grant.
+
+The design text follows. The generator runs as root on the box. Like `deploy/scripts/apply-schema.sh`, it runs `mysql` inside the pod
 via `kubectl exec`, with the root password from the pod's environment and SQL on
 stdin. It never selects a row value.
 
@@ -415,14 +446,14 @@ stdin. It never selects a row value.
 3. For each table, in ordinal order, emit
    ``CREATE OR REPLACE ALGORITHM=MERGE DEFINER=`nuzur_views`@`localhost` SQL SECURITY DEFINER VIEW `metiche_nuzur`.`<t>` AS SELECT … FROM `metiche`.`<t>`;``
    Add `DROP VIEW` for views that are no longer expected.
-4. `--check` exits 0 only if the policy is total and the SQL's sha256 equals the value recorded in ConfigMap `nuzur-agent-views`.
-5. `--apply` executes the SQL and records the hash. It is idempotent.
+4. *(Design, superseded by `check-live` above.)* `--check` exits 0 only if the policy is total and the SQL's sha256 equals the value recorded in ConfigMap `nuzur-agent-views`.
+5. *(Design, superseded.)* As built, `apply` executes the SQL and then runs `check-live`; nothing is recorded. It is idempotent.
 
 **When it runs.**
 
 - Last step of every `deploy/sql/*.sql` migration and of `deploy/scripts/apply-schema.sh`. apply-schema never adds columns (`deploy/scripts/apply-schema.sh:12-16`), so migrations are applied by hand.
 - In CI, against the committed `code/backend/metiche/core/repository/sql/schema/create.sql`. That check needs no database.
-- Daily drift check: a host systemd timer on the box runs `gen-views.sh --check` through `kubectl exec`, like `apply-schema.sh`, in addition to the CI check above (§13 Q2).
+- Daily drift check: a host systemd timer on the box runs `gen-views.sh check-live` through `kubectl exec`, like `apply-schema.sh`, in addition to the CI check above (§13 Q2). *As built:* `deploy/scripts/nuzur-agent-setup.sh drift-timer` installs it.
 
 ---
 
@@ -575,7 +606,7 @@ explicit sentence, so the pod shows `Init:CrashLoopBackOff` and
 ### 6.3 NetworkPolicy template, in the metiche-mysql chart
 
 See §7.1. It belongs in `deploy/.helm/metiche-mysql`, because it selects the
-MySQL pods. It is off by default and enabled by `networkPolicy.enabled=true`.
+MySQL pods. It is off by default and enabled by `networkPolicy.enabled=true`. *As built*, the admitted pods are the `networkPolicy.allowFrom` list in values (the backend and the agent), and `nuzur-agent-setup.sh netpol` keeps it enabled through `METICHE_VALUES_MYSQL=/etc/metiche/metiche-mysql.networkpolicy.yaml`.
 
 ---
 
@@ -648,7 +679,7 @@ has to be established on the box before enforcing.
 
 ## 8. Idempotent setup
 
-`deploy/nuzur-agent/setup.sh` runs as root on the box, from a checkout, with
+*As built*, each step below is a subcommand of `deploy/scripts/nuzur-agent-setup.sh`, and `deploy/scripts/nuzur-agent-setup.md` is the ordered runbook. The script runs as root on the box, from a checkout, with
 `KUBECTL="microk8s kubectl"` and `HELM="microk8s helm3"`. Every step is
 **check → skip or act → verify**. The script stops at the first STOP or human
 step, and a re-run resumes from the first incomplete step.
@@ -690,7 +721,7 @@ ALTER USER 'nuzur_ro'@'10.1.0.0/255.255.0.0' WITH MAX_USER_CONNECTIONS 5;
 GRANT SELECT ON metiche_nuzur.* TO 'nuzur_ro'@'10.1.0.0/255.255.0.0';
 ```
 
-**Step 3: views.** `deploy/nuzur-agent/gen-views.sh --apply` (§5.2).
+**Step 3: views.** `deploy/sql/nuzur/gen-views.sh apply` (§5.2).
 
 **Step 4: machine-id.**
 
@@ -870,7 +901,7 @@ the pod uid and the pod IP.
    4. Restore the ConfigMap, delete the pod, snapshot, and assert equal.
 
 **Pass:** every snapshot equals S0. Any difference fails P1: stop and investigate.
-`deploy/nuzur-agent/verify-p1.sh` automates the box half and prints only uuids,
+`deploy/scripts/nuzur-agent-setup.sh p1` *(as built)* automates the box half and prints only uuids,
 counts, non-secret file hashes, inode numbers and mtimes.
 
 ---
@@ -888,7 +919,7 @@ counts, non-secret file hashes, inode numbers and mtimes.
 4. **Remove agent state.**
    - `kubectl -n metiche delete pvc data-nuzur-agent-0`. The reclaim policy is Delete, so this removes the uuid, the token, the registry and the keyring. Confirm the hostPath directory under `/var/snap/microk8s/common/default-storage/` is gone.
    - `kubectl -n metiche delete secret nuzur-agent-db nuzur-agent-machine-id`
-   - `kubectl -n metiche delete configmap nuzur-agent-ids nuzur-agent-views`
+   - `kubectl -n metiche delete configmap nuzur-agent-ids` (as built, there is no `nuzur-agent-views`)
 5. **Tidy.**
    - `DROP DATABASE metiche_nuzur; DROP USER 'nuzur_views'@'localhost';`
    - `rm /etc/metiche/nuzur_ro.env /etc/metiche/nuzur-agent.machine-id`
@@ -901,25 +932,31 @@ counts, non-secret file hashes, inode numbers and mtimes.
 
 ## 12. Where the non-secret pieces live in the repo
 
-This is a description only; none of it is written yet.
+As built. The design put these under `deploy/nuzur-agent/`; they landed where the table says.
 
 | path | purpose |
 |---|---|
-| `deploy/docker/nuzur-agent.Dockerfile` | §6.1. Pinned version plus pinned sha256 ARGs. |
-| `deploy/nuzur-agent/nuzur-agent-preflight` | Run-mode init checks (§6.2). POSIX sh, copied into the image. |
-| `deploy/nuzur-agent/nuzur-agent-hold` | Setup-mode placeholder process (§6.2). |
+| `deploy/sql/nuzur/columns.policy` | §5.2. Every column of every table: expose, expose! or redact. |
+| `deploy/sql/nuzur/gen-views.sh` | §5.2. `check`, `sql`, `grants`, `apply`, `check-live`. Replaces `gen-views.sh` and `check-policy-ci.sh`. |
+| `deploy/sql/nuzur/grants.sql` | §5 and §8 step 2. Database and both accounts; password and host are placeholders filled from stdin. |
+| `deploy/sql/nuzur/test-views-docker.sh` | §14. Local proof on a throwaway MySQL. |
+| `deploy/docker/nuzur-agent.Dockerfile` | §6.1. Pinned version plus pinned sha256 ARGs (amd64 and arm64). |
+| `deploy/docker/nuzur-agent-preflight` | Run-mode init checks (§6.2). POSIX sh, copied into the image. |
+| `deploy/docker/nuzur-agent-hold` | Setup-mode placeholder process (§6.2). |
 | `deploy/.helm/nuzur-agent/` | `Chart.yaml`, `values.yaml`, `templates/{_helpers.tpl, serviceaccount.yaml, service.yaml, statefulset.yaml, NOTES.txt}` |
-| `deploy/.helm/metiche-mysql/templates/networkpolicy.yaml` | §7.1, behind `networkPolicy.enabled`. |
-| `deploy/nuzur-agent/setup.sh` | §8. |
-| `deploy/nuzur-agent/columns.policy` | §5.2. |
-| `deploy/nuzur-agent/gen-views.sh` and `check-policy-ci.sh` | §5.2. |
-| `deploy/nuzur-agent/verify-p1.sh` | §10.3. |
+| `deploy/.helm/metiche-mysql/templates/networkpolicy.yaml` | §7.1, behind `networkPolicy.enabled`; admitted pods in `networkPolicy.allowFrom`. |
+| `deploy/scripts/nuzur-agent-setup.sh` | §8, §10.3 (`p1`, `snapshot`), §11 (`teardown-*`), §13 Q2 (`drift-timer`). Replaces `setup.sh` and `verify-p1.sh`. |
+| `deploy/scripts/nuzur-agent-setup.md` | The ordered runbook, marking the owner's steps. |
+| `deploy/scripts/nuzur-agent-test-pod.sh` | §14. Local, `--network none` proof of the image and preflight. |
 
-Changes to existing files:
+Changes to existing files: **none were made** (they belong to other work). The
+setup script builds and imports the image itself (`image`) and calls
+`helm-deploy.sh mysql` unchanged for the NetworkPolicy (`netpol`). The three
+planned edits are follow-ups in §14:
 
-- `deploy/scripts/build-images.sh` gains a `nuzur-agent` target.
-- `deploy/scripts/helm-deploy.sh` gains `nuzur-agent`. It never passes a secret, and it `require_secret`s the two Secrets.
-- `deploy/README.md` gains the line "after any `deploy/sql/*.sql`, run `deploy/nuzur-agent/gen-views.sh --apply`".
+- a `build-images.sh` target;
+- a `helm-deploy.sh` target;
+- the `deploy/README.md` line.
 
 ---
 
@@ -928,5 +965,179 @@ Changes to existing files:
 These add to the decisions already recorded in §2, which stand unchanged.
 
 1. **Q1: back up the PVC?** No backup. Losing it costs one provisioning token, one re-pair and re-pointing the data manager (§8, "PVC loss"), while a backup would be a second copy of a live credential (the agent token and the encrypted DSN) to protect.
-2. **Q2: where does the daily views drift check run?** A host systemd timer on the box runs `gen-views.sh --check` via `kubectl exec` (like `apply-schema.sh`), plus the CI check; no in-cluster CronJob. No MySQL root credential leaves the MySQL pod, and no extra NetworkPolicy exception is needed.
+2. **Q2: where does the daily views drift check run?** A host systemd timer on the box runs `gen-views.sh check-live` via `kubectl exec` (like `apply-schema.sh`), plus the CI check; no in-cluster CronJob. No MySQL root credential leaves the MySQL pod, and no extra NetworkPolicy exception is needed.
 3. **Q3: CLI upgrade policy.** `nuzur-cli` stays pinned at 1.9.2 and is upgraded only when the server forces it (it raises `min_cli_version` and the pod reports CLI-too-old, `cli/agent/daemon.go:141-143`, `:220-225`); each upgrade is a rebuild with a new pinned sha256, a `helm upgrade`, then P1 re-run (§10.3). Every upgrade has to re-prove P1, so none happens without a reason.
+
+---
+
+## 14. As built (2026-09-14)
+
+### What changed from the design
+
+**Paths.** The files landed as listed in §12:
+
+- the policy, generator and grants in `deploy/sql/nuzur/`;
+- the image and its two scripts in `deploy/docker/`;
+- the setup script and runbook in `deploy/scripts/`.
+
+**The schema grew** since §5 was written:
+
+- tables `board_login_link` and `browser_session`;
+- columns `agent.token_hash` and `session.parent_session_uuid`.
+
+The policy now covers 27 tables and 403 columns. **Nine are redacted:**
+
+- `account.token_hash`, `agent.token_hash`
+- `invite.code`
+- `notification_channel.target_url`
+- `team_event.response_snapshot`
+- `board_login_link.secret_hash`, `browser_session.secret_hash`
+- `browser_session.user_agent` and `browser_session.ip_hint`. These two are the builder's
+  default and **await an owner decision** (redact, or `expose!`).
+
+`browser_session.key` is `expose!`: a public `BS-` handle, "not a credential"
+(docs/BOARD_LOGIN.md §3.2). `browser_session.auth_method` is `expose!`: an enum.
+
+**Risky-name pattern.** It also matches `email`, `user_agent` and a whole-word `ip` (§5.2).
+
+**Drift check.** `check-live` verifies definer, columns, NULL redactions by count, and exact
+grants. There is no recorded SQL hash and no ConfigMap `nuzur-agent-views` (§5.2).
+
+**Grants.**
+
+- In `ALTER USER`, `WITH MAX_USER_CONNECTIONS` must come before `PASSWORD EXPIRE` and
+  `ACCOUNT UNLOCK`. The local test caught this.
+- A MySQL error during `grants` prints only its code. The server's message can quote the
+  statement, and so the password.
+
+**Image.**
+
+- An arm64 checksum is pinned next to the amd64 one, for local tests only.
+- `HOME`, `XDG_CONFIG_HOME`, `USER` and `LOGNAME` are set in the image as well as in the chart.
+
+**Chart.**
+
+- The pod labels are literal, and the render refuses any release name but `nuzur-agent`.
+- Beyond §6.2 it also sets container-level `runAsNonRoot` and seccomp,
+  `fsGroupChangePolicy: OnRootMismatch`, `ephemeral-storage` requests and limits, and
+  separate preflight resources.
+
+**Preflight.**
+
+- The forbidden-state checks run **before** any `nuzur-cli` invocation.
+- It refuses **any** `NUZUR_*` variable, not only the three named in §6.2.
+- It also checks `HOME` and that the registry's `default_schema` is `metiche_nuzur`.
+
+**Setup** is `nuzur-agent-setup.sh <step>`.
+
+- `db` reads the `nuzur_ro` password from Secret `nuzur-agent-db`, which `secrets` refreshes
+  from the root-owned file every run.
+- `run` executes the real preflight inside the setup pod before switching. It passes the
+  image tag explicitly, never `--reuse-values`.
+- `netpol` deploys through the unchanged `helm-deploy.sh mysql`, with
+  `METICHE_VALUES_MYSQL=/etc/metiche/metiche-mysql.networkpolicy.yaml`.
+- The `netpol` probe pods use the already-imported agent image, so nothing is pulled.
+- A probe never borrows the **backend's** labels: its ReplicaSet could adopt the probe pod.
+
+**NetworkPolicy.** The admitted pods are the `networkPolicy.allowFrom` list. An empty list
+fails the render.
+
+### Proven locally (never the box, never nuzur)
+
+**Column policy.**
+
+- `gen-views.sh check` passes on the current `create.sql`, and gives the same result under
+  busybox sh and awk.
+- A copy with an added `agent.recovery_secret` column and an `api_key` table fails. It names
+  all three columns and the table, and emits no SQL.
+
+**`deploy/sql/nuzur/test-views-docker.sh`**, on throwaway MySQL **8.4.11 and 8.0.46**: 30/30
+checks each. The database runs on a Docker network with subnet `10.1.0.0/16`, so the real host
+part is exercised.
+
+- `SELECT *` works on all 27 views. 0 of 9 canaries are visible, and every positive-control
+  marker is. All 403 column names and orders match the base tables.
+- Every redacted column is a typed NULL: `varchar(n)` or `json`.
+- Refused with 1142/1044:
+  - `INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `CREATE TABLE`, `DROP VIEW`, `CREATE VIEW`,
+    `GRANT` and `SHOW CREATE VIEW` through the views;
+  - `SELECT`, `INSERT`, `UPDATE` and `USE` on `metiche`, and `mysql.user`.
+- `nuzur_ro` from `10.99.0.0/16` fails with 1045.
+- Marking `invite.code` or `browser_session.ip_hint` plain `expose` is refused before DDL.
+- Marking `invite.code` `expose!` makes the canary check **fail**. Restoring the policy makes
+  it pass again.
+- `check-live` catches, and each recovers from: an unclassified new column, a view widened by
+  hand, an extra grant, and a stale view.
+
+**Image.**
+
+- The linux/amd64 build verifies both checksums before `tar`.
+- `nuzur-cli --version` prints `nuzur CLI version 1.9.2`, as uid 10001, with no dbus.
+- A wrong pinned sha256 fails the build, and no image is produced.
+
+**`deploy/scripts/nuzur-agent-test-pod.sh`**: 22/22, in pod-shaped containers with
+`--network none`, a read-only root filesystem and a read-only "PVC" for the preflight.
+
+- The real `connection add --no-publish` writes the encrypted file keyring. No plaintext DSN
+  exists on the PVC.
+- The preflight passes, and the identity snapshot is unchanged across fresh containers.
+- It refuses each of these:
+  - a changed hostname, `EXPECT_USER` or machine-id;
+  - a changed `USER` or machine-id **with the record updated to match**. The real decryption
+    catches these.
+  - a different agent or connection uuid;
+  - `NUZUR_AGENT_DSN` or `NUZUR_PROVISIONING_TOKEN` set;
+  - `XDG_CONFIG_HOME` off the PVC, or no PVC;
+  - a login `token.txt` or saved fallback DSN;
+  - a lost pairing, or a second registry entry.
+
+**Charts.**
+
+- `helm template` renders both modes. It fails on a missing mode, a numeric or empty tag, or
+  another release name.
+- The run-mode render has no `NUZUR_*`, host*, subdomain or DSN field.
+- The default `metiche-mysql` render is byte-identical to before. With
+  `networkPolicy.enabled=true` the only addition is `NetworkPolicy metiche-mysql-ingress`.
+
+**Setup script logic,** against a stub `kubectl` (a throwaway harness, not committed): 28/28.
+It covered:
+
+- generate once, never regenerate, and STOP on file/Secret disagreement;
+- recreating the ConfigMap from the mirror;
+- the password pipe into `grants.sql`;
+- the record-agent and teardown uuid guards.
+
+### Not proven locally, and why
+
+- **The StatefulSet on real Kubernetes.** A kind cluster with pod CIDR `10.1.0.0/16` was
+  created and the images loaded. Then the local Docker VM ran out of disk (58 GB, 0 free), and
+  the cluster was deleted rather than pruning other projects' data. So these rest on the
+  render and the Docker-shaped pod test:
+  - the subPath Secret mount;
+  - the read-only PVC in the init container;
+  - rollout semantics;
+  - `install-setup`, `run`, `netpol` and `p1` against an API server.
+
+  Before any pairing, `install-setup` re-verifies hostname, `USER`, uid, the PVC mount and the
+  machine-id in production.
+- **Production only:**
+  - the pairing, publishing and "paired and online";
+  - Calico enforcing the NetworkPolicy;
+  - P1 against `listLocalAgents`.
+
+### Follow-ups
+
+1. **Owner:** `browser_session.user_agent` and `browser_session.ip_hint` stay `redact` (the
+   default), or become `expose!`.
+2. `helm-deploy.sh` and `deploy.sh` must keep the NetworkPolicy on, by passing
+   `METICHE_VALUES_MYSQL` or `networkPolicy.enabled=true`. Otherwise a routine
+   `helm-deploy.sh mysql` removes it.
+3. The three planned edits to existing files (§12):
+   - a `build-images.sh` target for `nuzur-agent`;
+   - a `helm-deploy.sh` target for it;
+   - the `deploy/README.md` line: "after any `deploy/sql/*.sql`, classify new columns in
+     `columns.policy` and run `deploy/sql/nuzur/gen-views.sh apply`".
+4. The repository has no CI configuration. Wire `deploy/sql/nuzur/gen-views.sh check` into
+   whatever CI runs, and `test-views-docker.sh` where Docker is available.
+5. Egress restriction for the agent pod (D6, §7.3).
+6. Before any api/mcp split, add `metiche-api` and `metiche-mcp` to `networkPolicy.allowFrom`.
