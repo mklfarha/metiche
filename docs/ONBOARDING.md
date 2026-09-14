@@ -6,7 +6,8 @@ Three pieces, in the order they matter:
    Prose that changes how an agent behaves: declare before acting, heartbeat while working, claim
    narrowly (the specific files, relative to the git root; a repo-wide `**` is recorded at low
    severity and warns nobody), act on what comes back. Any assistant that reads a rules or instructions file can use
-   it as-is.
+   it as-is. An agent that spawns subagents briefs each one to run its own session; see the skill's
+   "When you delegate to subagents".
 2. **The MCP server** — the fifteen tools. Nothing to install; it is an HTTP endpoint.
 3. **The token** — minted by the server when you join. It is what every client sends as its
    bearer. It never goes in a repo.

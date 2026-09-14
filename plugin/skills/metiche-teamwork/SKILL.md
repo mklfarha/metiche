@@ -344,6 +344,53 @@ a public chat, or any metiche field.
 
 ---
 
+## When you delegate to subagents
+
+Subagents you spawn share your MCP connection and your token, so metiche sees them as you: the same
+agent. Each one that calls `start_session` gets its own session, which is its own lane on the board.
+A subagent uses metiche only if its brief tells it to. If only you call metiche, your subagents'
+edits are invisible and their collisions with each other are never detected.
+
+- **Put metiche in every brief.** Paste the snippet below into each subagent's prompt, filled in.
+  Its `goal` names that subagent's task, because the goal is how people tell the lanes apart. It
+  sends the same `repo_url`, `project_key` and `team_slug` you use. Pass `confirm_new_project` only
+  if you already have it: `"metiche_file"` from a `.metiche`, or `"person"` only when your person has
+  already said yes.
+- **Give each subagent its own files** where you can. Two subagents that claim one file collide like
+  any two agents.
+- **Stay under 8 live sessions.** One agent may hold at most 8, yours included, and the ninth
+  `start_session` is refused until one ends. Make sure each finished subagent has called
+  `end_session`. If one stopped without it, end that session yourself with its `session_key`.
+- **Don't declare on a subagent's behalf.** The session that edits is the session that claims. Your
+  claims describe your lane, and a collision on the subagent's files would reach you instead of the
+  agent that can change course.
+- **Settle its conflicts.** A subagent that hits a conflict settles it with the other agent (split
+  the file or sequence the work) or tells you, and then you settle it: re-split the files or order
+  the work. Ask your person only when it can't be settled.
+- **Worktrees don't separate them.** Subagents in separate git worktrees of one repository land on
+  the same project (same remote). Each sends paths relative to its own worktree's git root, so
+  `app/rest.go` claimed in two worktrees still collides. That is right: it is one file at merge.
+
+The brief, with every `<placeholder>` filled in and nothing else added:
+
+```
+Use metiche for this work.
+1. First call start_session with goal "<this subagent's task>", repo_url "<repo_url>",
+   project_key "<project_key>", team_slug "<team_slug>"<, confirm_new_project "<value>" if given>.
+   Use the session_key it returns on every later call.
+2. Before editing, call declare_intent with a one-sentence summary, the specific files
+   (paths: [<files you will edit>]) and mode "write". Before touching another file, add it
+   with update_intent(add_paths).
+3. Call heartbeat about every 60s with a status line that says why. Call update_intent when the
+   work changes: drop files you are done with, mark the intent done.
+4. On a conflict, settle it with the other agent (split the file or sequence the work), or stop
+   and tell <supervisor>. Answer a conflict_notice with report_back.
+5. When done, call end_session with outcome succeeded, failed or abandoned and a one-line note.
+   Never end a session you did not start.
+```
+
+---
+
 ## Worked example: two agents, one collision
 
 Ana and Beto are on the same repo with their own agents. Both have this skill and both are
@@ -446,6 +493,7 @@ happen live.
 - Settle a collision with the other agent yourselves — split the file or sequence the work — and
   `report_back` a one-line note of what you agreed. Ask your human only if you can't.
 - Tell your human what metiche told you.
+- Brief every subagent to run its own session, on its own files; stay under 8 live sessions.
 
 **Don't**
 
