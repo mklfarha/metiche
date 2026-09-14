@@ -115,6 +115,23 @@ Redeploy without rebuilding:
 METICHE_TAG=<existing tag> sudo deploy/deploy.sh --no-build
 ```
 
+### The metiche-mysql NetworkPolicy
+
+The chart's NetworkPolicy is off by default. `deploy/scripts/nuzur-agent-setup.sh netpol` turns
+it on by writing `/etc/metiche/metiche-mysql.networkpolicy.yaml`. It then admits 3306 only from
+the backend and the nuzur agent (runbook: `deploy/scripts/nuzur-agent-setup.md` §4).
+
+Once that file exists, every metiche-mysql upgrade keeps the policy. That means
+`helm-deploy.sh mysql`, `helm-deploy.sh all` and `deploy.sh`:
+
+- **The file is added automatically.** `helm-deploy.sh` passes `-f` for it and logs
+  `NetworkPolicy values: adding -f …`.
+- **A silent removal is refused.** If the live release has a NetworkPolicy and the new render
+  would not, the script stops and changes nothing. That happens when the file is missing, or
+  when the script runs without sudo and so cannot see into the 0700 `/etc/metiche`.
+- **Removal is explicit.** Set `enabled: false` in the file, then run
+  `METICHE_ALLOW_NETPOL_REMOVAL=1 deploy/scripts/helm-deploy.sh mysql`.
+
 ---
 
 ## Credentials

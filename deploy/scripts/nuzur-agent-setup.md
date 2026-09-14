@@ -97,7 +97,7 @@ nas run          # dry-runs the preflight in the setup pod, then switches; waits
 ## 4. Close MySQL to everything else (coordinator, then a manual check)
 
 ```sh
-nas netpol       # helm-deploy.sh mysql with networkPolicy.enabled=true
+nas netpol       # writes the values file, then plain helm-deploy.sh mysql
 ```
 
 This step also:
@@ -106,17 +106,26 @@ This step also:
 - proves a pod with the agent's labels connects;
 - checks the MySQL pod was not restarted.
 
-It writes `/etc/metiche/metiche-mysql.networkpolicy.yaml`. **From now on every
-`helm-deploy.sh mysql` must run with `METICHE_VALUES_MYSQL` set to that file**, or the policy is
-removed again (see "Follow-ups" in docs/NUZUR_AGENT.md).
+It writes `/etc/metiche/metiche-mysql.networkpolicy.yaml` (`networkPolicy.enabled: true`).
+**That file is what keeps the policy.** Every later `helm-deploy.sh mysql`, `helm-deploy.sh all`
+or `deploy.sh`:
+
+- adds `-f` for the file by itself and logs `NetworkPolicy values: adding -f …`, with no
+  `METICHE_VALUES_MYSQL` needed;
+- refuses, changing nothing, if the live release has the policy and the upgrade would not.
+  That covers a deleted file, or a run **without sudo**: `/etc/metiche` is 0700, so run these
+  with sudo.
+
+Leave the file in place (see docs/NUZUR_AGENT.md §14, "NetworkPolicy").
 
 **Then by hand:**
 
 - `microk8s kubectl -n metiche logs deploy/metiche --since=5m | grep -i 'mysql\|database'` shows no errors.
 - The board loads and updates.
 
-**Revert:** set `enabled: false` in that file and re-run
-`METICHE_VALUES_MYSQL=/etc/metiche/metiche-mysql.networkpolicy.yaml deploy/scripts/helm-deploy.sh mysql`.
+**Revert:** set `enabled: false` in that file, then run
+`METICHE_ALLOW_NETPOL_REMOVAL=1 deploy/scripts/helm-deploy.sh mysql`. Without the variable the
+removal is refused.
 
 ## 5. Data manager (OWNER, once)
 
@@ -228,7 +237,8 @@ This removes:
 Then:
 
 - Drop the `nuzur-agent` entry from `networkPolicy.allowFrom` in
-  `/etc/metiche/metiche-mysql.networkpolicy.yaml` and re-run `helm-deploy.sh mysql` with it.
+  `/etc/metiche/metiche-mysql.networkpolicy.yaml` and re-run `sudo deploy/scripts/helm-deploy.sh mysql`,
+  which reads that file itself. The policy stays, now admitting the backend only.
 - **Laptop:** `listLocalAgents` shows `AGENT_UUID` REVOKED (status 3) and every other agent
   unchanged. Only after that, `rm -r /etc/nuzur-agent`.
 

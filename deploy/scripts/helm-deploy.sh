@@ -16,6 +16,19 @@
 #   METICHE_STORAGE_CLASS override persistence.storageClass on metiche-mysql
 #   METICHE_VALUES_<NAME> path to an extra -f values file per chart, e.g.
 #                         METICHE_VALUES_BACKEND=/etc/metiche/backend.yaml
+#   METICHE_ALLOW_NETPOL_REMOVAL=1
+#                         let a metiche-mysql upgrade remove the live
+#                         NetworkPolicy (see below). Refused otherwise.
+#
+# THE metiche-mysql NETWORKPOLICY. `nuzur-agent-setup.sh netpol` enables it by
+# writing /etc/metiche/metiche-mysql.networkpolicy.yaml (METICHE_CRED_DIR). A
+# metiche-mysql upgrade here adds `-f` for that file whenever it exists, before
+# METICHE_VALUES_MYSQL so an explicit file still wins. And before upgrading, it
+# compares the live release (`helm get manifest`) with the new render (`helm
+# template`, same flags): if the live release has a NetworkPolicy and the new
+# render does not, it stops, unless METICHE_ALLOW_NETPOL_REMOVAL=1. So neither a
+# missing file nor a run without sudo (the directory is 0700) can quietly
+# reopen MySQL to every pod in the cluster.
 #
 # NOTHING SENSITIVE IS PASSED HERE. No --set carries a password, and there is
 # no values file in this repo that contains one. The credentials reach the
@@ -33,6 +46,7 @@ set -eu
 : "${METICHE_VALUES_MYSQL:=}"
 : "${METICHE_VALUES_BACKEND:=}"
 : "${METICHE_VALUES_WEB:=}"
+: "${METICHE_ALLOW_NETPOL_REMOVAL:=0}"
 
 WHAT="${1:-all}"
 DRY=""
@@ -42,7 +56,7 @@ case "${2:-}" in
     *) die "unknown argument: $2" ;;
 esac
 case "${WHAT}" in
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
     mysql|backend|web|all) ;;
     *) die "expected one of: mysql backend web all" ;;
 esac
@@ -74,15 +88,85 @@ The charts use imagePullPolicy: Never, so a tag that is not in containerd
 gives ErrImageNeverPull rather than a pull attempt."
 }
 
+# The -f files for metiche-mysql, in order: the NetworkPolicy values when the
+# file exists, then METICHE_VALUES_MYSQL (later -f wins). The same file named
+# twice is passed once, which is what `nuzur-agent-setup.sh netpol` used to do.
+mysql_values_files() {
+    if [ -f "${METICHE_MYSQL_NETPOL_VALUES}" ]; then
+        printf ' -f %s' "${METICHE_MYSQL_NETPOL_VALUES}"
+    fi
+    if [ -n "${METICHE_VALUES_MYSQL}" ] && [ "${METICHE_VALUES_MYSQL}" != "${METICHE_MYSQL_NETPOL_VALUES}" ]; then
+        printf ' -f %s' "${METICHE_VALUES_MYSQL}"
+    fi
+}
+
+# Whether a manifest on stdin contains a NetworkPolicy object.
+has_networkpolicy() { grep -Eq '^kind:[[:space:]]*NetworkPolicy[[:space:]]*$'; }
+
+# Refuse an upgrade that would silently delete the live NetworkPolicy.
+# $@ are exactly the flags the upgrade will be given.
+guard_mysql_netpol() {
+    # 2>&1: on failure the message decides between "no release yet" and
+    # "could not ask", and those must not be confused — the second is not
+    # permission to proceed.
+    # shellcheck disable=SC2086
+    if ! _live=$(${HELM} get manifest metiche-mysql --namespace "${METICHE_NAMESPACE}" 2>&1); then
+        case "${_live}" in
+            *"release: not found"*)
+                log "no live metiche-mysql release, so no NetworkPolicy to keep"
+                return 0 ;;
+            *)
+                die "could not read the live metiche-mysql release, so cannot tell whether this upgrade removes its NetworkPolicy:
+${_live}" ;;
+        esac
+    fi
+    if ! printf '%s\n' "${_live}" | has_networkpolicy; then
+        log "the live metiche-mysql release has no NetworkPolicy"
+        return 0
+    fi
+    # shellcheck disable=SC2086
+    _new=$(${HELM} template metiche-mysql "${METICHE_CHART_DIR}/metiche-mysql" "$@") \
+        || die "helm template metiche-mysql failed (above); not upgrading"
+    if printf '%s\n' "${_new}" | has_networkpolicy; then
+        log "NetworkPolicy: live, and kept by this upgrade"
+        return 0
+    fi
+    if [ "${METICHE_ALLOW_NETPOL_REMOVAL}" = "1" ]; then
+        warn "METICHE_ALLOW_NETPOL_REMOVAL=1: this upgrade REMOVES the live NetworkPolicy."
+        warn "Every pod in the cluster will reach metiche-mysql:3306 again."
+        return 0
+    fi
+    die "the live metiche-mysql release has a NetworkPolicy and this upgrade would remove it.
+
+It admits only the backend and the nuzur agent to 3306 (docs/NUZUR_AGENT.md §7.1).
+The upgrade renders none because ${METICHE_MYSQL_NETPOL_VALUES}
+is not in its values: the file is missing, or this shell cannot see it (the
+directory is root-owned 0700; run with sudo), or it now says enabled: false.
+
+  keep the policy:   sudo deploy/scripts/helm-deploy.sh mysql, with that file in place
+                     (deploy/scripts/nuzur-agent-setup.sh netpol recreates it)
+  remove it on purpose:
+                     METICHE_ALLOW_NETPOL_REMOVAL=1 deploy/scripts/helm-deploy.sh mysql
+
+Nothing was changed."
+}
+
 deploy_mysql() {
     step "metiche-mysql"
     if [ -z "${DRY}" ]; then require_secret "${METICHE_DB_SECRET}"; fi
-    # shellcheck disable=SC2046,SC2086
+    if [ -f "${METICHE_MYSQL_NETPOL_VALUES}" ]; then
+        [ -r "${METICHE_MYSQL_NETPOL_VALUES}" ] \
+            || die "${METICHE_MYSQL_NETPOL_VALUES} exists but is not readable by $(id -un). Re-run with sudo."
+        log "NetworkPolicy values: adding -f ${METICHE_MYSQL_NETPOL_VALUES} (written by nuzur-agent-setup.sh netpol)"
+    elif [ -d "${METICHE_CRED_DIR}" ] && [ ! -x "${METICHE_CRED_DIR}" ]; then
+        warn "cannot look inside ${METICHE_CRED_DIR} as $(id -un), so ${METICHE_MYSQL_NETPOL_VALUES} is not added even if it exists; sudo sees it"
+    fi
+    _mysql_flags="$(common_flags) --set auth.existingSecret=${METICHE_DB_SECRET}${METICHE_STORAGE_CLASS:+ --set persistence.storageClass=${METICHE_STORAGE_CLASS}}$(mysql_values_files)"
+    # shellcheck disable=SC2086
+    guard_mysql_netpol ${_mysql_flags}
+    # shellcheck disable=SC2086
     ${HELM} upgrade --install metiche-mysql "${METICHE_CHART_DIR}/metiche-mysql" \
-        $(common_flags) \
-        --set auth.existingSecret="${METICHE_DB_SECRET}" \
-        ${METICHE_STORAGE_CLASS:+--set persistence.storageClass=${METICHE_STORAGE_CLASS}} \
-        ${METICHE_VALUES_MYSQL:+-f ${METICHE_VALUES_MYSQL}} \
+        ${_mysql_flags} \
         --wait --timeout 10m ${DRY}
 }
 

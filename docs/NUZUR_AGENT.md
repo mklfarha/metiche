@@ -606,7 +606,7 @@ explicit sentence, so the pod shows `Init:CrashLoopBackOff` and
 ### 6.3 NetworkPolicy template, in the metiche-mysql chart
 
 See §7.1. It belongs in `deploy/.helm/metiche-mysql`, because it selects the
-MySQL pods. It is off by default and enabled by `networkPolicy.enabled=true`. *As built*, the admitted pods are the `networkPolicy.allowFrom` list in values (the backend and the agent), and `nuzur-agent-setup.sh netpol` keeps it enabled through `METICHE_VALUES_MYSQL=/etc/metiche/metiche-mysql.networkpolicy.yaml`.
+MySQL pods. It is off by default and enabled by `networkPolicy.enabled=true`. *As built*, the admitted pods are the `networkPolicy.allowFrom` list in values (the backend and the agent), and `nuzur-agent-setup.sh netpol` enables it by writing `/etc/metiche/metiche-mysql.networkpolicy.yaml`, which `helm-deploy.sh` adds to every metiche-mysql upgrade while it exists (§14, "NetworkPolicy").
 
 ---
 
@@ -949,10 +949,11 @@ As built. The design put these under `deploy/nuzur-agent/`; they landed where th
 | `deploy/scripts/nuzur-agent-setup.md` | The ordered runbook, marking the owner's steps. |
 | `deploy/scripts/nuzur-agent-test-pod.sh` | §14. Local, `--network none` proof of the image and preflight. |
 
-Changes to existing files: **none were made** (they belong to other work). The
-setup script builds and imports the image itself (`image`) and calls
-`helm-deploy.sh mysql` unchanged for the NetworkPolicy (`netpol`). The three
-planned edits are follow-ups in §14:
+Changes to existing files: **none were made** in the original work (they belong to other
+work). The setup script builds and imports the image itself (`image`) and calls
+`helm-deploy.sh mysql` for the NetworkPolicy (`netpol`). Since then `helm-deploy.sh` and
+`lib.sh` keep that policy across routine deploys (§14, "NetworkPolicy"). The three planned
+edits are follow-ups in §14:
 
 - a `build-images.sh` target;
 - a `helm-deploy.sh` target;
@@ -1034,13 +1035,42 @@ grants. There is no recorded SQL hash and no ConfigMap `nuzur-agent-views` (§5.
   from the root-owned file every run.
 - `run` executes the real preflight inside the setup pod before switching. It passes the
   image tag explicitly, never `--reuse-values`.
-- `netpol` deploys through the unchanged `helm-deploy.sh mysql`, with
-  `METICHE_VALUES_MYSQL=/etc/metiche/metiche-mysql.networkpolicy.yaml`.
+- `netpol` writes `/etc/metiche/metiche-mysql.networkpolicy.yaml` and deploys through plain
+  `helm-deploy.sh mysql`, with no `METICHE_VALUES_MYSQL`, so it takes the same path as every
+  later redeploy.
 - The `netpol` probe pods use the already-imported agent image, so nothing is pulled.
 - A probe never borrows the **backend's** labels: its ReplicaSet could adopt the probe pod.
 
 **NetworkPolicy.** The admitted pods are the `networkPolicy.allowFrom` list. An empty list
 fails the render.
+
+The policy survives routine deploys. `deploy.sh`, `helm-deploy.sh mysql` and `helm-deploy.sh all`
+all upgrade metiche-mysql through `deploy_mysql` in `helm-deploy.sh`, which does two things:
+
+- **Adds the box file.** When `/etc/metiche/metiche-mysql.networkpolicy.yaml` exists
+  (`METICHE_MYSQL_NETPOL_VALUES` in `lib.sh`, derived from `METICHE_CRED_DIR`), it passes
+  `-f` for it and logs `NetworkPolicy values: adding -f …`. It comes before
+  `METICHE_VALUES_MYSQL`, so an explicit file still wins. The same file named twice is passed
+  once.
+- **Refuses a silent removal.** Before the upgrade it reads the live release
+  (`helm get manifest metiche-mysql`). If that has a `NetworkPolicy`, it renders the upgrade
+  with the same flags (`helm template`). If the render has none, it stops and changes nothing,
+  unless `METICHE_ALLOW_NETPOL_REMOVAL=1`, which proceeds with a warning. A failure to read the
+  release, other than "release: not found", also stops it.
+
+Why the box file plus a guard, not `networkPolicy.enabled: true` in committed values:
+
+- The policy stays opt-in. It is turned on by `netpol`, which proves enforcement with probe
+  pods, and it is not turned on for a fresh install or a local cluster.
+- The teardown edits `allowFrom` in that file, and that stays box state rather than a commit.
+- The guard also covers what auto-including cannot: a deleted file, or a run without sudo.
+  `/etc/metiche` is root-owned 0700, so a non-root shell cannot see the file. It warns that it
+  cannot look, and the guard refuses.
+
+Removing the policy on purpose: set `enabled: false` in the file, then
+`METICHE_ALLOW_NETPOL_REMOVAL=1 deploy/scripts/helm-deploy.sh mysql`. Nothing else changed:
+image tags are still `--set-string`, nothing uses `--reuse-values`, and the chart and its
+admitted labels are unchanged.
 
 ### Proven locally (never the box, never nuzur)
 
@@ -1098,6 +1128,23 @@ part is exercised.
 - The run-mode render has no `NUZUR_*`, host*, subdomain or DSN field.
 - The default `metiche-mysql` render is byte-identical to before. With
   `networkPolicy.enabled=true` the only addition is `NetworkPolicy metiche-mysql-ingress`.
+- With `-f` a file holding `networkPolicy.enabled: true`, the policy's `from` selectors are
+  `name/instance` `metiche/metiche` and `nuzur-agent/nuzur-agent`. Those equal the pod-template
+  labels of the rendered backend Deployment (release `metiche`) and the nuzur-agent StatefulSet.
+  Its `podSelector` equals the metiche-mysql StatefulSet's pod labels.
+
+**`helm-deploy.sh mysql` NetworkPolicy path,** under `dash`, with a stub `helm` and `kubectl`
+(a throwaway harness, not committed). The stub records argv, replays a fixture for
+`get manifest` and runs the real `helm template`.
+
+- **(a)** File present, live policy: the upgrade includes `-f` for the file.
+- **(b)** Live policy, no file: refused, with no `helm upgrade` recorded.
+- **(c)** The same with `METICHE_ALLOW_NETPOL_REMOVAL=1`: proceeds, with a warning.
+- **(d)** No live policy and no file, or no release at all: the `helm upgrade` argv is
+  identical to the previous script's.
+- `METICHE_VALUES_MYSQL` set to the same file passes it once.
+- An unreadable credentials directory warns, then is refused by the guard.
+- Mutation: with the guard call removed, (b) upgrades. With it restored, it refuses again.
 
 **Setup script logic,** against a stub `kubectl` (a throwaway harness, not committed): 28/28.
 It covered:
@@ -1129,9 +1176,9 @@ It covered:
 
 1. **Owner:** `browser_session.user_agent` and `browser_session.ip_hint` stay `redact` (the
    default), or become `expose!`.
-2. `helm-deploy.sh` and `deploy.sh` must keep the NetworkPolicy on, by passing
-   `METICHE_VALUES_MYSQL` or `networkPolicy.enabled=true`. Otherwise a routine
-   `helm-deploy.sh mysql` removes it.
+2. **Done.** `helm-deploy.sh` (and so `deploy.sh`) keeps the NetworkPolicy on. It adds the box
+   file, and refuses to remove a live policy without `METICHE_ALLOW_NETPOL_REMOVAL=1`
+   ("NetworkPolicy" above).
 3. The three planned edits to existing files (§12):
    - a `build-images.sh` target for `nuzur-agent`;
    - a `helm-deploy.sh` target for it;

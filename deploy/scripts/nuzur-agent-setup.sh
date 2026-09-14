@@ -50,7 +50,7 @@ export NUZUR_RO_HOST
 RO_ENV="${METICHE_CRED_DIR}/nuzur_ro.env"
 MID_FILE="${METICHE_CRED_DIR}/nuzur-agent.machine-id"
 IDS_FILE="${NUZUR_AGENT_STATE_DIR}/ids.env"
-NP_VALUES="${METICHE_CRED_DIR}/metiche-mysql.networkpolicy.yaml"
+NP_VALUES="${METICHE_MYSQL_NETPOL_VALUES}"   # lib.sh; helm-deploy.sh reads the same path
 REL=nuzur-agent
 POD=nuzur-agent-0
 CHART="${METICHE_CHART_DIR}/nuzur-agent"
@@ -485,10 +485,12 @@ step_netpol() {
     [ -n "${_mysql}" ] || die "no metiche-mysql pod"
     _uid0=$(kube get pod "${_mysql}" -o 'jsonpath={.metadata.uid} {.status.containerStatuses[0].restartCount}')
     if [ ! -f "${NP_VALUES}" ]; then
-        printf '# Keeps the metiche-mysql NetworkPolicy on across helm-deploy.sh runs:\n#   METICHE_VALUES_MYSQL=%s deploy/scripts/helm-deploy.sh mysql\nnetworkPolicy:\n  enabled: true\n' "${NP_VALUES}" > "${NP_VALUES}"
+        printf '# Keeps the metiche-mysql NetworkPolicy on: deploy/scripts/helm-deploy.sh adds\n# -f %s to every metiche-mysql upgrade while this file exists.\n# To remove the policy: enabled: false here, then\n#   METICHE_ALLOW_NETPOL_REMOVAL=1 deploy/scripts/helm-deploy.sh mysql\nnetworkPolicy:\n  enabled: true\n' "${NP_VALUES}" > "${NP_VALUES}"
         chmod 644 "${NP_VALUES}"
     fi
-    METICHE_VALUES_MYSQL="${NP_VALUES}" "${METICHE_SCRIPT_DIR}/helm-deploy.sh" mysql >&2
+    # The routine path, with no METICHE_VALUES_MYSQL: helm-deploy.sh picks the
+    # file up by itself, so this step deploys exactly as every later redeploy will.
+    "${METICHE_SCRIPT_DIR}/helm-deploy.sh" mysql >&2
     exists networkpolicy metiche-mysql-ingress || die "NetworkPolicy metiche-mysql-ingress was not created"
     [ "$(kube get pod "${_mysql}" -o 'jsonpath={.metadata.uid} {.status.containerStatuses[0].restartCount}')" = "${_uid0}" ] \
         || warn "the MySQL pod was replaced or restarted during the upgrade; check it"
@@ -506,8 +508,8 @@ step_netpol() {
         || stop "a pod with the nuzur-agent labels could NOT reach metiche-mysql:3306"
     ok "a pod with the nuzur-agent labels connects"
     log "Now check the backend by hand (runbook): no DB errors in its log, the board loads and updates."
-    log "Every later 'helm-deploy.sh mysql' must run with METICHE_VALUES_MYSQL=${NP_VALUES}, or the policy is removed."
-    log "Revert: set 'enabled: false' in ${NP_VALUES}, then METICHE_VALUES_MYSQL=${NP_VALUES} deploy/scripts/helm-deploy.sh mysql"
+    log "Every later 'helm-deploy.sh mysql' (and deploy.sh) adds ${NP_VALUES} itself, and refuses to drop a live policy."
+    log "Revert: set 'enabled: false' in ${NP_VALUES}, then METICHE_ALLOW_NETPOL_REMOVAL=1 deploy/scripts/helm-deploy.sh mysql"
 }
 
 step_p1() {

@@ -24,6 +24,13 @@
 : "${HELM:=helm}"
 : "${CTR:=microk8s ctr}"
 
+# The metiche-mysql NetworkPolicy values, written on the box by
+# `nuzur-agent-setup.sh netpol`. helm-deploy.sh adds `-f` for it to every
+# metiche-mysql upgrade whenever it exists, so a routine redeploy keeps the
+# policy. Derived from METICHE_CRED_DIR and deliberately not overridable on its
+# own: a second name for the same file is how the two scripts would drift.
+METICHE_MYSQL_NETPOL_VALUES="${METICHE_CRED_DIR}/metiche-mysql.networkpolicy.yaml"
+
 # Repository root, derived from this file's location. No absolute path is
 # written down anywhere, so a checkout can live wherever it likes on the box.
 # METICHE_DEPLOY_DIR may be set by the caller before sourcing this file — the
