@@ -49,7 +49,14 @@ nas pair-check           # prints "SAFE TO PAIR" and the exact next five steps, 
 machine-id file and its Secret disagree.
 
 `views` fails, naming each offender, if the live schema has a column that
-[`deploy/sql/nuzur/columns.policy`](../sql/nuzur/columns.policy) does not classify.
+[`deploy/sql/nuzur/columns.policy`](../sql/nuzur/columns.policy) does not classify, or if
+its columns differ from the model's
+[`create.sql`](../../code/backend/metiche/core/repository/sql/schema/create.sql) (a column
+in one but not the other). Every view lists its columns in the **model's order**, not the
+table's physical order, which `ALTER … AFTER` migrations can change (production's
+`agent.token_hash` sits after `client_key`; the model has it after `account_uuid`). A
+redacted column keeps its model position as a NULL. So the checkout on the box must be the
+one whose `create.sql` matches the applied schema.
 
 ## 2. Pair, once
 
@@ -182,10 +189,16 @@ nas snapshot            # equals S0 again
 nas drift-timer   # systemd timer: deploy/sql/nuzur/gen-views.sh check-live, daily
 ```
 
+`check-live` also fails if a view's columns are not in the model's order, naming the view
+and the first differing position. `gen-views.sh apply` fixes that.
+
 After **any** `deploy/sql/*.sql` migration:
 
-1. Classify the new columns in `columns.policy`, in the same commit.
-2. Once the migration is applied, run `deploy/sql/nuzur/gen-views.sh apply` on the box.
+1. Classify the new columns in `columns.policy`, in the same commit as the regenerated
+   `create.sql`.
+2. Once the migration is applied and the box's checkout has that `create.sql`, run
+   `deploy/sql/nuzur/gen-views.sh apply` on the box. The views take the model's column
+   order, whatever `AFTER` the migration used.
 
 ---
 

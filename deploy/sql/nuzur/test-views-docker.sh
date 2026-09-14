@@ -7,6 +7,7 @@
 # Environment:
 #   NUZUR_TEST_MYSQL_IMAGE   default mysql:8.4 (production runs the metiche-mysql chart's mysql:8.0)
 #   NUZUR_TEST_KEEP=1        leave the container running (its passwords are still deleted)
+#   NUZUR_TEST_PORT          host port on 127.0.0.1 for the container, default 33500
 #
 # What it does, all through the real deploy/sql/nuzur/gen-views.sh:
 #   1. Starts container nuzur-db on a Docker network with subnet 10.1.0.0/16 —
@@ -19,7 +20,8 @@
 #      a visible marker (NZVISIBLE…) as the positive control.
 #   3. gen-views.sh grants, then gen-views.sh apply (which runs check-live).
 #   4. As nuzur_ro, from inside 10.1.0.0/16: SELECT * on every view works,
-#      every view's columns equal the base table's, no canary appears, every
+#      every view's columns equal the model's (create.sql), in the model's
+#      order, no canary appears, every
 #      visible marker does, every redacted column is NULL. INSERT, UPDATE,
 #      DELETE, DDL, GRANT and SHOW CREATE VIEW are denied; the metiche base
 #      tables and mysql.* are denied; SHOW DATABASES shows no metiche.
@@ -29,6 +31,14 @@
 #      policy restores it and the canary check passes.
 #   7. Drift: an unclassified new column, a view widened by hand, an extra
 #      grant and a stale view are each caught by check-live, and each recovers.
+#   8. Column order: agent.token_hash and session.parent_session_uuid are
+#      moved physically, as an ALTER ... AFTER migration leaves them (in
+#      production token_hash sits after client_key). After apply, nuzur_ro
+#      still sees every view in the model's order, checked against
+#      create.sql independently of the generator. A view recreated by hand in
+#      the physical order fails check-live naming it, and apply fixes it. A
+#      model with a column the live table lacks, and a model lacking a live
+#      column, are each refused before DDL, naming the column.
 
 set -eu
 
@@ -73,7 +83,7 @@ LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 > "${W}/ro.pw"
 docker network create --subnet 10.1.0.0/16 "${NET}" >/dev/null
 docker network create --subnet 10.99.0.0/16 "${OTHER}" >/dev/null
 docker run -d --name "${DB}" --network "${NET}" --ip 10.1.0.10 \
-    --env-file "${W}/root.env" -p 127.0.0.1:33500:3306 \
+    --env-file "${W}/root.env" -p "127.0.0.1:${NUZUR_TEST_PORT:-33500}:3306" \
     "${IMAGE}" --skip-name-resolve >/dev/null
 docker network connect --ip 10.99.0.10 "${OTHER}" "${DB}"
 
@@ -162,12 +172,20 @@ fi
 check "SELECT * returned a header and one row from every view" \
     "$(wc -l < "${W}/ro_dump" | tr -d ' ')" "$((NTABLES * 2))"
 
-printf "SELECT TABLE_NAME, ORDINAL_POSITION, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='metiche_nuzur';\n" \
-    | ro "${NET}" 10.1.0.10 --skip-column-names | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2n > "${W}/ro_view_cols"
+# The model's columns in the model's order, straight from create.sql's text
+# (gen-views.sh columns is only a parser), so this assertion does not trust the
+# generator's ordering.
 cut -f1-3 "${W}/cols" > "${W}/want_cols"
-if cmp -s "${W}/want_cols" "${W}/ro_view_cols"; then
-    pass "information_schema as nuzur_ro: all $(wc -l < "${W}/want_cols" | tr -d ' ') columns, same names and order as the base tables"
-else bad "view columns seen by nuzur_ro differ from the base tables"; diff "${W}/want_cols" "${W}/ro_view_cols" | head >&2; fi
+order_check() {  # 0 = every view, as nuzur_ro sees it, lists the model's columns in the model's order
+    printf "SELECT TABLE_NAME, ORDINAL_POSITION, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='metiche_nuzur';\n" \
+        | ro "${NET}" 10.1.0.10 --skip-column-names | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2n > "${W}/ro_view_cols" || return 2
+    cmp -s "${W}/want_cols" "${W}/ro_view_cols" && return 0
+    diff "${W}/want_cols" "${W}/ro_view_cols" | sed -n 's/^[<>]/  &/p' | head -20
+    return 1
+}
+if order_check; then
+    pass "information_schema as nuzur_ro: all $(wc -l < "${W}/want_cols" | tr -d ' ') columns, same names and order as the model (create.sql)"
+else bad "view columns seen by nuzur_ro differ from the model (create.sql)"; fi
 
 awk -F'\t' '{ printf "SELECT CONCAT(\047%s.%s\047, \047 rows=\047, COUNT(*), \047 null=\047, SUM(`%s` IS NULL)) FROM `metiche_nuzur`.`%s`;\n", $1, $2, $2, $1 }' \
     "${W}/redacted" | ro "${NET}" 10.1.0.10 --skip-column-names > "${W}/ro_nulls"
@@ -266,9 +284,76 @@ printf 'CREATE VIEW metiche_nuzur.retired_table AS SELECT 1 AS x;\n' | root
 if "${GEN}" check-live 2> "${W}/drift.err"; then bad "check-live passed"; else sed 's/^/  /' "${W}/drift.err"; pass "check-live fails naming it"; fi
 "${GEN}" apply 2>/dev/null && pass "apply drops it" || bad "apply after stale view"
 
+# ── 8. Column order ─────────────────────────────────────────────────────────
+phys() {   # $1 schema, $2 table: its columns in information_schema order
+    printf "SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY ORDINAL_POSITION) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s';\n" "$1" "$2" | root
+}
+model() {  # $1 table: its columns in create.sql order
+    awk -F'\t' -v t="$1" '$1 == t { s = s (s == "" ? "" : ",") $3 } END { print s }' "${W}/want_cols"
+}
+
+section "column order: base tables physically reordered, as ALTER ... AFTER migrations leave them"
+# 2026-09-agent-token-hash.sql added agent.token_hash AFTER client_key, while
+# the model has it after account_uuid. session.parent_session_uuid is moved
+# too, so the handling is shown to be generic, on a second table.
+root <<'SQL'
+SET FOREIGN_KEY_CHECKS=0;
+ALTER TABLE metiche.agent MODIFY COLUMN token_hash VARCHAR(64) NULL AFTER client_key;
+ALTER TABLE metiche.session MODIFY COLUMN parent_session_uuid CHAR(36) NULL AFTER id;
+SQL
+for _t in agent session; do
+    printf '  metiche.%s physical: %s\n  model (create.sql):    %s\n' "${_t}" "$(phys metiche "${_t}")" "$(model "${_t}")"
+    if [ "$(phys metiche "${_t}")" != "$(model "${_t}")" ]; then pass "metiche.${_t}: physical order now differs from the model"; else bad "metiche.${_t} reorder did not take"; fi
+done
+"${GEN}" check-live 2>/dev/null && pass "check-live passes: the existing views keep the model's order" || bad "check-live after reordering base tables"
+if "${GEN}" apply; then pass "apply on physically reordered tables"; else bad "apply on reordered tables"; fi
+for _t in agent session; do
+    check "metiche_nuzur.${_t} as root: the model's order" "$(phys metiche_nuzur "${_t}")" "$(model "${_t}")"
+done
+if order_check; then pass "information_schema as nuzur_ro: every view in the model's order, though agent and session are not physically"; else bad "nuzur_ro sees a view out of the model's order"; fi
+canary_check && pass "canary check: SELECT * works, redacted columns NULL" || bad "canary check after reordering"
+
+section "drift: the agent view recreated by hand in the table's physical order"
+root > "${W}/physical_view.sql" <<'SQL'
+SELECT CONCAT('CREATE OR REPLACE ALGORITHM=MERGE DEFINER=`nuzur_views`@`localhost` SQL SECURITY DEFINER VIEW `metiche_nuzur`.`agent` AS SELECT ',
+  GROUP_CONCAT(IF(COLUMN_NAME = 'token_hash', 'CAST(NULL AS CHAR(64)) AS `token_hash`', CONCAT('`', COLUMN_NAME, '`')) ORDER BY ORDINAL_POSITION SEPARATOR ', '),
+  ' FROM `metiche`.`agent`;')
+FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'metiche' AND TABLE_NAME = 'agent';
+SQL
+grep -q 'agent.token_hash' "${W}/redacted" || bad "fixture assumption: agent.token_hash is redacted"
+root < "${W}/physical_view.sql"
+printf '  metiche_nuzur.agent now: %s\n' "$(phys metiche_nuzur agent)"
+if "${GEN}" check-live 2> "${W}/drift.err"; then bad "check-live passed"; else
+    sed 's/^/  /' "${W}/drift.err"
+    check "check-live fails naming the view and the order" "$(grep -c 'view metiche_nuzur.agent: column ORDER differs from the model' "${W}/drift.err")" "1"
+fi
+if order_check >/dev/null; then bad "order_check passed on a physical-order view"; else pass "order_check (nuzur_ro vs create.sql) fails too"; fi
+"${GEN}" apply 2>/dev/null && pass "apply restores the model's order" || bad "apply after physical-order view"
+order_check && pass "order_check passes again" || bad "order_check after restore"
+
+section "mismatch: the model has a column the live table lacks"
+awk '/^CREATE TABLE.*`agent`/ { a = 1 } a && /^\)/ { a = 0 }
+     { print } a && /^    `client_key`/ { print "    `nzmodel_only` INT," }' "${SCHEMA}" > "${W}/model_extra.sql"
+if NUZUR_SCHEMA="${W}/model_extra.sql" "${GEN}" apply 2> "${W}/mm.err"; then bad "apply went ahead"; else
+    sed 's/^/  /' "${W}/mm.err"
+    check "apply refuses before DDL, naming agent.nzmodel_only" "$(grep -c 'model column missing from the live table: agent.nzmodel_only' "${W}/mm.err")" "1"
+fi
+NUZUR_SCHEMA="${W}/model_extra.sql" "${GEN}" check-live 2>/dev/null && bad "check-live passed" || pass "check-live against that model fails"
+
+section "mismatch: the live table has a column the model lacks"
+awk '/^CREATE TABLE.*`agent`/ { a = 1 } a && /^\)/ { a = 0 }
+     a && /^    `last_seen_at`/ { next } { print }' "${SCHEMA}" > "${W}/model_missing.sql"
+if NUZUR_SCHEMA="${W}/model_missing.sql" "${GEN}" apply 2> "${W}/mm.err"; then bad "apply went ahead"; else
+    sed 's/^/  /' "${W}/mm.err"
+    check "apply refuses before DDL, naming agent.last_seen_at" "$(grep -c 'live column not in the model: agent.last_seen_at' "${W}/mm.err")" "1"
+fi
+NUZUR_SCHEMA="${W}/model_missing.sql" "${GEN}" check-live 2>/dev/null && bad "check-live passed" || pass "check-live against that model fails"
+if order_check && "${GEN}" check-live 2>/dev/null; then pass "views unchanged by either refusal: real model order, check-live clean"; else bad "views changed after a refused apply"; fi
+
 section "final state"
 "${GEN}" check-live && pass "check-live clean" || bad "final check-live"
 canary_check && pass "canary check clean" || bad "final canary check"
+order_check && pass "order check clean" || bad "final order check"
 
 printf '\n%s passed, %s failed (%s)\n' "${NPASS}" "${NFAIL}" "$(printf 'SELECT VERSION();\n' | root)"
 [ "${NFAIL}" -eq 0 ]
