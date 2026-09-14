@@ -1,0 +1,481 @@
+# columns.policy — what the nuzur agent may see of each metiche column.
+#
+# Read by deploy/sql/nuzur/gen-views.sh. Design: docs/NUZUR_AGENT.md §5.
+# This file is committed and holds no secrets.
+#
+#   <table>.<column>   expose | expose! | redact   [reason]
+#
+#   expose    the column appears as is.
+#   expose!   an ACKNOWLEDGED exposure of a risky-looking name. Needs a reason.
+#   redact    the column appears under its own name as a typed NULL. Needs a reason.
+#
+# TOTAL CLASSIFICATION. Every column of every table in metiche has exactly one
+# line. A new table or column with no line, a line for a column that no longer
+# exists, a duplicate, or a risky-looking name (token, secret, code, key, pass,
+# pwd, url, uri, snapshot, hash, salt, credential, cookie, signature, private,
+# webhook, dsn, auth, email, user_agent, ip) marked plain `expose` stops the
+# generator before any SQL is produced. CI and the daily drift check run it.
+#
+# When a migration adds a column: add its line here IN THE SAME CHANGE, then
+# after the migration is applied on the box run
+#   deploy/sql/nuzur/gen-views.sh apply
+# Until then the views stay as they were: stale, never wider.
+#
+# D2 = owner decision, docs/NUZUR_AGENT.md §2. The viewer is the owner only (D1).
+
+# ── plan ─────────────────────────────────────────────────────────────────────
+plan.id                                     expose
+plan.key                                    expose!   public plan identifier, not a credential
+plan.name                                   expose
+plan.description                            expose
+plan.max_concurrent_agents                  expose
+plan.retention_days                         expose
+plan.max_members                            expose
+plan.max_projects                           expose
+plan.is_instance_default                    expose
+plan.sort_order                             expose
+plan.status                                 expose
+plan.created_at                             expose
+plan.updated_at                             expose
+
+# ── account ──────────────────────────────────────────────────────────────────
+account.id                                  expose
+account.key                                 expose!   public account handle, not a credential
+account.display_name                        expose
+account.token_hash                          redact    D2 hash of the account bearer token
+account.identity_provider                   expose
+account.identity_subject                    expose
+account.identity_handle                     expose
+account.email                               expose!   D2 owner-only viewer
+account.claimed_at                          expose
+account.status                              expose
+account.last_seen_at                        expose
+account.created_at                          expose
+account.updated_at                          expose
+
+# ── team ─────────────────────────────────────────────────────────────────────
+team.id                                     expose
+team.name                                   expose
+team.slug                                   expose
+team.sequence                               expose
+team.board_revision                         expose
+team.settings                               expose
+team.status                                 expose
+team.created_at                             expose
+team.updated_at                             expose
+team.plan_uuid                              expose
+team.plan_source                            expose
+team.plan_granted_reason                    expose
+team.plan_expires_at                        expose
+team.retention_floor_sequence               expose
+team.last_retention_sweep_at                expose
+team.visibility                             expose
+team.requires_claimed_accounts              expose
+
+# ── agent ────────────────────────────────────────────────────────────────────
+agent.id                                    expose
+agent.key                                   expose!   public agent handle, not a credential
+agent.label                                 expose
+agent.client_kind                           expose
+agent.client_key                            expose!   D2 identifier, not a bearer (docs/IDENTITY.md)
+agent.status                                expose
+agent.last_seen_at                          expose
+agent.created_at                            expose
+agent.updated_at                            expose
+agent.account_uuid                          expose
+agent.token_hash                            redact    D2 hash of the agent bearer token (v4)
+
+# ── member ───────────────────────────────────────────────────────────────────
+member.id                                   expose
+member.team_uuid                            expose
+member.key                                  expose!   public member handle, not a credential
+member.display_name                         expose
+member.role                                 expose
+member.last_seen_at                         expose
+member.status                               expose
+member.created_at                           expose
+member.updated_at                           expose
+member.account_uuid                         expose
+member.revoked_at                           expose
+
+# ── project ──────────────────────────────────────────────────────────────────
+project.id                                  expose
+project.team_uuid                           expose
+project.key                                 expose!   public project identifier, not a credential
+project.name                                expose
+project.repo_url                            expose!   D2 owner decision
+project.default_branch                      expose
+project.ignore_patterns                     expose
+project.hotspot_patterns                    expose
+project.case_insensitive_paths              expose
+project.status                              expose
+project.created_at                          expose
+project.updated_at                          expose
+project.cadence                             expose
+
+# ── board_login_link ─────────────────────────────────────────────────────────
+board_login_link.id                         expose
+board_login_link.account_uuid               expose
+board_login_link.agent_uuid                 expose
+board_login_link.secret_hash                redact    hash of the one-time login link secret (docs/BOARD_LOGIN.md)
+board_login_link.redirect_path              expose
+board_login_link.requested_via              expose
+board_login_link.expires_at                 expose
+board_login_link.consumed_at                expose
+board_login_link.created_at                 expose
+board_login_link.updated_at                 expose
+
+# ── browser_session ──────────────────────────────────────────────────────────
+browser_session.id                          expose
+browser_session.key                         expose!   public BS- handle, "not a credential" (docs/BOARD_LOGIN.md §3.2)
+browser_session.account_uuid                expose
+browser_session.secret_hash                 redact    sha256 of the board session cookie (docs/BOARD_LOGIN.md §3.2)
+browser_session.auth_method                 expose!   enum (terminal link / github), not a credential
+browser_session.created_from_agent_uuid     expose
+browser_session.user_agent                  redact    personal data about a browser; default redact, owner may flip to expose!
+browser_session.ip_hint                     redact    personal data (IP prefix); default redact, owner may flip to expose!
+browser_session.expires_at                  expose
+browser_session.last_seen_at                expose
+browser_session.revoked_at                  expose
+browser_session.end_reason                  expose
+browser_session.created_at                  expose
+browser_session.updated_at                  expose
+
+# ── invite ───────────────────────────────────────────────────────────────────
+invite.id                                   expose
+invite.team_uuid                            expose
+invite.code                                 redact    D2 the join code is a bearer credential
+invite.label                                expose
+invite.created_by_member_uuid               expose
+invite.max_uses                             expose
+invite.uses                                 expose
+invite.expires_at                           expose
+invite.revoked_at                           expose
+invite.revoked_by_member_uuid               expose
+invite.status                               expose
+invite.last_used_at                         expose
+invite.created_at                           expose
+invite.updated_at                           expose
+
+# ── contract ─────────────────────────────────────────────────────────────────
+contract.id                                 expose
+contract.team_uuid                          expose
+contract.project_uuid                       expose
+contract.key                                expose!   contract name (e.g. an API route), not a credential
+contract.key_norm                           expose!   normalized contract name, not a credential
+contract.kind                               expose
+contract.status                             expose
+contract.title                              expose
+contract.notes                              expose
+contract.created_at                         expose
+contract.updated_at                         expose
+
+# ── decision ─────────────────────────────────────────────────────────────────
+decision.id                                 expose
+decision.team_uuid                          expose
+decision.project_uuid                       expose
+decision.key                                expose!   public decision handle, not a credential
+decision.title                              expose
+decision.statement                          expose
+decision.rationale                          expose
+decision.status                             expose
+decision.always_show                        expose
+decision.supersedes_uuid                    expose
+decision.superseded_by_uuid                 expose
+decision.decided_by_member_uuid             expose
+decision.decided_at                         expose
+decision.revision                           expose
+decision.created_at                         expose
+decision.updated_at                         expose
+
+# ── notification_channel ─────────────────────────────────────────────────────
+notification_channel.id                     expose
+notification_channel.team_uuid              expose
+notification_channel.project_uuid           expose
+notification_channel.key                    expose!   public channel handle, not a credential
+notification_channel.kind                   expose
+notification_channel.label                  expose
+notification_channel.target_url             redact    D2 an incoming-webhook URL is a credential (docs/MODEL.md)
+notification_channel.min_severity           expose
+notification_channel.notify_human_requests  expose
+notification_channel.status                 expose
+notification_channel.delivery_status        expose
+notification_channel.consecutive_failures   expose
+notification_channel.last_attempt_at        expose
+notification_channel.last_success_at        expose
+notification_channel.last_error             expose    D2 capped status line (docs/MODEL.md)
+notification_channel.created_by_member_uuid expose
+notification_channel.created_at             expose
+notification_channel.updated_at             expose
+
+# ── decision_path ────────────────────────────────────────────────────────────
+decision_path.id                            expose
+decision_path.decision_uuid                 expose
+decision_path.team_uuid                     expose
+decision_path.project_uuid                  expose
+decision_path.pattern                       expose
+decision_path.pattern_norm                  expose
+decision_path.kind                          expose
+decision_path.prefix                        expose
+decision_path.depth                         expose
+decision_path.created_at                    expose
+decision_path.updated_at                    expose
+
+# ── decision_token ───────────────────────────────────────────────────────────
+decision_token.id                           expose
+decision_token.decision_uuid                expose
+decision_token.team_uuid                    expose
+decision_token.project_uuid                 expose
+decision_token.token                        expose!   a word of the decision's wording, tokenized (docs/MODEL.md)
+decision_token.weight                       expose
+decision_token.created_at                   expose
+decision_token.updated_at                   expose
+
+# ── session ──────────────────────────────────────────────────────────────────
+session.id                                  expose
+session.team_uuid                           expose
+session.project_uuid                        expose
+session.agent_uuid                          expose
+session.member_uuid                         expose
+session.key                                 expose!   public session handle, not a credential
+session.branch                              expose
+session.base_commit                         expose
+session.head_commit                         expose
+session.goal                                expose
+session.status                              expose
+session.status_line                         expose
+session.current_intent_uuid                 expose
+session.started_at                          expose
+session.last_heartbeat_at                   expose
+session.ended_at                            expose
+session.outcome                             expose
+session.outcome_note                        expose
+session.created_at                          expose
+session.updated_at                          expose
+session.parent_session_uuid                 expose
+
+# ── intent ───────────────────────────────────────────────────────────────────
+intent.id                                   expose
+intent.team_uuid                            expose
+intent.project_uuid                         expose
+intent.session_uuid                         expose
+intent.member_uuid                          expose
+intent.key                                  expose!   public intent handle, not a credential
+intent.summary                              expose
+intent.detail                               expose
+intent.kind                                 expose
+intent.status                               expose
+intent.external_ref                         expose
+intent.revision                             expose
+intent.declared_at                          expose
+intent.started_at                           expose
+intent.ended_at                             expose
+intent.expires_at                           expose
+intent.created_at                           expose
+intent.updated_at                           expose
+
+# ── claim ────────────────────────────────────────────────────────────────────
+claim.id                                    expose
+claim.team_uuid                             expose
+claim.project_uuid                          expose
+claim.session_uuid                          expose
+claim.member_uuid                           expose
+claim.intent_uuid                           expose
+claim.key                                   expose!   public claim handle, not a credential
+claim.mode                                  expose
+claim.status                                expose
+claim.ttl_seconds                           expose
+claim.expires_at                            expose
+claim.hard_expires_at                       expose
+claim.breadth_score                         expose
+claim.released_at                           expose
+claim.release_reason                        expose
+claim.created_at                            expose
+claim.updated_at                            expose
+
+# ── claim_path ───────────────────────────────────────────────────────────────
+claim_path.id                               expose
+claim_path.claim_uuid                       expose
+claim_path.project_uuid                     expose
+claim_path.session_uuid                     expose
+claim_path.member_uuid                      expose
+claim_path.mode                             expose
+claim_path.status                           expose
+claim_path.expires_at                       expose
+claim_path.pattern                          expose
+claim_path.pattern_norm                     expose
+claim_path.kind                             expose
+claim_path.prefix                           expose
+claim_path.suffix_pattern                   expose
+claim_path.depth                            expose
+claim_path.ext                              expose
+claim_path.created_at                       expose
+claim_path.updated_at                       expose
+
+# ── intent_token ─────────────────────────────────────────────────────────────
+intent_token.id                             expose
+intent_token.intent_uuid                    expose
+intent_token.team_uuid                      expose
+intent_token.project_uuid                   expose
+intent_token.token                          expose!   a word of the intent's wording, tokenized (docs/MODEL.md)
+intent_token.weight                         expose
+intent_token.created_at                     expose
+intent_token.updated_at                     expose
+
+# ── contract_assertion ───────────────────────────────────────────────────────
+contract_assertion.id                       expose
+contract_assertion.contract_uuid            expose
+contract_assertion.team_uuid                expose
+contract_assertion.project_uuid             expose
+contract_assertion.session_uuid             expose
+contract_assertion.member_uuid              expose
+contract_assertion.role                     expose
+contract_assertion.shape                    expose
+contract_assertion.shape_hash               expose!   content hash of a contract shape, not a credential
+contract_assertion.shape_fingerprint        expose
+contract_assertion.status                   expose
+contract_assertion.revision                 expose
+contract_assertion.active_marker            expose
+contract_assertion.asserted_at              expose
+contract_assertion.superseded_by_uuid       expose
+contract_assertion.created_at               expose
+contract_assertion.updated_at               expose
+
+# ── contract_field ───────────────────────────────────────────────────────────
+contract_field.id                           expose
+contract_field.assertion_uuid               expose
+contract_field.contract_uuid                expose
+contract_field.path                         expose
+contract_field.path_snake                   expose
+contract_field.type                         expose
+contract_field.required                     expose
+contract_field.nullable                     expose
+contract_field.direction                    expose
+contract_field.created_at                   expose
+contract_field.updated_at                   expose
+
+# ── conflict ─────────────────────────────────────────────────────────────────
+conflict.id                                 expose
+conflict.team_uuid                          expose
+conflict.project_uuid                       expose
+conflict.key                                expose!   public conflict handle, not a credential
+conflict.kind                               expose
+conflict.dedupe_key                         expose!   deterministic dedupe digest, not a credential
+conflict.severity                           expose
+conflict.status                             expose
+conflict.detected_by                        expose
+conflict.detector_rule                      expose
+conflict.confidence                         expose
+conflict.evidence                           expose
+conflict.suggested_action                   expose
+conflict.suggested_yield_session_uuid       expose
+conflict.suggested_yield_reason             expose
+conflict.resolution                         expose
+conflict.resolution_note                    expose
+conflict.dismiss_reason                     expose
+conflict.resolved_by_member_uuid            expose
+conflict.resolved_at                        expose
+conflict.occurrence_count                   expose
+conflict.first_detected_at                  expose
+conflict.last_detected_at                   expose
+conflict.notified_at                        expose
+conflict.max_severity_notified              expose
+conflict.created_at                         expose
+conflict.updated_at                         expose
+
+# ── conflict_participant ─────────────────────────────────────────────────────
+conflict_participant.id                     expose
+conflict_participant.conflict_uuid          expose
+conflict_participant.team_uuid              expose
+conflict_participant.session_uuid           expose
+conflict_participant.agent_uuid             expose
+conflict_participant.member_uuid            expose
+conflict_participant.subject_kind           expose
+conflict_participant.subject_uuid           expose
+conflict_participant.role                   expose
+conflict_participant.notified_at            expose
+conflict_participant.acked_at               expose
+conflict_participant.response               expose
+conflict_participant.created_at             expose
+conflict_participant.updated_at             expose
+
+# ── judgement ────────────────────────────────────────────────────────────────
+judgement.id                                expose
+judgement.team_uuid                         expose
+judgement.pair_key                          expose!   deterministic pair digest, not a credential
+judgement.kind                              expose
+judgement.subject_a_kind                    expose
+judgement.subject_a_uuid                    expose
+judgement.subject_a_revision                expose
+judgement.subject_b_kind                    expose
+judgement.subject_b_uuid                    expose
+judgement.subject_b_revision                expose
+judgement.status                            expose
+judgement.verdict                           expose
+judgement.severity                          expose
+judgement.confidence                        expose
+judgement.rationale                         expose
+judgement.judge_session_uuid                expose
+judgement.judging_expires_at                expose
+judgement.conflict_uuid                     expose
+judgement.pinned                            expose
+judgement.created_at                        expose
+judgement.updated_at                        expose
+
+# ── instruction ──────────────────────────────────────────────────────────────
+instruction.id                              expose
+instruction.team_uuid                       expose
+instruction.target_session_uuid             expose
+instruction.target_agent_uuid               expose
+instruction.key                             expose!   public instruction handle, not a credential
+instruction.source                          expose
+instruction.kind                            expose
+instruction.body                            expose
+instruction.ref_kind                        expose
+instruction.ref_uuid                        expose
+instruction.requires_report                 expose
+instruction.status                          expose
+instruction.raised_by_member_uuid           expose
+instruction.delivered_at                    expose
+instruction.acted_at                        expose
+instruction.action                          expose
+instruction.action_note                     expose
+instruction.expires_at                      expose
+instruction.created_at                      expose
+instruction.updated_at                      expose
+instruction.target_member_uuid              expose
+
+# ── team_event ───────────────────────────────────────────────────────────────
+team_event.id                               expose
+team_event.team_uuid                        expose
+team_event.sequence                         expose
+team_event.project_uuid                     expose
+team_event.session_uuid                     expose
+team_event.agent_uuid                       expose
+team_event.member_uuid                      expose
+team_event.kind                             expose
+team_event.subject_kind                     expose
+team_event.subject_uuid                     expose
+team_event.subject_key                      expose!   the subject's public handle, not a credential
+team_event.structural                       expose
+team_event.summary                          expose
+team_event.payload                          expose
+team_event.idempotency_key                  expose!   client retry nonce, not a credential
+team_event.response_snapshot                redact    D2 stored tool response, replayed verbatim on retry
+team_event.occurred_at                      expose
+team_event.created_at                       expose
+team_event.updated_at                       expose
+
+# ── limit_event ──────────────────────────────────────────────────────────────
+limit_event.id                              expose
+limit_event.team_uuid                       expose
+limit_event.plan_uuid                       expose
+limit_event.session_uuid                    expose
+limit_event.dimension                       expose
+limit_event.observed                        expose
+limit_event.allowed                         expose
+limit_event.outcome                         expose
+limit_event.note                            expose
+limit_event.occurred_at                     expose
+limit_event.created_at                      expose
+limit_event.updated_at                      expose
