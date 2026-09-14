@@ -200,7 +200,9 @@ type Querier interface {
 	// session selects:
 	FetchSessionByID(ctx context.Context, id string) ([]Session, error)
 	FetchSessionByIDForUpdate(ctx context.Context, id string) ([]Session, error)
+	FetchSessionByParentSessionUUID(ctx context.Context, arg FetchSessionByParentSessionUUIDParams) ([]Session, error)
 	FetchSessionByProjectUUIDAndStatus(ctx context.Context, arg FetchSessionByProjectUUIDAndStatusParams) ([]Session, error)
+	FetchSessionByTeamUUID(ctx context.Context, arg FetchSessionByTeamUUIDParams) ([]Session, error)
 	FetchSessionByTeamUUIDAndKey(ctx context.Context, arg FetchSessionByTeamUUIDAndKeyParams) ([]Session, error)
 	FetchSessionByTeamUUIDAndStatus(ctx context.Context, arg FetchSessionByTeamUUIDAndStatusParams) ([]Session, error)
 	FetchTeam(ctx context.Context) ([]Team, error)

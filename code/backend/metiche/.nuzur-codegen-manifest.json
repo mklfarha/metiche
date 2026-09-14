@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generator": "nuzur go-code-gen",
-  "generated_at": "2026-09-13T03:07:55Z",
+  "generated_at": "2026-09-14T17:29:20Z",
   "files": [
     "AI.md",
     "Dockerfile",
@@ -419,7 +419,9 @@
     "core/module/project/upsert_update.go",
     "core/module/session/delete.go",
     "core/module/session/fetch_session_by_id.go",
+    "core/module/session/fetch_session_by_parent_session_uuid.go",
     "core/module/session/fetch_session_by_project_uuid_and_status.go",
+    "core/module/session/fetch_session_by_team_uuid.go",
     "core/module/session/fetch_session_by_team_uuid_and_key.go",
     "core/module/session/fetch_session_by_team_uuid_and_status.go",
     "core/module/session/list.go",
@@ -428,7 +430,9 @@
     "core/module/session/session.go",
     "core/module/session/types/delete.go",
     "core/module/session/types/fetch_session_by_id.go",
+    "core/module/session/types/fetch_session_by_parent_session_uuid.go",
     "core/module/session/types/fetch_session_by_project_uuid_and_status.go",
+    "core/module/session/types/fetch_session_by_team_uuid.go",
     "core/module/session/types/fetch_session_by_team_uuid_and_key.go",
     "core/module/session/types/fetch_session_by_team_uuid_and_status.go",
     "core/module/session/types/list.go",

@@ -35,6 +35,7 @@ type Session struct {
 	OutcomeNote       null.String          `json:"outcome_note"`
 	CreatedAt         time.Time            `json:"created_at"`
 	UpdatedAt         time.Time            `json:"updated_at"`
+	ParentSessionUUID *uuid.UUID           `json:"parent_session_uuid"`
 }
 
 func (e Session) String() string {

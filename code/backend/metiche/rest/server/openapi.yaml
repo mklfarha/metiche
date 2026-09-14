@@ -7584,6 +7584,10 @@ components:
                 outcome_note:
                     nullable: true
                     type: string
+                parent_session_uuid:
+                    format: uuid
+                    nullable: true
+                    type: string
                 project_uuid:
                     format: uuid
                     type: string

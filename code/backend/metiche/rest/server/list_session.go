@@ -146,6 +146,8 @@ func sessionDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("parent_session_uuid", filtering.TypeString),
 	)
 	if err != nil {
 		log.Printf("error creating declarations for session: %v", err)

@@ -28,6 +28,7 @@ func (e Session) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 		"outcome_note":        entitytypes.StringFieldType,
 		"created_at":          entitytypes.TimestampFieldType,
 		"updated_at":          entitytypes.TimestampFieldType,
+		"parent_session_uuid": entitytypes.StringFieldType,
 	}
 }
 
@@ -53,6 +54,7 @@ func (e Session) OrderedFieldIdentifiers() []string {
 	res = append(res, "outcome_note")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "parent_session_uuid")
 
 	return res
 }

@@ -42,5 +42,6 @@ func mapModelToEntity(m metichedb.Session) main_entity.Session {
 		OutcomeNote:       null.NewString(m.OutcomeNote.String, m.OutcomeNote.Valid),
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,
+		ParentSessionUUID: mapper.StringToUUIDPtr(m.ParentSessionUUID),
 	}
 }

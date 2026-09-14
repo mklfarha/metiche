@@ -128,5 +128,7 @@ func mapUpsertRequestToInsertParams(req types.UpsertRequest) metichedb.InsertSes
 		CreatedAt: req.Session.CreatedAt,
 
 		UpdatedAt: req.Session.UpdatedAt,
+
+		ParentSessionUUID: mapper.UUIDPtrToNullString(req.Session.ParentSessionUUID),
 	}
 }

@@ -1117,7 +1117,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) er
 const updateSession = `-- name: UpdateSession :exec
 UPDATE ` + "`" + `session` + "`" + `
 SET
-` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `project_uuid` + "`" + ` = ?, ` + "`" + `agent_uuid` + "`" + ` = ?, ` + "`" + `member_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `branch` + "`" + ` = ?, ` + "`" + `base_commit` + "`" + ` = ?, ` + "`" + `head_commit` + "`" + ` = ?, ` + "`" + `goal` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `status_line` + "`" + ` = ?, ` + "`" + `current_intent_uuid` + "`" + ` = ?, ` + "`" + `started_at` + "`" + ` = ?, ` + "`" + `last_heartbeat_at` + "`" + ` = ?, ` + "`" + `ended_at` + "`" + ` = ?, ` + "`" + `outcome` + "`" + ` = ?, ` + "`" + `outcome_note` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `project_uuid` + "`" + ` = ?, ` + "`" + `agent_uuid` + "`" + ` = ?, ` + "`" + `member_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `branch` + "`" + ` = ?, ` + "`" + `base_commit` + "`" + ` = ?, ` + "`" + `head_commit` + "`" + ` = ?, ` + "`" + `goal` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `status_line` + "`" + ` = ?, ` + "`" + `current_intent_uuid` + "`" + ` = ?, ` + "`" + `started_at` + "`" + ` = ?, ` + "`" + `last_heartbeat_at` + "`" + ` = ?, ` + "`" + `ended_at` + "`" + ` = ?, ` + "`" + `outcome` + "`" + ` = ?, ` + "`" + `outcome_note` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `parent_session_uuid` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
@@ -1142,6 +1142,7 @@ type UpdateSessionParams struct {
 	OutcomeNote       null.String `json:"outcome_note"`
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`
+	ParentSessionUUID null.String `json:"parent_session_uuid"`
 	ID                string      `json:"id"`
 }
 
@@ -1166,6 +1167,7 @@ func (q *Queries) UpdateSession(ctx context.Context, arg UpdateSessionParams) er
 		arg.OutcomeNote,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.ParentSessionUUID,
 		arg.ID,
 	)
 	return err

@@ -100,7 +100,7 @@ WHERE
 -- name: UpdateSession :exec
 UPDATE `session`
 SET
-`team_uuid` = ?, `project_uuid` = ?, `agent_uuid` = ?, `member_uuid` = ?, `key` = ?, `branch` = ?, `base_commit` = ?, `head_commit` = ?, `goal` = ?, `status` = ?, `status_line` = ?, `current_intent_uuid` = ?, `started_at` = ?, `last_heartbeat_at` = ?, `ended_at` = ?, `outcome` = ?, `outcome_note` = ?, `created_at` = ?, `updated_at` = ?
+`team_uuid` = ?, `project_uuid` = ?, `agent_uuid` = ?, `member_uuid` = ?, `key` = ?, `branch` = ?, `base_commit` = ?, `head_commit` = ?, `goal` = ?, `status` = ?, `status_line` = ?, `current_intent_uuid` = ?, `started_at` = ?, `last_heartbeat_at` = ?, `ended_at` = ?, `outcome` = ?, `outcome_note` = ?, `created_at` = ?, `updated_at` = ?, `parent_session_uuid` = ?
 WHERE
 `id` = ?;
 

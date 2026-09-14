@@ -135,6 +135,7 @@ sql:
           outcome_note: OutcomeNote
           overlap_path: OverlapPath
           pair_key: PairKey
+          parent_session_uuid: ParentSessionUUID
           path: Path
           path_snake: PathSnake
           paths: Paths

@@ -450,6 +450,7 @@ type Session struct {
 	OutcomeNote       null.String `json:"outcome_note"`
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`
+	ParentSessionUUID null.String `json:"parent_session_uuid"`
 }
 
 type Team struct {

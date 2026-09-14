@@ -1069,9 +1069,9 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (s
 
 const insertSession = `-- name: InsertSession :execresult
 INSERT INTO ` + "`" + `session` + "`" + `
-(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `)
+(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `parent_session_uuid` + "`" + `)
 VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type InsertSessionParams struct {
@@ -1095,6 +1095,7 @@ type InsertSessionParams struct {
 	OutcomeNote       null.String `json:"outcome_note"`
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`
+	ParentSessionUUID null.String `json:"parent_session_uuid"`
 }
 
 func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (sql.Result, error) {
@@ -1119,6 +1120,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (s
 		arg.OutcomeNote,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.ParentSessionUUID,
 	)
 }
 

@@ -5662,7 +5662,7 @@ func (q *Queries) FetchProjectByTeamUUIDAndKey(ctx context.Context, arg FetchPro
 }
 
 const fetchSessionByID = `-- name: FetchSessionByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `parent_session_uuid` + "`" + `
 FROM ` + "`" + `session` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -5699,6 +5699,7 @@ func (q *Queries) FetchSessionByID(ctx context.Context, id string) ([]Session, e
 			&i.OutcomeNote,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ParentSessionUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -5714,7 +5715,7 @@ func (q *Queries) FetchSessionByID(ctx context.Context, id string) ([]Session, e
 }
 
 const fetchSessionByIDForUpdate = `-- name: FetchSessionByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `parent_session_uuid` + "`" + `
 FROM ` + "`" + `session` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -5751,6 +5752,66 @@ func (q *Queries) FetchSessionByIDForUpdate(ctx context.Context, id string) ([]S
 			&i.OutcomeNote,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ParentSessionUUID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchSessionByParentSessionUUID = `-- name: FetchSessionByParentSessionUUID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `parent_session_uuid` + "`" + `
+FROM ` + "`" + `session` + "`" + `
+WHERE 
+    ` + "`" + `parent_session_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchSessionByParentSessionUUIDParams struct {
+	ParentSessionUUID null.String `json:"parent_session_uuid"`
+	Offset            int32       `json:"offset"`
+	Limit             int32       `json:"limit"`
+}
+
+func (q *Queries) FetchSessionByParentSessionUUID(ctx context.Context, arg FetchSessionByParentSessionUUIDParams) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, fetchSessionByParentSessionUUID, arg.ParentSessionUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Session
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.ProjectUUID,
+			&i.AgentUUID,
+			&i.MemberUUID,
+			&i.Key,
+			&i.Branch,
+			&i.BaseCommit,
+			&i.HeadCommit,
+			&i.Goal,
+			&i.Status,
+			&i.StatusLine,
+			&i.CurrentIntentUUID,
+			&i.StartedAt,
+			&i.LastHeartbeatAt,
+			&i.EndedAt,
+			&i.Outcome,
+			&i.OutcomeNote,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentSessionUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -5766,7 +5827,7 @@ func (q *Queries) FetchSessionByIDForUpdate(ctx context.Context, id string) ([]S
 }
 
 const fetchSessionByProjectUUIDAndStatus = `-- name: FetchSessionByProjectUUIDAndStatus :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `parent_session_uuid` + "`" + `
 FROM ` + "`" + `session` + "`" + `
 WHERE 
     ` + "`" + `project_uuid` + "`" + ` = ? AND ` + "`" + `status` + "`" + ` = ? 
@@ -5815,6 +5876,66 @@ func (q *Queries) FetchSessionByProjectUUIDAndStatus(ctx context.Context, arg Fe
 			&i.OutcomeNote,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ParentSessionUUID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchSessionByTeamUUID = `-- name: FetchSessionByTeamUUID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `parent_session_uuid` + "`" + `
+FROM ` + "`" + `session` + "`" + `
+WHERE 
+    ` + "`" + `team_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchSessionByTeamUUIDParams struct {
+	TeamUUID string `json:"team_uuid"`
+	Offset   int32  `json:"offset"`
+	Limit    int32  `json:"limit"`
+}
+
+func (q *Queries) FetchSessionByTeamUUID(ctx context.Context, arg FetchSessionByTeamUUIDParams) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, fetchSessionByTeamUUID, arg.TeamUUID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Session
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.ProjectUUID,
+			&i.AgentUUID,
+			&i.MemberUUID,
+			&i.Key,
+			&i.Branch,
+			&i.BaseCommit,
+			&i.HeadCommit,
+			&i.Goal,
+			&i.Status,
+			&i.StatusLine,
+			&i.CurrentIntentUUID,
+			&i.StartedAt,
+			&i.LastHeartbeatAt,
+			&i.EndedAt,
+			&i.Outcome,
+			&i.OutcomeNote,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentSessionUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -5830,7 +5951,7 @@ func (q *Queries) FetchSessionByProjectUUIDAndStatus(ctx context.Context, arg Fe
 }
 
 const fetchSessionByTeamUUIDAndKey = `-- name: FetchSessionByTeamUUIDAndKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `parent_session_uuid` + "`" + `
 FROM ` + "`" + `session` + "`" + `
 WHERE 
     ` + "`" + `key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -5879,6 +6000,7 @@ func (q *Queries) FetchSessionByTeamUUIDAndKey(ctx context.Context, arg FetchSes
 			&i.OutcomeNote,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ParentSessionUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -5894,7 +6016,7 @@ func (q *Queries) FetchSessionByTeamUUIDAndKey(ctx context.Context, arg FetchSes
 }
 
 const fetchSessionByTeamUUIDAndStatus = `-- name: FetchSessionByTeamUUIDAndStatus :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `agent_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `branch` + "`" + `,` + "`" + `base_commit` + "`" + `,` + "`" + `head_commit` + "`" + `,` + "`" + `goal` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `status_line` + "`" + `,` + "`" + `current_intent_uuid` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `last_heartbeat_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `outcome` + "`" + `,` + "`" + `outcome_note` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `parent_session_uuid` + "`" + `
 FROM ` + "`" + `session` + "`" + `
 WHERE 
     ` + "`" + `status` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -5943,6 +6065,7 @@ func (q *Queries) FetchSessionByTeamUUIDAndStatus(ctx context.Context, arg Fetch
 			&i.OutcomeNote,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ParentSessionUUID,
 		); err != nil {
 			return nil, err
 		}

@@ -343,9 +343,12 @@ CREATE TABLE IF NOT EXISTS `session` (
     `outcome_note` VARCHAR(400),
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `parent_session_uuid` CHAR(36),
     PRIMARY KEY (`id`),
     INDEX `idx_session_liveness` (`team_uuid`, `status`, `last_heartbeat_at`),
     INDEX `idx_session_project_status` (`project_uuid`, `status`),
+    INDEX `idx_session_team_started` (`team_uuid`, `started_at` DESC),
+    INDEX `idx_session_parent` (`parent_session_uuid`),
     UNIQUE INDEX `uq_session_team_key` (`team_uuid`, `key`),
     CONSTRAINT `project_has_sessions`
         FOREIGN KEY (`project_uuid`)
@@ -354,7 +357,11 @@ CREATE TABLE IF NOT EXISTS `session` (
     CONSTRAINT `agent_has_sessions`
         FOREIGN KEY (`agent_uuid`)
         REFERENCES `agent` (`id`)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    CONSTRAINT `session_parent_session`
+        FOREIGN KEY (`parent_session_uuid`)
+        REFERENCES `session` (`id`)
+        ON DELETE SET NULL
 ) ENGINE = InnoDB;
 
 CREATE TABLE IF NOT EXISTS `intent` (

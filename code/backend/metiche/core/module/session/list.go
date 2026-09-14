@@ -190,6 +190,8 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"parent_session_uuid",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Session) any{
@@ -233,4 +235,6 @@ var listFieldRegistry = map[string]func(*repogen.Session) any{
 	"created_at": func(i *repogen.Session) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Session) any { return &i.UpdatedAt },
+
+	"parent_session_uuid": func(i *repogen.Session) any { return &i.ParentSessionUUID },
 }

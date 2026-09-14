@@ -19,6 +19,8 @@ type Module interface {
 	FetchSessionByTeamUUIDAndKey(ctx context.Context, req types.FetchSessionByTeamUUIDAndKeyRequest, opts ...Option) (types.FetchSessionByTeamUUIDAndKeyResponse, error)
 	FetchSessionByTeamUUIDAndStatus(ctx context.Context, req types.FetchSessionByTeamUUIDAndStatusRequest, opts ...Option) (types.FetchSessionByTeamUUIDAndStatusResponse, error)
 	FetchSessionByProjectUUIDAndStatus(ctx context.Context, req types.FetchSessionByProjectUUIDAndStatusRequest, opts ...Option) (types.FetchSessionByProjectUUIDAndStatusResponse, error)
+	FetchSessionByTeamUUID(ctx context.Context, req types.FetchSessionByTeamUUIDRequest, opts ...Option) (types.FetchSessionByTeamUUIDResponse, error)
+	FetchSessionByParentSessionUUID(ctx context.Context, req types.FetchSessionByParentSessionUUIDRequest, opts ...Option) (types.FetchSessionByParentSessionUUIDResponse, error)
 
 	List(ctx context.Context, req types.ListRequest, opts ...Option) (types.ListResponse, error)
 

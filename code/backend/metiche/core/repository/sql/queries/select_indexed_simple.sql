@@ -546,35 +546,49 @@ FOR UPDATE;
 
 -- session selects:
 -- name: FetchSessionByID :many
-SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`,`parent_session_uuid`
 FROM `session`
 WHERE 
     `id` = ? ;
 
         
 -- name: FetchSessionByTeamUUIDAndKey :many
-SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`,`parent_session_uuid`
 FROM `session`
 WHERE 
     `key` = ? AND `team_uuid` = ? 
 LIMIT ?, ?;
         
 -- name: FetchSessionByTeamUUIDAndStatus :many
-SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`,`parent_session_uuid`
 FROM `session`
 WHERE 
     `status` = ? AND `team_uuid` = ? 
 LIMIT ?, ?;
         
 -- name: FetchSessionByProjectUUIDAndStatus :many
-SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`,`parent_session_uuid`
 FROM `session`
 WHERE 
     `project_uuid` = ? AND `status` = ? 
 LIMIT ?, ?;
         
+-- name: FetchSessionByTeamUUID :many
+SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`,`parent_session_uuid`
+FROM `session`
+WHERE 
+    `team_uuid` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchSessionByParentSessionUUID :many
+SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`,`parent_session_uuid`
+FROM `session`
+WHERE 
+    `parent_session_uuid` = ? 
+LIMIT ?, ?;
+        
 -- name: FetchSessionByIDForUpdate :many
-SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`,`parent_session_uuid`
 FROM `session`
 WHERE 
     `id` = ? 
