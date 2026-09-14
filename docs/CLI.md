@@ -151,6 +151,8 @@ Global flags (accepted by every command):
 
 ### 1.3 `metiche status`
 
+> **Status (2026-09-14): built** in `code/cli/internal/cmd/status.go`. As built in §11.
+
 Who am I, what am I on, what is live, and where are the boards.
 
 ```
@@ -204,6 +206,8 @@ Keys and names above are illustrative. `--json`:
 
 ### 1.4 `metiche teams [create | show | rename | leave]`
 
+> **Status (2026-09-14): `teams` (the list) built** in `code/cli/internal/cmd/teams.go`; `create` and `show` built; `rename` and `leave` not built (§1.4.3, §1.4.4).
+
 ```
 metiche teams                                            # the list (below)
 metiche teams create <name> [--allow-duplicate-name] [--quiet] [--dry-run]
@@ -235,6 +239,8 @@ hack-night-3f9a1c Hack Night        owner   1        no     ! same name as hack-
 - Zero teams prints the server's `note` (create or join) and exits 0.
 
 #### 1.4.1 `teams create <name>`
+
+> **Status (2026-09-14): built.** The server half (§4.8, the guard and the identity defaults) is built too.
 
 1. **Duplicate check first.** `list_teams`, then compare normalized names as above. On a match it
    exits 6 and creates nothing:
@@ -293,6 +299,8 @@ old.
 
 #### 1.4.2 `teams show [<slug>]`
 
+> **Status (2026-09-14): built.**
+
 One team in full, for a person. It calls `get_team_state` with `scope=members` (new, §4.9),
 `scope=projects` (§4.2) and `scope=sessions`, and reads the `team` block (§4.2) for visibility.
 
@@ -316,6 +324,8 @@ live      S-41  Mark · claude on laptop  taqueria  feat/lanes  "wiring the lane
 
 #### 1.4.3 `teams rename <new-name>`
 
+> **Status (2026-09-14): not built.** It needs `rename_team` (§4.10), which waits for the `team_renamed` event kind: a nuzur model change (§10 Q10) that needs its own schema review before codegen. The CLI answers `metiche teams rename` with exit 2, "not built yet".
+
 Calls `rename_team` (new, §4.10), which is **owner only**. It changes the display name and **never
 the slug**. The slug is what `.metiche` files, board URLs and `METICHE_TEAM_SLUG` installs point at,
 so changing it would silently unbind every clone. The same duplicate-name guard applies:
@@ -330,6 +340,8 @@ Renaming to the current name prints `unchanged` and exits 0. Exit codes: 0; 2; 3
 `not_permitted` (a member); 6 duplicate name.
 
 #### 1.4.4 `teams leave [<slug>]`
+
+> **Status (2026-09-14): not built**, for §1.4.3's reason: `leave_team` (§4.11) waits for the `member_left` event kind.
 
 Calls `leave_team` (new, §4.11) for **yourself only**. The server refuses, and the CLI exits 5 with
 its message, when:
@@ -385,6 +397,8 @@ destructive annotations and a structural event (§10). §1.4.4's "only owner" re
 remediation.
 
 ### 1.5 `metiche open`
+
+> **Status (2026-09-14): `open` built** in `code/cli/internal/cmd/open.go`. `metiche signout` is not built yet.
 
 ```
 metiche open [<slug>] [--print] [--signin]
@@ -454,6 +468,8 @@ https://metiche.xyz/t/hack-night
 
 ### 1.6 `metiche invite list | create | revoke`
 
+> **Status (2026-09-14): built** in `code/cli/internal/cmd/invite.go`, against the invite tools as built (`docs/BOARD_LOGIN.md` §10.10): there is no `code_hint`, so `list` has no CODE column, and the server's defaults are 1 use and 7 days.
+
 These replace the raw SQL. All three take `--team <slug>`, resolved exactly like `open`.
 
 ```
@@ -499,6 +515,8 @@ Revoking an already-revoked invite prints `already revoked` and exits 0. A plain
 someone else's invite exits 5 (`not_permitted`).
 
 ### 1.7 `metiche doctor`
+
+> **Status (2026-09-14): built in part** in `code/cli/internal/cmd/doctor.go`: machine, per-client config, token, identity, binding and account checks. The through-the-client probes, delivery evidence, Codex's log and `--prove` are not built; §11 lists every check.
 
 ```
 metiche doctor [--client claude,cursor,windsurf,codex] [--offline] [--no-exec]
@@ -549,6 +567,8 @@ summary: 5 errors · 2 warnings · 3 ok · 2 skipped   → exit 1
 
 ### 1.8 `metiche version`
 
+> **Status (2026-09-14): built**, `--check` included.
+
 ```
 $ metiche version
 metiche 0.1.0 (commit 1a2b3c4, built 2026-09-20T18:02:11Z, darwin/arm64)
@@ -564,6 +584,8 @@ metiche 0.1.0 · 0.2.0 is available. Update by re-running the installer:
 `--check` exits 0 whether or not an update exists, and 4 if GitHub is unreachable.
 
 ### 1.9 `metiche uninstall`
+
+> **Status (2026-09-14): built.**
 
 One owner, not two. The installer wrote every file (client configs, `~/.metiche/env`, the profile
 line, the plugin, the binary), so it is the only thing that removes them. This command runs
@@ -584,6 +606,8 @@ Neither the installer nor this command removes `.metiche` files. They live in yo
 and may be committed; they are yours.
 
 ### 1.10 `metiche init`
+
+> **Status (2026-09-14): built** in `code/cli/internal/cmd/init.go`, interactive on a terminal and non-interactive with flags. As built in §11.
 
 Bind a directory (by default the repository) to a team and a project, once, so no agent in it has to
 ask or guess again. This is the command `PLAN.md` "Binding a repo to a team" assumes exists, and the
@@ -1133,6 +1157,8 @@ to exit codes without matching prose.
 
 ### 4.1 `whoami`
 
+> **Status (2026-09-14): built** (`app/mcp/whoami.go`). The request record sits in `server.go`, inside `authMiddleware`, rather than in `auth.go`.
+
 The gap: an agent cannot learn its own identity, and a human cannot prove which headers a client
 actually delivers.
 
@@ -1198,6 +1224,8 @@ actually delivers.
 
 ### 4.2 `get_team_state scope=projects`
 
+> **Status (2026-09-14): built** (`app/mcp/stateprojects.go`, hooked into `state.go`), with the team block on every scope.
+
 The gap: nothing lists projects. **Decision: a scope, not a tool, and not `list_teams`.**
 `list_teams` is read by a model deciding where private work goes, and its type comment deliberately
 limits it to five fields. Projects are team state.
@@ -1231,6 +1259,8 @@ Only `project.status` active projects. Ordered by `last_activity_at` desc, then 
 `started_at`. `live_sessions` counts sessions with status `live`.
 
 ### 4.3 `list_invites`
+
+> **Status (2026-09-14): built before the CLI** (deceeaf and earlier); `docs/BOARD_LOGIN.md` §10.10 is the as-built record.
 
 | | |
 |---|---|
@@ -1350,6 +1380,8 @@ six new tools. The two scopes and the `create_team` change add none.
 
 ### 4.8 `create_team`: refuse a second team with the same name, and mint nothing for a caller who already has an agent
 
+> **Status (2026-09-14): built**: the guard (`app/mcp/createteamguard.go`) and the identity defaults (`createteam.go`), with two deviations in §11.
+
 The gap is in Context: dedupe is by idempotency key only. Agents choose a fresh key per attempt, so
 an agent that retries "create a team called X" after a lost response, or in a new conversation,
 makes a second X.
@@ -1421,6 +1453,8 @@ Tests:
 
 ### 4.9 `get_team_state scope=members`
 
+> **Status (2026-09-14): built** (`app/mcp/statemembers.go`).
+
 The gap: nothing lists who is on a team and which agents they run there, which `metiche teams show`
 needs. **A scope, not a tool**, for §4.2's reason.
 
@@ -1448,6 +1482,8 @@ needs. **A scope, not a tool**, for §4.2's reason.
 
 ### 4.10 `rename_team`
 
+> **Status (2026-09-14): not built:** it waits for the `team_renamed` event kind (§10 Q10), a nuzur model change with its own review.
+
 | | |
 |---|---|
 | Params | `team_slug` (optional, `RequireTeam` rules); `name` (1–120, at least one letter or digit, as `create_team`); `allow_duplicate_name` bool |
@@ -1467,6 +1503,8 @@ needs. **A scope, not a tool**, for §4.2's reason.
   allowed with the flag; idempotent.
 
 ### 4.11 `leave_team`
+
+> **Status (2026-09-14): not built:** it waits for the `member_left` event kind (§10 Q10).
 
 | | |
 |---|---|
@@ -1652,6 +1690,8 @@ What changes, and why:
 
 ### 6.1 `code/cli/.goreleaser.yaml`
 
+> **Status (2026-09-14): built**, with one deviation: the archives hold the binary only (§11).
+
 ```yaml
 version: 2
 project_name: metiche
@@ -1707,6 +1747,8 @@ prefix. (Decided: bare `v*` tags are reserved for CLI releases, §10 Q2.)
 
 ### 6.2 Workflows
 
+> **Status (2026-09-14): not built.** Neither workflow is added: a tag-triggered release is an outward action the owner approves separately.
+
 `.github/workflows/cli-release.yml`:
 
 ```yaml
@@ -1746,6 +1788,8 @@ jobs:
 - `cmp install.sh code/frontend/static/install.sh`.
 
 ### 6.3 How `install.sh` gets the binary
+
+> **Status (2026-09-14): built in part** (`install_cli`, `--no-cli`, `METICHE_CLI_VERSION`, checksum verification, the symlink rule, `--uninstall`). The final doctor run is not built. §11 has the rest.
 
 New in `install.sh` (mirrored to `code/frontend/static/install.sh`), as one `install_cli` step that
 runs **after** client configuration and before `handle_profile`. A failed download is a warning,
@@ -2227,6 +2271,80 @@ Known unknowns that are not questions, verified during phase 1 on real installs:
 - how Claude Code names plugin-provided servers in `claude mcp get`.
 
 ---
+
+## 11. As built (2026-09-14)
+
+Where this section and §1–§6 disagree, this section is right.
+
+### 11.1 Server (`code/backend/metiche/app/mcp/`)
+
+- **Tool surface: 19** (the 18 before, plus `whoami`). `rename_team` and `leave_team` are not built (§4.10, §4.11).
+- **`create_team`'s guard** (`createteamguard.go`):
+  - It runs after the replay check and only when the request carries a token. It compares `slugKey(name, 40)` against the caller's live memberships of active teams, and answers `already_exists:` listing every matching slug.
+  - **Deviation from §4.8 step 4:** creates of one account serialize on a MySQL named lock (`GET_LOCK('metiche:create_team:<account id>', 10)`), held on one pooled connection from the check until `joinAs` has written the membership. An `account` row `FOR UPDATE` in `ensureTeam`'s transaction would be released before the membership exists, because `joinAs` writes it in `commit`'s own transaction. A lock that cannot be had in 10 s answers `unavailable:`. The race is not accepted: `TestIntegrationCreateTeamGuardConcurrentCallsMakeOneTeam` makes 4 concurrent calls, and exactly 1 creates.
+  - Validation errors gain `invalid_argument:`, and the per-address limit gains `rate_limited:`.
+- **Identity defaults** (`createteam.go`): with an agent token and no `client_key`, `create_team` uses the agent's own `client_key`, label and kind and the account's display name, so no token is minted. **Deviation:** a *different* `client_key` is not refused, because `install.sh` creates a team as its first client while carrying the anchor, which can be another client's token.
+- **`whoami`** (`whoami.go`): `recordRequests` wraps the streamable handler inside `authMiddleware` in `server.go`, so `auth.go` is unchanged. The record for a process is created on first use, and `recent_requests_scope` gives its start. User agents are cut to 80 printable ASCII characters; each identity keeps 8, and an identity unseen for an hour is swept.
+- **`scope=projects` / `scope=members`** (`stateprojects.go`, `statemembers.go`):
+  - Both page with an opaque offset cursor over a list read whole (at most 500 rows) and sorted in Go, because neither order is a column a keyset could seek on.
+  - `repo_url` is the stored canonical `https://host/path`, which normalizes to the identity `start_session` matches.
+  - A member's `joined_at` is `member.created_at`. An agent's `last_session_at` is the latest `started_at` or `created_at` of its sessions on this team.
+- **Shared repository-URL vectors:** `code/cli/testdata/repourl_vectors.json`, tested by `app/mcp/repourl_vectors_test.go` and `code/cli/internal/gitx`.
+
+### 11.2 CLI (`code/cli`)
+
+- **Layout:** as §5, without `clients/`, `doctor/` and `render/` packages. Client config reading is `internal/credential`, and doctor and rendering are in `internal/cmd`. The dependencies are the go-sdk, go-toml/v2, and creack/pty for tests only. There is no SQLite.
+- **Credential** (§3), one refinement: a `$METICHE_TOKEN` that is byte for byte the token in a backup of `~/.metiche/env` is a stale shell. It is ignored in favour of the saved token, with a note on stderr, as the installer does (`docs/LEARNINGS.md` §4).
+- **mcpclient:** every redirect is refused, not only cross-host ones. Tool errors map to exit codes by their prefix. The older unprefixed membership refusals map to `not_found` (5), and "needs a team_slug" maps to 2.
+- **`status`:** the machine block comes from `whoami` with each client's configured token, with no client probe. `last_request_at` is the newest `recent_requests` entry whose user agent is not `metiche-cli/`.
+- **`teams create`:** one retry, with the same idempotency key, when the endpoint is unreachable. An answer carrying a token, or `token_kept: false`, exits 1.
+- **`open`:**
+  - `--json` never opens anything.
+  - `METICHE_CLI_SIGNIN_FILE_SECONDS` (1–10) shortens the redirect file's life, for tests.
+  - The opener is `open` or `xdg-open` from `PATH`, run with no `METICHE_TOKEN` in its environment.
+  - `signout` is not built.
+- **`invite`:** `list` shows active invites unless `--all`, with no CODE column. `--expires` takes Go durations and `Nd`, rounded up to whole hours.
+- **`init`:**
+  - **The team question on a terminal** lists your teams plus "create a new team", with no default. Creating checks the name against your teams first; a duplicate offers "Use <slug> instead? [y/N]" or goes back to the menu. A new team's join code is printed once.
+  - **`--create <name>`** (with `--allow-duplicate-name`) and **`--yes`** are added. Any of `--team`, `--project`, `--create`, `--yes`, `--dry-run` or `--json` makes the run non-interactive.
+  - **The project question** has the resolved key as its default. The "no default" rule is for the team.
+  - **The write question** is `Write <path>? [y/N]`; answering no prints "Nothing was written." and exits 0. On a terminal, the commit suggestion is offered with a `[y/N]`; without one it is printed.
+  - **A derived key** the file format cannot hold (upper case on a case-sensitive forge) is lowered, with a warning. A key with no remote is the git root's directory name: lowercased, with runs of anything but `[a-z0-9._-]` made `-`.
+  - **Without a terminal**, several teams and no `--team` exit 2, listing the slugs and the `--team` / `--create` options.
+  - **execx** also allows `git config --get remote.<name>.url`, for a repository whose only remote is not `origin`.
+- **Bindings:** a directory named `.metiche` is never a binding. `~/.metiche` is the installer's directory, and every working directory under `$HOME` walks past it.
+- **`doctor`**:
+  - **Built:**
+    - `machine.endpoint.url`, `machine.endpoint`, `machine.anchor.file`, `machine.anchor.token`;
+    - `machine.env.shell`, which also reports a stale `$METICHE_TOKEN` (the token in a backup) as a warning and a rejected one as an error;
+    - `machine.files.perms` for the client configs;
+    - `<client>.config`, `.registrations`, `.headers` and `.token` for Claude Code, Cursor, Windsurf and Codex;
+    - `identity.collapse`, `identity.person`, `identity.anchor`;
+    - `binding.file`, `binding.project_scope`, `binding.project`, `binding.split`, `machine.binding`, `account.duplicate_teams`.
+  - **Not built,** named by one `doctor.coverage` info row: the through-the-client probes (`claude mcp get`, `cursor-agent`), the `*.delivery` checks, `codex.readback`, `codex.startup`, `claude.plugin`, `cursor.log`, `codex.agents_md`, `binding.teams_split` and `--prove` (exit 2). `--no-exec` is accepted and changes nothing, since no client CLI is run.
+  - Doctor prints its report and exits 1 without a second error document.
+- **Test knobs** (none is a secret, none changes what the CLI may do):
+  - `METICHE_CLI_STRICT_DECODE=1` decodes tool results with `DisallowUnknownFields`;
+  - `METICHE_CLI_SIGNIN_FILE_SECONDS`;
+  - the e2e gate `METICHE_CLI_E2E=1` with `METICHE_CLI_E2E_DB_CONTAINER`, `METICHE_CLI_E2E_DB_PORT` and `METICHE_CLI_E2E_DB_PASSWORD_FILE`, for `code/cli/e2e_test.go`.
+
+### 11.3 Release and installer
+
+- **GoReleaser 2.14** cannot glob `../../LICENSE` from `code/cli`, so the archives hold the binary only (`files: [none*]`). Proven locally with `goreleaser release --snapshot --clean`, which publishes nothing.
+- **`install_cli`:**
+  - It runs after the client configs and before the shell profile.
+  - **Test overrides:** `METICHE_CLI_RELEASE_BASE` replaces `https://github.com/mklfarha/metiche/releases/download`, and `METICHE_CLI_LATEST_URL` replaces the GitHub API's `releases/latest`. Both must be https, or a local http address. They exist to test the step against a local mirror of a release.
+  - **With no release**, the API's 404 gives one line, `metiche CLI not published yet`.
+  - **A checksum mismatch** is a warning naming both URLs, and nothing is written.
+  - **The install** copies to a temporary name, `chmod 755`s it and renames it; `install -m` is not in every minimal image.
+  - The final `metiche doctor` run is not built.
+- **`--uninstall`** removes `~/.local/bin/metiche` only when it links into `~/.metiche/bin`.
+
+### 11.4 Not built, and why
+
+- `rename_team`, `leave_team`, `teams rename|leave`: they wait for the `team_renamed` / `member_left` event kinds (§10 Q10).
+- `set_team_visibility`, `remove_member`, `set_member_role`: deferred by §10 Q11.
+- `metiche signout`, the rest of doctor (§11.2), `deploy/scripts/smoke-doctor.sh` (§8.3), both workflows (§6.2), and the installer's final doctor run.
 
 ## Verification, end to end
 
