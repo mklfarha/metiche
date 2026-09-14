@@ -179,17 +179,11 @@ func hubRunRow(s state.Snapshot, sess *model.Session) view.RunRow {
 		Headline: firstNonEmpty(sess.Goal, sess.StatusLine), Status: sess.Status, Live: sess.Live(),
 		StartedAt: sess.StartedAt, EndedAt: sess.EndedAt,
 		Intents: intents, Paths: paths, Conflicts: conflicts,
+		ParentKey: sess.ParentSessionKey, Subagents: len(s.SubagentsOf(sess.Key)),
 	}
 }
 
-func historyRunRow(run model.RunSummary) view.RunRow {
-	return view.RunRow{
-		Key: run.Key, Agent: run.Agent(), Project: run.ProjectKey,
-		Headline: firstNonEmpty(run.Goal, run.StatusLine), Status: run.Status, Outcome: run.Outcome, Live: run.Live(),
-		StartedAt: run.StartedAt, EndedAt: run.EndedAt,
-		Intents: run.Intents, Paths: run.ClaimedPaths, Conflicts: run.Conflicts,
-	}
-}
+func historyRunRow(run model.RunSummary) view.RunRow { return view.RunRowFromSummary(run) }
 
 func olderRunsURL(slug, cursor string, live map[string]bool) string {
 	v := url.Values{}

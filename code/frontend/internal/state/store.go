@@ -317,6 +317,7 @@ type payload struct {
 	ClientKind  string   `json:"client_kind"`
 	Status      string   `json:"status"`
 	SessionKey  string   `json:"session_key"`
+	ParentKey   string   `json:"parent_session_key"`
 	Branch      string   `json:"branch"`
 	BaseCommit  string   `json:"base_commit"`
 	Goal        string   `json:"goal"`
@@ -431,6 +432,7 @@ func (s *Store) mutate(ev model.Event) {
 		sess := s.session(p.SessionKey)
 		sess.MemberKey, sess.AgentKey = p.MemberKey, p.AgentKey
 		sess.Branch, sess.BaseCommit, sess.Goal = p.Branch, p.BaseCommit, p.Goal
+		sess.ParentSessionKey = p.ParentKey
 		sess.StatusLine = orDefault(p.StatusLine, "starting up")
 		sess.Status = model.SessionLive
 		sess.StartedAt, sess.LastHeartbeatAt = at, at

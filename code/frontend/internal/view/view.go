@@ -117,7 +117,24 @@ func agentClass(l state.AgentLane) string {
 	if w := l.Worst(); w != "" {
 		classes = append(classes, "sev-"+w)
 	}
+	if l.Nested {
+		classes = append(classes, "sub")
+		if l.Depth > 1 {
+			classes = append(classes, "sub-deep")
+		}
+	}
 	return strings.Join(classes, " ")
+}
+
+// subagentOf is a subagent lane's link to its supervisor, in words.
+func subagentOf(l state.AgentLane) string {
+	if l.ParentKey == "" {
+		return ""
+	}
+	if !l.ParentLive {
+		return "subagent of " + l.ParentKey + " (ended)"
+	}
+	return "subagent of " + l.ParentKey
 }
 
 func laneClass(l state.Lane) string {

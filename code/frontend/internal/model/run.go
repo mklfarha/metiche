@@ -30,10 +30,14 @@ type RunSummary struct {
 	Outcome         string // succeeded | failed | abandoned, or ""
 	OutcomeNote     string
 
+	// ParentSessionKey is the run that supervised this one, or "".
+	ParentSessionKey string
+
 	// Counts over the session's whole life.
 	Intents      int
 	ClaimedPaths int
 	Conflicts    int
+	Subagents    int // runs that name this one as their parent
 }
 
 // Live reports whether the run is still working.
@@ -88,6 +92,9 @@ type RunDetail struct {
 	Claims    []RunClaim
 	Conflicts []*Conflict
 	Events    []Event // oldest first
+
+	// Subagents are the runs this one supervised, oldest first.
+	Subagents []RunSummary
 
 	// MoreEvents is true when the run logged more events than one page shows.
 	MoreEvents bool

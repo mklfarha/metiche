@@ -335,6 +335,15 @@ nav.tabs a .n.hot { background: var(--violet); color: #fff; font-weight: 700; }
 .agent.sev-high     { border-left-color: var(--coral);    background: var(--wash-high); }
 .agent.sev-critical { border-left-color: var(--violet);   background: var(--wash-critical); }
 .agent.idle { background: var(--quiet-bg); }
+/* A subagent's lane hangs under its supervisor's, one step in per level. */
+.agent.sub { margin-left: 14px; position: relative; }
+.agent.sub.sub-deep { margin-left: 28px; }
+.agent.sub::before {
+  content: ""; position: absolute; left: -10px; top: -9px; height: 22px; width: 8px;
+  border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); border-bottom-left-radius: 4px;
+}
+.agent .subrel { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin: -2px 0 5px; overflow-wrap: anywhere; }
+.runrow .subrel-badge, .run-parent { overflow-wrap: anywhere; }
 
 .agent-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
 .agent-head .label {

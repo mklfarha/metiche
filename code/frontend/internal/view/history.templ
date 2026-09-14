@@ -77,6 +77,9 @@ templ runRow(p RunsParams, row RunRow) {
 			if row.Outcome != "" {
 				<span class={ "badge", outcomeBadge(row.Outcome) } style="margin-left:4px">{ row.Outcome }</span>
 			}
+			if rel := runRelation(row.ParentKey, row.Subagents); rel != "" {
+				<span class="badge plain subrel-badge" style="margin-left:4px">{ rel }</span>
+			}
 		</span>
 		<span>
 			<span style="font-weight:500">{ row.Agent }</span>
@@ -104,6 +107,11 @@ templ HistoricalRunPage(s state.Snapshot, p RunDetailParams) {
 			<div class="page">
 				<h2>{ p.Detail.Run.Key } — { p.Detail.Run.Agent() }</h2>
 				<div class="sub">{ p.Detail.Run.Goal }</div>
+				if p.Detail.Run.ParentSessionKey != "" {
+					<div class="runs-note run-parent">
+						Subagent of <a class="mono" href={ runURL(p.Slug, p.Detail.Run.ParentSessionKey) }>{ p.Detail.Run.ParentSessionKey }</a>, the run that delegated this work.
+					</div>
+				}
 				<div class="card">
 					<div class="card-head">
 						<span class={ runPip(p.Detail.Run.Status) }></span>
@@ -138,6 +146,15 @@ templ HistoricalRunPage(s state.Snapshot, p RunDetailParams) {
 						}
 					</div>
 				</div>
+				if len(p.Detail.Subagents) > 0 {
+					<h2 class="run-h">Subagents</h2>
+					<div class="sub">{ countOf(len(p.Detail.Subagents), "run", "runs") } this run delegated.</div>
+					<div class="runlist run-subagents">
+						for _, sub := range p.Detail.Subagents {
+							@runRow(RunsParams{Slug: p.Slug, Now: s.Now}, RunRowFromSummary(sub))
+						}
+					</div>
+				}
 				<h2 class="run-h">Intents</h2>
 				<div class="sub">{ countOf(len(p.Detail.Intents), "intent", "intents") } declared in this run.</div>
 				if len(p.Detail.Intents) > 0 {

@@ -102,6 +102,7 @@ type sessionJSON struct {
 	Outcome         string  `json:"outcome"`
 
 	CurrentIntentKey string `json:"current_intent_key"`
+	ParentSessionKey string `json:"parent_session_key"`
 
 	Intents []intentJSON `json:"intents"`
 	Claims  []claimJSON  `json:"claims"`
@@ -200,16 +201,17 @@ func (s snapshotWire) teamState(slug string) model.TeamState {
 		}
 
 		ts.Sessions = append(ts.Sessions, &model.Session{
-			Key:             sw.Key,
-			MemberKey:       memberKey,
-			AgentKey:        agentKey,
-			Branch:          sw.Branch,
-			Goal:            sw.Goal,
-			StatusLine:      sw.StatusLine,
-			Status:          firstNonEmpty(sw.Status, model.SessionLive),
-			StartedAt:       parseTime(sw.StartedAt),
-			EndedAt:         parseTime(sw.EndedAt),
-			LastHeartbeatAt: parseTime(sw.LastHeartbeatAt),
+			Key:              sw.Key,
+			MemberKey:        memberKey,
+			AgentKey:         agentKey,
+			Branch:           sw.Branch,
+			Goal:             sw.Goal,
+			StatusLine:       sw.StatusLine,
+			Status:           firstNonEmpty(sw.Status, model.SessionLive),
+			StartedAt:        parseTime(sw.StartedAt),
+			EndedAt:          parseTime(sw.EndedAt),
+			LastHeartbeatAt:  parseTime(sw.LastHeartbeatAt),
+			ParentSessionKey: sw.ParentSessionKey,
 		})
 
 		for _, iw := range sw.Intents {

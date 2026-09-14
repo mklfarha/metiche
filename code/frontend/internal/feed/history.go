@@ -44,6 +44,7 @@ type countsJSON struct {
 	Intents      int `json:"intents"`
 	ClaimedPaths int `json:"claimed_paths"`
 	Conflicts    int `json:"conflicts"`
+	Subagents    int `json:"subagents"`
 }
 
 // historySessionJSON is sessionJSON plus the two fields only history carries.
@@ -83,9 +84,10 @@ type runEventJSON struct {
 }
 
 type runDetailWire struct {
-	Session   historySessionJSON `json:"session"`
-	Events    []runEventJSON     `json:"events"`
-	NextAfter *int64             `json:"next_after"`
+	Session   historySessionJSON   `json:"session"`
+	Subagents []historySessionJSON `json:"subagents"`
+	Events    []runEventJSON       `json:"events"`
+	NextAfter *int64               `json:"next_after"`
 	History   struct {
 		Intents   []runIntentJSON `json:"intents"`
 		Claims    []runClaimJSON  `json:"claims"`
@@ -99,8 +101,9 @@ func (s historySessionJSON) summary() model.RunSummary {
 		AgentLabel: s.AgentLabel, ClientKind: s.ClientKind,
 		Branch: s.Branch, Goal: s.Goal, Status: s.Status, StatusLine: s.StatusLine,
 		StartedAt: parseTime(s.StartedAt), LastHeartbeatAt: parseTime(s.LastHeartbeatAt), EndedAt: parseTime(s.EndedAt),
-		Outcome: s.Outcome, OutcomeNote: s.OutcomeNote,
+		Outcome: s.Outcome, OutcomeNote: s.OutcomeNote, ParentSessionKey: s.ParentSessionKey,
 		Intents: s.Counts.Intents, ClaimedPaths: s.Counts.ClaimedPaths, Conflicts: s.Counts.Conflicts,
+		Subagents: s.Counts.Subagents,
 	}
 }
 
@@ -143,6 +146,9 @@ func (l *Live) Run(ctx context.Context, key string) (model.RunDetail, error) {
 		}
 		if page == 0 {
 			out.Run = wire.Session.summary()
+			for _, sub := range wire.Subagents {
+				out.Subagents = append(out.Subagents, sub.summary())
+			}
 			for _, in := range wire.History.Intents {
 				out.Intents = append(out.Intents, model.RunIntent{
 					Key: in.Key, Summary: in.Summary, Kind: in.Kind, Status: in.Status,

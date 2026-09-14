@@ -123,6 +123,9 @@ type Session struct {
 	StartedAt       time.Time `json:"started_at"`
 	EndedAt         time.Time `json:"ended_at"`
 	LastHeartbeatAt time.Time `json:"last_heartbeat_at"`
+	// ParentSessionKey is the supervising session when this one is a
+	// subagent's (S-41), or "" for a session nobody delegated.
+	ParentSessionKey string `json:"parent_session_key"`
 }
 
 // Live reports whether the session is still working.

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/a-h/templ"
+
 	"github.com/mklfarha/metiche/frontend/internal/model"
 	"github.com/mklfarha/metiche/frontend/internal/state"
 )
@@ -26,6 +28,49 @@ type RunRow struct {
 	Intents   int
 	Paths     int
 	Conflicts int
+
+	ParentKey string // the supervising run, or ""
+	Subagents int    // runs this one supervised
+}
+
+// RunRowFromSummary is a history row as the Runs list draws it.
+func RunRowFromSummary(run model.RunSummary) RunRow {
+	return RunRow{
+		Key: run.Key, Agent: run.Agent(), Project: run.ProjectKey,
+		Headline: firstNonEmptyString(run.Goal, run.StatusLine), Status: run.Status, Outcome: run.Outcome, Live: run.Live(),
+		StartedAt: run.StartedAt, EndedAt: run.EndedAt,
+		Intents: run.Intents, Paths: run.ClaimedPaths, Conflicts: run.Conflicts,
+		ParentKey: run.ParentSessionKey, Subagents: run.Subagents,
+	}
+}
+
+func firstNonEmptyString(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// runRelation is a run's place in a delegation, compactly: "subagent of S-41",
+// "3 subagents", both, or "".
+func runRelation(parentKey string, subagents int) string {
+	out := ""
+	if parentKey != "" {
+		out = "subagent of " + parentKey
+	}
+	if subagents > 0 {
+		if out != "" {
+			out += " · "
+		}
+		out += countOf(subagents, "subagent", "subagents")
+	}
+	return out
+}
+
+func runURL(slug, key string) templ.SafeURL {
+	return templ.SafeURL(fmt.Sprintf("/t/%s/runs/%s", slug, key))
 }
 
 // RunsParams is the Runs page of a board read from the backend.

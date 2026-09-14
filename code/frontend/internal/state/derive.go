@@ -28,6 +28,21 @@ type AgentLane struct {
 	// terminals of one client, each its own session. The view uses it to put
 	// the session key on the label, or the lanes are indistinguishable.
 	Multi bool
+
+	// ParentKey is the supervising session's key when this lane's session is
+	// a subagent's (S-41), and "" otherwise.
+	ParentKey string
+	// ParentLive is true when that supervisor is still live or stale on the
+	// board. False with a ParentKey means it ended, or is not in the snapshot.
+	ParentLive bool
+	// Nested is true when this lane is drawn under its supervisor's lane:
+	// both are working and in the same member's lane, which a subagent always
+	// is, because it runs on its supervisor's token.
+	Nested bool
+	// Depth is how many supervisors up the nesting goes (0 = top level).
+	Depth int
+	// Subagents counts the lanes nested directly under this one.
+	Subagents int
 }
 
 // Worst returns the highest severity among this lane's open conflicts.
@@ -116,6 +131,13 @@ func (s Snapshot) Lanes() []Lane {
 		})
 	}
 
+	liveKeys := map[string]bool{}
+	for _, sess := range s.Sessions {
+		if sess.Live() {
+			liveKeys[sess.Key] = true
+		}
+	}
+
 	intentBySession := map[string]*model.Intent{}
 	for _, i := range s.Intents {
 		prev, ok := intentBySession[i.SessionKey]
@@ -180,6 +202,7 @@ func (s Snapshot) Lanes() []Lane {
 		sort.SliceStable(lane.Agents, func(i, j int) bool {
 			return !lane.Agents[i].Idle() && lane.Agents[j].Idle()
 		})
+		lane.Agents = nestSubagents(lane.Agents, liveKeys)
 		lanes = append(lanes, lane)
 	}
 	// Members with trouble sort left, then members with the most agents
@@ -194,6 +217,84 @@ func (s Snapshot) Lanes() []Lane {
 		return lanes[i].Member.Key < lanes[j].Member.Key
 	})
 	return lanes
+}
+
+// nestSubagents orders one member's agent lanes so each subagent lane follows
+// its supervisor's, marked Nested with its Depth, and counts each supervisor's
+// subagents. A subagent whose supervisor is not a working lane here keeps its
+// place and is not nested; the view says its supervisor ended.
+//
+// It only reorders and annotates: every lane that came in goes out exactly
+// once, so Active and AgentCount are unchanged by it.
+func nestSubagents(agents []AgentLane, liveKeys map[string]bool) []AgentLane {
+	working := map[string]int{}
+	for i, a := range agents {
+		if !a.Idle() {
+			working[a.Session.Key] = i
+		}
+	}
+	children := map[int][]int{}
+	nested := make([]bool, len(agents))
+	for i := range agents {
+		a := &agents[i]
+		if a.Session == nil || a.Session.ParentSessionKey == "" {
+			continue
+		}
+		a.ParentKey = a.Session.ParentSessionKey
+		a.ParentLive = liveKeys[a.ParentKey]
+		if p, ok := working[a.ParentKey]; ok && !a.Idle() && p != i {
+			children[p] = append(children[p], i)
+			nested[i] = true
+		}
+	}
+	if len(children) == 0 {
+		return agents
+	}
+
+	out := make([]AgentLane, 0, len(agents))
+	placed := make([]bool, len(agents))
+	var place func(i, depth int)
+	place = func(i, depth int) {
+		if placed[i] {
+			return
+		}
+		placed[i] = true
+		a := agents[i]
+		a.Nested, a.Depth, a.Subagents = depth > 0, depth, len(children[i])
+		out = append(out, a)
+		for _, c := range children[i] {
+			place(c, depth+1)
+		}
+	}
+	for i := range agents {
+		if !nested[i] {
+			place(i, 0)
+		}
+	}
+	// Only a cycle of parents could leave a lane unplaced, and keys are
+	// minted in order so there is none; drawn flat rather than dropped.
+	for i := range agents {
+		place(i, 0)
+	}
+	return out
+}
+
+// SubagentsOf lists the sessions on this board that name key as their
+// supervisor, oldest first.
+func (s Snapshot) SubagentsOf(key string) []*model.Session {
+	var out []*model.Session
+	for _, sess := range s.Sessions {
+		if key != "" && sess.ParentSessionKey == key {
+			out = append(out, sess)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].StartedAt.Equal(out[j].StartedAt) {
+			return out[i].StartedAt.Before(out[j].StartedAt)
+		}
+		return out[i].Key < out[j].Key
+	})
+	return out
 }
 
 // OpenConflicts returns the conflicts still wanting attention, worst first.

@@ -30,6 +30,9 @@ templ RunsPage(s state.Snapshot) {
 							<span>
 								<span class="mono" style="font-weight:600">{ sess.Key }</span>
 								<span class="badge plain" style="margin-left:6px">{ sess.Status }</span>
+								if rel := runRelation(sess.ParentSessionKey, len(s.SubagentsOf(sess.Key))); rel != "" {
+									<span class="badge plain subrel-badge" style="margin-left:4px">{ rel }</span>
+								}
 							</span>
 							<span>
 								<span style="font-weight:500">{ s.SessionLabel(sess.Key) }</span>
@@ -53,6 +56,11 @@ templ RunPage(s state.Snapshot, sess *model.Session) {
 			<div class="page">
 				<h2>{ sess.Key } — { s.SessionLabel(sess.Key) }</h2>
 				<div class="sub">{ sess.Goal }</div>
+				if sess.ParentSessionKey != "" {
+					<div class="runs-note run-parent">
+						Subagent of <a class="mono" href={ runURL(s.Team.Slug, sess.ParentSessionKey) }>{ sess.ParentSessionKey }</a>, the run that delegated this work.
+					</div>
+				}
 				<div class="card">
 					<div class="card-head">
 						<span class={ pipClass(sess) }></span>
@@ -68,6 +76,27 @@ templ RunPage(s state.Snapshot, sess *model.Session) {
 						<span>· last heartbeat { state.Ago(s.Now, sess.LastHeartbeatAt) } ago</span>
 					</div>
 				</div>
+				if len(s.SubagentsOf(sess.Key)) > 0 {
+					<h2 style="margin-top:18px">Subagents</h2>
+					<div class="sub">{ countOf(len(s.SubagentsOf(sess.Key)), "run", "runs") } this run delegated, as this board holds them.</div>
+					<div class="runlist run-subagents">
+						for _, sub := range s.SubagentsOf(sess.Key) {
+							<a class={ "runrow", templ.KV("live", sub.Live()) } href={ runURL(s.Team.Slug, sub.Key) }>
+								<span>
+									<span class="mono" style="font-weight:600">{ sub.Key }</span>
+									<span class="badge plain" style="margin-left:6px">{ sub.Status }</span>
+								</span>
+								<span>
+									<span style="font-weight:500">{ s.SessionLabel(sub.Key) }</span>
+									<span style="color:var(--ink-3)"> — { sub.Goal }</span>
+								</span>
+								<span class="mono" style="color:var(--ink-3);font-size:11px">
+									subagent of { sess.Key } · { state.Ago(s.Now, sub.StartedAt) }
+								</span>
+							</a>
+						}
+					</div>
+				}
 				if len(s.ConflictsForSession(sess.Key)) > 0 {
 					<h2 style="margin-top:18px">Conflicts this run touched</h2>
 					<div class="sub"></div>

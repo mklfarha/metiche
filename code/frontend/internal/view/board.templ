@@ -111,6 +111,19 @@ templ agentCard(s state.Snapshot, l state.AgentLane) {
 				<span class="branch" title={ l.Session.BaseCommit }>{ l.Session.Branch }</span>
 			}
 		</div>
+		if l.ParentKey != "" || l.Subagents > 0 {
+			<div class="subrel">
+				if l.ParentKey != "" {
+					<span class="subof">↳ { subagentOf(l) }</span>
+				}
+				if l.ParentKey != "" && l.Subagents > 0 {
+					<span>·</span>
+				}
+				if l.Subagents > 0 {
+					<span class="subcount">{ plural(l.Subagents, "subagent", "subagents") }</span>
+				}
+			</div>
+		}
 		if l.Session == nil {
 			<div class="statusline">idle — no session started</div>
 		} else {
