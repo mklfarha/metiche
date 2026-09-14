@@ -1747,9 +1747,9 @@ prefix. (Decided: bare `v*` tags are reserved for CLI releases, §10 Q2.)
 
 ### 6.2 Workflows
 
-> **Status (2026-09-14): not built.** Neither workflow is added: a tag-triggered release is an outward action the owner approves separately.
+> **Status (2026-09-14): release built, CI not built.** The release workflow is `.github/workflows/release.yml` (workflow name `goreleaser`), not `cli-release.yml`. It follows the sketch below, and adds a `workflow_dispatch` trigger with a required `tag` input, plus a guard step that fails unless HEAD is exactly at that `v*` tag. `cli-ci.yml` is not added.
 
-`.github/workflows/cli-release.yml`:
+`.github/workflows/cli-release.yml` (as planned):
 
 ```yaml
 name: cli-release
@@ -1786,6 +1786,12 @@ jobs:
 - `goreleaser build --snapshot --clean` (the whole matrix compiles);
 - `sh -n install.sh` and `dash -n install.sh`;
 - `cmp install.sh code/frontend/static/install.sh`.
+
+#### 6.2.1 How to publish
+
+- **Normal path:** push a `vX.Y.Z` tag from main (`git tag vX.Y.Z && git push origin vX.Y.Z`). The `goreleaser` workflow tests, builds and uploads the four archives and the checksums.
+- **Existing release without assets** (for example a tag made in the GitHub UI): Actions → goreleaser → Run workflow → enter the tag. `release.mode: replace` fills in the existing release, and it also replaces that release's notes.
+- **Local fallback:** with the tag checked out, run `GITHUB_TOKEN=$(gh auth token) goreleaser release --clean` in `code/cli`.
 
 ### 6.3 How `install.sh` gets the binary
 
@@ -2344,7 +2350,7 @@ Where this section and §1–§6 disagree, this section is right.
 
 - `rename_team`, `leave_team`, `teams rename|leave`: they wait for the `team_renamed` / `member_left` event kinds (§10 Q10).
 - `set_team_visibility`, `remove_member`, `set_member_role`: deferred by §10 Q11.
-- `metiche signout`, the rest of doctor (§11.2), `deploy/scripts/smoke-doctor.sh` (§8.3), both workflows (§6.2), and the installer's final doctor run.
+- `metiche signout`, the rest of doctor (§11.2), `deploy/scripts/smoke-doctor.sh` (§8.3), the CI workflow (§6.2; the release workflow is built), and the installer's final doctor run.
 
 ## Verification, end to end
 

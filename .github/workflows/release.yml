@@ -1,0 +1,87 @@
+# .github/workflows/release.yml
+#
+# Builds the metiche CLI (code/cli) with GoReleaser and uploads the archives and
+# checksums to the GitHub release for the tag. Modeled on nuzur-cli's
+# release.yml; docs/CLI.md §6.2 says what differs and how to publish.
+name: goreleaser
+
+on:
+  # Only v* tags: bare v* tags are reserved for CLI releases (docs/CLI.md §10).
+  # No pull_request trigger: a release job must never run on a PR.
+  push:
+    tags:
+      - "v*"
+  # Builds a release whose tag already exists (for example one created in the
+  # GitHub UI with no assets) without re-pushing the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    env:
+      # The tag this run releases: the dispatch input, or the pushed tag.
+      # GoReleaser reads GORELEASER_CURRENT_TAG, so it releases exactly this tag
+      # even if another tag points at the same commit.
+      GORELEASER_CURRENT_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history and tags: GoReleaser needs the tag at HEAD.
+          fetch-depth: 0
+          # Dispatch: the requested tag. Tag push: the pushed ref.
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      # Fail clearly, before building anything, if HEAD is not exactly at the v*
+      # tag this run means to release.
+      - name: Check HEAD is at the release tag
+        run: |
+          set -eu
+          case "$GORELEASER_CURRENT_TAG" in
+            v*) ;;
+            *) echo "::error::'$GORELEASER_CURRENT_TAG' is not a v* tag; only v* tags are CLI releases"; exit 1 ;;
+          esac
+          if ! described=$(git describe --tags --exact-match HEAD 2>/dev/null); then
+            echo "::error::HEAD $(git rev-parse --short HEAD) is not exactly at a tag; GoReleaser would not release it"
+            exit 1
+          fi
+          if ! git tag --points-at HEAD | grep -qxF "$GORELEASER_CURRENT_TAG"; then
+            echo "::error::tag '$GORELEASER_CURRENT_TAG' does not point at HEAD $(git rev-parse --short HEAD) (git describe: $described)"
+            exit 1
+          fi
+          echo "releasing $GORELEASER_CURRENT_TAG at $(git rev-parse --short HEAD)"
+
+      # go-version-file, NOT "stable": the release must build with the Go version
+      # this module declares, not with whatever is newest on the day it runs.
+      # nuzur-cli's release broke outright when "stable" floated to Go 1.27
+      # (golang.org/x/net/http2 dropped TrailerPrefix under 1.27 while grpc still
+      # referenced it). Hold the Go version still.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: code/cli/go.mod
+          cache-dependency-path: code/cli/go.sum
+
+      # Unit tests gate the release: a broken build never publishes. The e2e test
+      # skips without its METICHE_CLI_E2E* environment.
+      - name: Test
+        working-directory: code/cli
+        run: go test ./...
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          workdir: code/cli
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
