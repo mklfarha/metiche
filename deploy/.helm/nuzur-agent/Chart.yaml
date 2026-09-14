@@ -1,0 +1,16 @@
+apiVersion: v2
+name: nuzur-agent
+description: |
+  The nuzur agent (nuzur-cli agent start) as a single-replica StatefulSet next
+  to metiche-mysql, so the owner can browse metiche's production data in the
+  nuzur data manager: read-only, through redacted views, dialing out only.
+  Design and every decision: docs/NUZUR_AGENT.md. Runbook:
+  deploy/scripts/nuzur-agent-setup.md. This chart never pairs, never registers
+  a connection and holds no secret.
+type: application
+version: 0.1.0
+# The pinned nuzur-cli release inside the image (deploy/docker/nuzur-agent.Dockerfile).
+appVersion: "1.9.2"
+kubeVersion: ">=1.27.0-0"
+sources:
+  - https://github.com/mklfarha/metiche

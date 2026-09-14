@@ -1,0 +1,63 @@
+# nuzur-agent — values. NOTHING IN THIS FILE IS SECRET, AND NOTHING SECRET MAY
+# BE ADDED. Helm stores values in the release and `helm get values` prints
+# them. The machine-id, the nuzur_ro password and the ids live in objects that
+# deploy/scripts/nuzur-agent-setup.sh creates on the box, which this chart only
+# references by name, so a helm upgrade can never overwrite them.
+#
+# What is NOT a value, on purpose (docs/NUZUR_AGENT.md §4.D, §6.2): the
+# StatefulSet name and so the pod hostname (nuzur-agent-0), replicas (1), USER
+# (nuzur), HOME and XDG_CONFIG_HOME. Each of them is an input to the keyring
+# passphrase or to where the pairing lives, and changing one is an outage.
+
+agent:
+  # REQUIRED, and the render fails on anything else:
+  #   setup — the pod runs nuzur-agent-hold, a placeholder that keeps it alive
+  #           for the one-time `kubectl exec` pair and connection add. The
+  #           nuzur_ro password Secret is mounted, for that exec only.
+  #   run   — preflight init container, then `nuzur-cli agent start`. No
+  #           password is mounted. Nothing ever pairs automatically.
+  # Always pass it with --set-string agent.mode=...
+  mode: ""
+
+image:
+  repository: nuzur-agent
+  # REQUIRED. A quoted string, passed with --set-string image.tag=...
+  # (nuzur-agent-setup.sh does). Built and imported on the box; no registry.
+  tag: ""
+  pullPolicy: Never
+
+# Secret, key `machine-id`: 32 lowercase hex characters and a newline,
+# generated once. Mounted read-only as /etc/machine-id.
+machineIdSecret: nuzur-agent-machine-id
+
+# ConfigMap: AGENT_UUID, CONNECTION_UUID, EXPECT_HOSTNAME, EXPECT_USER,
+# MACHINE_ID_SHA256. Read by the run-mode preflight only.
+idsConfigMap: nuzur-agent-ids
+
+# Secret, key NUZUR_RO_PASSWORD. Mounted in setup mode only.
+roPasswordSecret: nuzur-agent-db
+
+persistence:
+  # microk8s' hostpath provisioner. Reclaim policy Delete: deleting the PVC
+  # deletes the pairing (the documented "PVC loss" re-pair).
+  storageClass: microk8s-hostpath
+  size: 1Gi
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+    ephemeral-storage: 16Mi
+  limits:
+    memory: 256Mi
+    ephemeral-storage: 64Mi
+
+preflightResources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 128Mi
+
+nodeSelector: {}
+tolerations: []

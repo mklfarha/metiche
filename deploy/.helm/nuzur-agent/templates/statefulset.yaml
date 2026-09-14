@@ -1,0 +1,153 @@
+{{- include "nuzur-agent.guard" . }}
+{{- $mode := include "nuzur-agent.mode" . }}
+{{- $image := printf "%s:%s" .Values.image.repository (include "nuzur-agent.imageTag" .) }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  # LITERAL. This name makes the pod hostname nuzur-agent-0, one of the three
+  # keyring passphrase inputs. Renaming it is an outage (docs/NUZUR_AGENT.md §4.D).
+  name: nuzur-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nuzur-agent.labels" . | nindent 4 }}
+spec:
+  # LITERAL, never a value. Two daemons with one pairing flap on the server
+  # (duplicate path 10). StatefulSet semantics keep it at most one: never
+  # `kubectl delete pod --force`.
+  replicas: 1
+  serviceName: nuzur-agent
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  # `helm uninstall` and scaling keep the PVC, which is the pairing.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      {{- include "nuzur-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nuzur-agent.selectorLabels" . | nindent 8 }}
+      annotations:
+        nuzur-agent.metiche.xyz/mode: {{ $mode | quote }}
+    spec:
+      serviceAccountName: nuzur-agent
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # NOT set, on purpose: hostname, subdomain, setHostnameAsFQDN,
+      # hostNetwork, hostPID, hostIPC, shareProcessNamespace. Any of the first
+      # four changes the nodename the keyring passphrase is derived from.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if eq $mode "run" }}
+      initContainers:
+        # Refuses to let `agent start` run unless hostname, machine-id, USER,
+        # config dir, pairing and registry are exactly what setup recorded,
+        # and the DSN decrypts. The PVC is mounted READ-ONLY here, which
+        # proves it writes nothing. Logs: kubectl logs nuzur-agent-0 -c preflight
+        - name: preflight
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/nuzur-agent-preflight"]
+          env:
+            {{- include "nuzur-agent.env" . | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.idsConfigMap }}
+          securityContext:
+            {{- include "nuzur-agent.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.preflightResources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/nuzur
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- include "nuzur-agent.machineIdMount" . | nindent 12 }}
+      {{- end }}
+      containers:
+        - name: agent
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if eq $mode "setup" }}
+          # Setup: a placeholder that never pairs, adds or starts anything.
+          command: ["/usr/local/bin/nuzur-agent-hold"]
+          {{- else }}
+          command: ["/usr/local/bin/nuzur-cli"]
+          args: ["agent", "start"]
+          {{- end }}
+          env:
+            {{- include "nuzur-agent.env" . | nindent 12 }}
+          securityContext:
+            {{- include "nuzur-agent.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          # No probes: nothing listens, the daemon reconnects on its own and
+          # exits on non-retryable errors; a liveness probe could only restart it.
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/nuzur
+            - name: tmp
+              mountPath: /tmp
+            {{- include "nuzur-agent.machineIdMount" . | nindent 12 }}
+            {{- if eq $mode "setup" }}
+            - name: ro-password
+              mountPath: /run/secrets/nuzur-ro
+              readOnly: true
+            {{- end }}
+      volumes:
+        # The only writable paths besides the PVC. /tmp is fresh on every pod
+        # start, so the CLI's legacy /tmp/nuzur-cli migration never finds anything.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: machine-id
+          secret:
+            secretName: {{ .Values.machineIdSecret }}
+            defaultMode: 0444
+            items:
+              - key: machine-id
+                path: machine-id
+        {{- if eq $mode "setup" }}
+        # Setup mode only: the one-time `connection add` exec builds the DSN
+        # from this file inside the pod, so the password is never in kubectl's
+        # argv (D7). Gone again in run mode.
+        - name: ro-password
+          secret:
+            secretName: {{ .Values.roPasswordSecret }}
+            defaultMode: 0440
+            items:
+              - key: NUZUR_RO_PASSWORD
+                path: NUZUR_RO_PASSWORD
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "nuzur-agent.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}

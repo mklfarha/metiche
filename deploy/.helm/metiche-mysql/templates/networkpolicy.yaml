@@ -1,0 +1,42 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- if not .Values.networkPolicy.allowFrom }}
+{{- fail "networkPolicy.enabled=true with an empty networkPolicy.allowFrom would refuse every client, the backend included. List the backend and the nuzur agent (values.yaml)." }}
+{{- end }}
+# Ingress to MySQL from the listed pods only, on 3306. docs/NUZUR_AGENT.md §7.1.
+#
+# NOT network traffic, so NOT affected by this policy:
+#   * kubectl exec: deploy/scripts/apply-schema.sh, deploy/sql/*.sql
+#     migrations applied by hand, deploy/sql/nuzur/gen-views.sh, and any
+#     mysqldump run through exec. Exec goes API server → kubelet → container
+#     runtime and enters the container directly, never through the pod network.
+#   * the exec probes (mysqladmin ping -h 127.0.0.1 inside the container):
+#     loopback inside the pod's own network namespace.
+#   * kubectl port-forward: the kubelet connects to localhost inside the pod's
+#     network namespace, not through the pod interface.
+# Every other pod in the cluster, including anything else in this namespace,
+# is refused.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "metiche-mysql.fullname" . }}-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metiche-mysql.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "metiche-mysql.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.allowFrom }}
+        # {{ .name }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml .podLabels | nindent 14 }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 3306
+{{- end }}

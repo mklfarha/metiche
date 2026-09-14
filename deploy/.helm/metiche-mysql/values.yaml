@@ -65,6 +65,31 @@ service:
   type: ClusterIP
   port: 3306
 
+# -- Network policy -----------------------------------------------------------
+# Off by default, so a plain render is unchanged. When enabled, only the pods
+# listed here reach 3306 (docs/NUZUR_AGENT.md §7.1). kubectl exec (schema,
+# migrations, gen-views.sh), the exec probes and port-forward are not network
+# traffic and are unaffected; see templates/networkpolicy.yaml.
+#
+# Each entry's podLabels must be the SELECTOR labels a pod template carries,
+# never the full label set (app.kubernetes.io/part-of is not on pods).
+networkPolicy:
+  enabled: false
+  allowFrom:
+    # The backend: metiche.selectorLabels (deploy/.helm/metiche/templates/
+    # _helpers.tpl) for release "metiche", as deploy/scripts/helm-deploy.sh
+    # installs it. With the api/mcp split (values-api.yaml, values-mcp.yaml)
+    # the instances are metiche-api and metiche-mcp: add both BEFORE switching.
+    - name: backend
+      podLabels:
+        app.kubernetes.io/name: metiche
+        app.kubernetes.io/instance: metiche
+    # The nuzur agent: literal labels in deploy/.helm/nuzur-agent.
+    - name: nuzur-agent
+      podLabels:
+        app.kubernetes.io/name: nuzur-agent
+        app.kubernetes.io/instance: nuzur-agent
+
 # -- Health probes ----------------------------------------------------------
 # `mysqladmin ping` over the loopback interface, with the password read from
 # the mounted Secret file inside the probe's own shell — never from argv.

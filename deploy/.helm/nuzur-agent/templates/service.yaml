@@ -1,0 +1,13 @@
+# The StatefulSet's governing Service, and nothing more: headless, no ports.
+# Nothing listens in the pod; the agent only dials out (docs/NUZUR_AGENT.md §7.2).
+apiVersion: v1
+kind: Service
+metadata:
+  name: nuzur-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nuzur-agent.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "nuzur-agent.selectorLabels" . | nindent 4 }}

@@ -1,0 +1,19 @@
+{{- $mode := include "nuzur-agent.mode" . -}}
+nuzur-agent {{ .Chart.AppVersion }} in namespace {{ .Release.Namespace }}, mode {{ $mode }}, image {{ .Values.image.repository }}:{{ include "nuzur-agent.imageTag" . }}.
+{{- if eq $mode "setup" }}
+
+SETUP MODE. The pod runs a placeholder and has done nothing. Continue with
+deploy/scripts/nuzur-agent-setup.md: pair (the owner, once), record the agent
+uuid, add the connection, then switch to run mode.
+
+  kubectl -n {{ .Release.Namespace }} logs nuzur-agent-0 -c agent
+{{- else }}
+
+RUN MODE. The preflight gates `nuzur-cli agent start` on the recorded identity.
+
+  kubectl -n {{ .Release.Namespace }} logs nuzur-agent-0 -c preflight   # ends with "preflight ok"
+  kubectl -n {{ .Release.Namespace }} logs nuzur-agent-0 -c agent       # "paired and online"
+
+Init:CrashLoopBackOff means the preflight refused; its log says why in one
+sentence. Nothing in this pod ever pairs or registers by itself.
+{{- end }}
