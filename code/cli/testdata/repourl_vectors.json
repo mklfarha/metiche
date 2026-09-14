@@ -1,0 +1,19 @@
+{
+  "comment": "Repository-URL vectors shared by the backend (app/mcp/repourl_vectors_test.go) and the CLI (internal/gitx). in -> normalized identity -> canonical stored form -> the project key start_session derives. docs/CLI.md §4.12 item 2. Secrets here are not shaped like any real token.",
+  "vectors": [
+    {"in": "git@github.com:mklfarha/taqueria.git", "normalized": "github.com/mklfarha/taqueria", "canonical": "https://github.com/mklfarha/taqueria", "key": "taqueria"},
+    {"in": "https://github.com/mklfarha/taqueria", "normalized": "github.com/mklfarha/taqueria", "canonical": "https://github.com/mklfarha/taqueria", "key": "taqueria"},
+    {"in": "ssh://git@github.com/mklfarha/taqueria.git", "normalized": "github.com/mklfarha/taqueria", "canonical": "https://github.com/mklfarha/taqueria", "key": "taqueria"},
+    {"in": "https://someuser:notarealsecret@github.com/mklfarha/taqueria.git", "normalized": "github.com/mklfarha/taqueria", "canonical": "https://github.com/mklfarha/taqueria", "key": "taqueria"},
+    {"in": "HTTPS://GitHub.COM/MKLFarha/Taqueria.GIT", "normalized": "github.com/mklfarha/taqueria", "canonical": "https://github.com/mklfarha/taqueria", "key": "taqueria"},
+    {"in": "https://github.com/example/demo.git", "normalized": "github.com/example/demo", "canonical": "https://github.com/example/demo", "key": "demo"},
+    {"in": "ssh://git@github.com:22/mklfarha/taqueria", "normalized": "github.com/mklfarha/taqueria", "canonical": "https://github.com/mklfarha/taqueria", "key": "taqueria"},
+    {"in": "https://gitlab.com/Group/Sub/Project.git", "normalized": "gitlab.com/group/sub/project", "canonical": "https://gitlab.com/group/sub/project", "key": "project"},
+    {"in": "https://Git.Example.com:8443/Team/Repo.git", "normalized": "git.example.com/Team/Repo", "canonical": "https://git.example.com/Team/Repo", "key": "Repo"},
+    {"in": "git.example.com:Team/Repo.git", "normalized": "git.example.com/Team/Repo", "canonical": "https://git.example.com/Team/Repo", "key": "Repo"},
+    {"in": "https://user:pa/ss@git.example.com/x/y/", "normalized": "git.example.com/x/y", "canonical": "https://git.example.com/x/y", "key": "y"},
+    {"in": "/Users/me/src/Shop/.git", "normalized": "/Users/me/src/Shop", "canonical": "", "key": "Shop"},
+    {"in": "file:///Users/me/src/Shop.git", "normalized": "/Users/me/src/Shop", "canonical": "", "key": "Shop"},
+    {"in": "", "normalized": "", "canonical": "", "key": ""}
+  ]
+}
