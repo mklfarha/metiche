@@ -27,6 +27,11 @@ type sessionResponse struct {
 	// a caller never has to learn a second pagination vocabulary.
 	NextAfter *int64 `json:"next_after,omitempty"`
 
+	// Subagents are the runs this session supervised: every session on the
+	// team whose parent_session_key is this one, oldest first, whatever their
+	// status. Each names its parent, so the relationship reads both ways.
+	Subagents []sessionCore `json:"subagents"`
+
 	// History is the rest of the run's story, whatever its status now: every
 	// intent it declared, every path it claimed and every conflict it took
 	// part in. Session.Intents and Session.Claims stay what they are on the
@@ -88,6 +93,10 @@ func (a *API) handleSession(w http.ResponseWriter, r *http.Request) {
 			out.NextAfter = &next
 		}
 
+		if out.Subagents, err = loadSubagents(r.Context(), tx, team.UUID, sessionUUID); err != nil {
+			return err
+		}
+
 		out.History, err = loadRunHistory(r.Context(), tx, team.UUID, sessionUUID)
 		return err
 	})
@@ -109,13 +118,14 @@ func (a *API) handleSession(w http.ResponseWriter, r *http.Request) {
 // differently.
 const sessionColumns = "s.`id`, s.`key`, s.`branch`, s.`goal`, s.`status`, s.`status_line`, " +
 	"s.`started_at`, s.`last_heartbeat_at`, s.`ended_at`, s.`outcome`, s.`outcome_note`, " +
-	"p.`key`, m.`key`, m.`display_name`, a.`label`, a.`client_kind`, ci.`key`"
+	"p.`key`, m.`key`, m.`display_name`, a.`label`, a.`client_kind`, ci.`key`, ps.`key`"
 
 const sessionJoins = "FROM `session` s " +
 	"JOIN `project` p ON p.`id` = s.`project_uuid` " +
 	"JOIN `member` m ON m.`id` = s.`member_uuid` " +
 	"JOIN `agent` a ON a.`id` = s.`agent_uuid` " +
-	"LEFT JOIN `intent` ci ON ci.`id` = s.`current_intent_uuid` "
+	"LEFT JOIN `intent` ci ON ci.`id` = s.`current_intent_uuid` " +
+	"LEFT JOIN `session` ps ON ps.`id` = s.`parent_session_uuid` "
 
 const sessionQuery = "SELECT " + sessionColumns + " " + sessionJoins +
 	"WHERE s.`team_uuid` = ? AND s.`key` = ? LIMIT 1"
@@ -136,11 +146,11 @@ func scanSessionCore(row rowScanner, extra ...any) (string, sessionCore, error) 
 		started, heartbeat, ended                               sql.NullTime
 		status, outcome                                         sql.NullInt64
 		projectKey, memberKey, memberName, agentLabel, clientKd sql.NullString
-		currentIntent                                           sql.NullString
+		currentIntent, parentKey                                sql.NullString
 	)
 	dest := []any{&id, &s.Key, &branch, &goal, &status, &statusLine,
 		&started, &heartbeat, &ended, &outcome, &outcomeNote,
-		&projectKey, &memberKey, &memberName, &agentLabel, &clientKd, &currentIntent}
+		&projectKey, &memberKey, &memberName, &agentLabel, &clientKd, &currentIntent, &parentKey}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return "", sessionCore{}, err
 	}
@@ -155,6 +165,7 @@ func scanSessionCore(row rowScanner, extra ...any) (string, sessionCore, error) 
 	s.ProjectKey, s.MemberKey, s.MemberName = projectKey.String, memberKey.String, memberName.String
 	s.AgentLabel, s.ClientKind = agentLabel.String, clientKd.String
 	s.CurrentIntentKey = currentIntent.String
+	s.ParentSessionKey = parentKey.String
 	return id, s, nil
 }
 
@@ -169,6 +180,29 @@ func loadSession(ctx context.Context, tx *sql.Tx, teamUUID, key string) (string,
 		return "", sessionWire{}, err
 	}
 	return id, sessionWire{sessionCore: core, Intents: []intentWire{}, Claims: []claimWire{}}, nil
+}
+
+const subagentsQuery = "SELECT " + sessionColumns + " " + sessionJoins +
+	"WHERE s.`team_uuid` = ? AND s.`parent_session_uuid` = ? " +
+	"ORDER BY COALESCE(s.`started_at`, s.`created_at`), s.`key` LIMIT ?"
+
+// loadSubagents reads the runs one session supervised, served by
+// idx_session_parent and bounded by maxRunRows.
+func loadSubagents(ctx context.Context, tx *sql.Tx, teamUUID, sessionUUID string) ([]sessionCore, error) {
+	rows, err := tx.QueryContext(ctx, subagentsQuery, teamUUID, sessionUUID, maxRunRows)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []sessionCore{}
+	for rows.Next() {
+		_, core, err := scanSessionCore(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, core)
+	}
+	return out, rows.Err()
 }
 
 const sessionEventsQuery = "SELECT e.`sequence`, e.`kind`, e.`structural`, e.`subject_kind`, " +

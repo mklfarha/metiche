@@ -33,6 +33,12 @@ type Envelope struct {
 	// bytes, and every snapshot stored before this field existed, unchanged.
 	ProjectKey string `json:"project_key,omitempty"`
 
+	// ParentSessionKey is the supervising session a start_session was linked
+	// to (S-41), set only when the caller passed parent_session_key and it
+	// resolved. Empty, and so absent, everywhere else, for the same reason as
+	// ProjectKey.
+	ParentSessionKey string `json:"parent_session_key,omitempty"`
+
 	// Sequence is the team's event cursor. It advances on EVERY event.
 	// A client uses it to notice it missed something.
 	Sequence int64 `json:"sequence"`

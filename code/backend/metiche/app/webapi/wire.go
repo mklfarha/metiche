@@ -65,6 +65,11 @@ type sessionCore struct {
 	OutcomeNote string `json:"outcome_note,omitempty"`
 
 	CurrentIntentKey string `json:"current_intent_key,omitempty"`
+
+	// ParentSessionKey is the session that supervises this one (a subagent's
+	// supervisor), by key. Absent for a session nobody delegated, and absent
+	// again if the supervisor's row is ever deleted (ON DELETE SET NULL).
+	ParentSessionKey string `json:"parent_session_key,omitempty"`
 }
 
 type sessionWire struct {
@@ -86,6 +91,7 @@ type sessionCountsWire struct {
 	Intents      int64 `json:"intents"`
 	ClaimedPaths int64 `json:"claimed_paths"` // distinct normalized patterns
 	Conflicts    int64 `json:"conflicts"`     // distinct conflicts it was a participant in
+	Subagents    int64 `json:"subagents"`     // sessions that name this one as their parent
 }
 
 // runHistoryWire is what one session declared, claimed and collided on.

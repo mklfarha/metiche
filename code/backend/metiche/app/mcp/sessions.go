@@ -39,6 +39,8 @@ type StartSessionParams struct {
 	RepoURL        string `json:"repo_url,omitempty" jsonschema:"The output of 'git remote get-url origin', run in the repository; omit it only if there is no remote. This is how metiche knows two agents are in the SAME repository: https and ssh forms, .git and letter case are normalized away, and an existing project for this repository is used whatever project_key says. Credentials in the URL are stripped and never stored."`
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"Pass a key of your own and retrying this exact call returns the exact same answer instead of starting a second session. Omit it and every call starts a new session."`
 
+	ParentSessionKey string `json:"parent_session_key,omitempty" jsonschema:"Only when you are a subagent: the session_key of the session that delegated this work to you (your supervisor passes its own session_key in your brief). It links your lane under your supervisor's on the board and in the run history. It must be a live or stale session of your own person on this team. Omit it when nobody delegated this work."`
+
 	// Not persisted: it gates creating a project, and nothing else (repobinding.go).
 	ConfirmNewProject string `json:"confirm_new_project,omitempty" jsonschema:"Matters only when this repository is not yet a project on the team. 'metiche_file' when a .metiche file (walking up from your working directory to the git root) names this team, passed as team_slug. 'person' when your person said yes to the question in a confirm_repo_binding answer. Omit it otherwise: start_session then creates nothing and answers with code confirm_repo_binding."`
 }
@@ -78,6 +80,8 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 		return nil, nil, err
 	}
 
+	parentKey := truncate(strings.TrimSpace(args.ParentSessionKey), 32)
+
 	idem := strings.TrimSpace(args.IdempotencyKey)
 	if idem == "" {
 		nonce, err := uuid.NewV4()
@@ -109,6 +113,22 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 		// decided inside Apply. Apply sets tc.Summary.
 		Payload: payload_entity.EventPayload{Message: nullString(truncate(args.Goal, 280))},
 		Apply: func(ctx context.Context, tc *TxContext, env *Envelope) error {
+			// The supervisor is resolved under the same lock, so it cannot end
+			// between being checked and being linked to. Refused before
+			// anything is written, and a refusal is not a stored answer: the
+			// same idempotency key with a good parent starts the session.
+			var parent delegableSession
+			if parentKey != "" {
+				p, found, err := delegableParent(ctx, tc.Tx, team.ID, ag.AccountUUID, parentKey)
+				if err != nil {
+					return err
+				}
+				if !found {
+					return errors.New(errNoDelegableParent)
+				}
+				parent = p
+			}
+
 			// Counted HERE, under the team lock, so the cap is exact: two
 			// terminals racing to open the ninth session serialize on the team
 			// row, and the second one sees the first one's insert.
@@ -143,6 +163,9 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			// The board's timeline names the project the session is on, not
 			// the name the agent happened to send for it.
 			tc.Summary = fmt.Sprintf("%s started work on %s", ag.Label, proj.Key)
+			if parent.Key != "" {
+				tc.Summary += " as a subagent of " + parent.Key
+			}
 
 			id, err := uuid.NewV4()
 			if err != nil {
@@ -169,6 +192,9 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 					StatusLine:      nullString(truncate(args.StatusLine, 120)),
 					StartedAt:       nullTime(tc.Now),
 					LastHeartbeatAt: nullTime(tc.Now),
+					// Set here, once, and never written again: nothing
+					// else in this package names the column.
+					ParentSessionUUID: parent.uuidPtr(),
 				},
 			}, sessionmod.WithSQLTransaction(tc.Tx)); err != nil {
 				return err
@@ -183,6 +209,7 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			// it was when the session started rather than as it is now.
 			env.Key = sessionKey
 			env.ProjectKey = proj.Key
+			env.ParentSessionKey = parent.Key
 			env.Note = "heartbeat every ~60s with this session_key, or your claims lapse"
 			if len(open) > 0 {
 				env.Note = otherSessionsNote(open, sessionKey, tc.Now) + "; " + env.Note
@@ -208,6 +235,61 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 	_ = sessionID
 	_ = projectID
 	return jsonResult(response)
+}
+
+// errNoDelegableParent is the one answer to every parent_session_key that
+// does not resolve: unknown, ended, on another team, or another person's.
+// One message on purpose, so the refusal never tells a caller that a key it
+// may not use exists.
+const errNoDelegableParent = "not_found: no live session with that key that you can delegate from — " +
+	"parent_session_key must be the session_key your supervisor gave you, of a live session on this team; omit it if nobody delegated this work"
+
+// delegableSession is the supervisor a start_session links to.
+type delegableSession struct {
+	ID  uuid.UUID
+	Key string
+}
+
+func (d delegableSession) uuidPtr() *uuid.UUID {
+	if d.Key == "" {
+		return nil
+	}
+	id := d.ID
+	return &id
+}
+
+// delegableParent finds the session a subagent may name as its parent: live
+// or stale, on THIS team, and run by any agent of THIS caller's account.
+//
+// Scoped by team because session keys are per team (S-7 exists on every
+// team), and by account because delegating is something a person's own
+// agents do to each other: a subagent shares its supervisor's token, so its
+// account is the supervisor's. Served by uq_session_team_key.
+func delegableParent(ctx context.Context, tx *sql.Tx, teamUUID, accountUUID uuid.UUID, key string) (delegableSession, bool, error) {
+	var (
+		id  string
+		out delegableSession
+	)
+	err := tx.QueryRowContext(ctx,
+		"SELECT s.`id`, s.`key` FROM `session` s JOIN `agent` a ON a.`id` = s.`agent_uuid` "+
+			"WHERE s.`key` = ? AND s.`status` IN (?, ?)"+
+			" AND s.`team_uuid` = ?"+
+			" AND a.`account_uuid` = ?"+
+			" LIMIT 1",
+		key, enums.SESSION_STATUS_LIVE, enums.SESSION_STATUS_STALE,
+		teamUUID.String(),
+		accountUUID.String(),
+	).Scan(&id, &out.Key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return delegableSession{}, false, nil
+	}
+	if err != nil {
+		return delegableSession{}, false, retryable(err, "looking up the parent session")
+	}
+	if out.ID, err = uuid.FromString(id); err != nil {
+		return delegableSession{}, false, err
+	}
+	return out, true, nil
 }
 
 // maxLiveSessionsPerAgent bounds how many sessions one agent may hold open

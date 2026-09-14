@@ -143,7 +143,9 @@ in its note, and only on a yes call start_session again with confirm_new_project
 Your token identifies THIS agent - this client, on this machine. Every client gets its own, and the
 Authorization header is the only thing any call needs. You never need client_key; omit it, and never
 guess one. Several terminals of one client are several sessions of one agent: call start_session in
-each, and it tells you about your other live sessions.
+each, and it tells you about your other live sessions. When you delegate to subagents, put your own
+session_key in each brief; each subagent passes it as parent_session_key in its own start_session,
+so its lane shows under yours.
 
 Send your token on every call, including a later join_team for a second team - joining again with
 your own token keeps it and adds a membership rather than a second identity. A team is a per-call
@@ -232,7 +234,8 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 			"Before calling, look for a .metiche file walking up from your working directory to the git root; if found, pass its team as team_slug and its project as project_key, with confirm_new_project: 'metiche_file'. " +
 			"A repository that is not yet a project on the team returns code confirm_repo_binding and creates nothing: ask your person the question in its note. " +
 			"If you are on more than one team, pass team_slug so the work lands on the right board. You never need client_key: your token already names this agent. " +
-			"Several terminals of one client are several sessions of one agent; start_session tells you about your other live sessions.",
+			"Several terminals of one client are several sessions of one agent; start_session tells you about your other live sessions. " +
+			"A subagent passes its supervisor's session_key as parent_session_key, which links its lane under the supervisor's; the parent must be a live session of your own person on this team.",
 		Annotations: idempotent,
 	}, h.StartSession)
 

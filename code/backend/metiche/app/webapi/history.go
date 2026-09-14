@@ -246,9 +246,15 @@ func attachSessionCounts(ctx context.Context, tx *sql.Tx, teamUUID string, ids [
 		func(c *sessionCountsWire, n int64) { c.ClaimedPaths = n }); err != nil {
 		return err
 	}
-	return count("SELECT p.`session_uuid`, COUNT(DISTINCT p.`conflict_uuid`) FROM `conflict_participant` p "+
+	if err := count("SELECT p.`session_uuid`, COUNT(DISTINCT p.`conflict_uuid`) FROM `conflict_participant` p "+
 		"WHERE p.`team_uuid` = ? AND p.`session_uuid` IN ("+in+") GROUP BY p.`session_uuid`",
-		func(c *sessionCountsWire, n int64) { c.Conflicts = n })
+		func(c *sessionCountsWire, n int64) { c.Conflicts = n }); err != nil {
+		return err
+	}
+	// Served by idx_session_parent: the page's sessions as parents.
+	return count("SELECT k.`parent_session_uuid`, COUNT(*) FROM `session` k "+
+		"WHERE k.`team_uuid` = ? AND k.`parent_session_uuid` IN ("+in+") GROUP BY k.`parent_session_uuid`",
+		func(c *sessionCountsWire, n int64) { c.Subagents = n })
 }
 
 // ---------------------------------------------------------------- one run
