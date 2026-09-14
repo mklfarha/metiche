@@ -33,6 +33,9 @@
 #                                         shipped copy (the plugin ships it)
 #   Claude Code's user-scope plugins      via the `claude` CLI (skill only)
 #   your shell profile                    one loader line
+#   ~/.metiche/bin/metiche                the metiche CLI, unless --no-cli
+#   ~/.local/bin/metiche                  a symlink to it, only when ~/.local/bin
+#                                         is on your PATH and nothing else is there
 #
 # An existing file is never replaced wholesale. Before the first change to any
 # file that already exists, a copy is made next to it as
@@ -47,6 +50,10 @@
 # join_team (or, for the first client of a new team, create_team) followed by
 # one list_teams on a fresh connection that proves the token it got back
 # works. Nothing for a client is written until that client's proof succeeds.
+# Unless --no-cli: one request to the GitHub API for the latest metiche CLI
+# release, and the download of its archive and checksums file from GitHub
+# releases. The archive is installed only if its sha256 matches; any failure
+# there is a warning and never fails the install.
 # A saved token the server REJECTS starts a new identity, and says so; a
 # network error, a 5xx or a timeout refuses and writes nothing — a flaky
 # connection must never turn you into somebody new. A $METICHE_TOKEN that is
@@ -120,6 +127,15 @@ ENV_LEGACY_HEADER="# metiche — created by install.sh. Keep this file private."
 KNOWN_SKILL_SHA256="902d22540c064631ccdfef1d0da288cb46af00d9b34f55c02718f088f794faba"
 
 URL="${METICHE_URL:-$METICHE_URL_DEFAULT}"
+# The metiche CLI (docs/CLI.md §6.3), installed from a GitHub release. The two
+# URL overrides exist to test the step against a local mirror of a release:
+# METICHE_CLI_RELEASE_BASE replaces https://github.com/mklfarha/metiche/releases/download
+# (the archive is <base>/v<version>/metiche_<OS>_<ARCH>.tar.gz) and
+# METICHE_CLI_LATEST_URL replaces the GitHub API's releases/latest address.
+CLI_RELEASE_BASE="${METICHE_CLI_RELEASE_BASE:-https://github.com/mklfarha/metiche/releases/download}"
+CLI_LATEST_URL="${METICHE_CLI_LATEST_URL:-https://api.github.com/repos/mklfarha/metiche/releases/latest}"
+CLI_VERSION="${METICHE_CLI_VERSION:-}"
+INSTALL_CLI=1
 REPO="${METICHE_REPO:-$METICHE_REPO_DEFAULT}"
 MARKETPLACE="${METICHE_MARKETPLACE:-}"
 DRY_RUN=0
@@ -257,6 +273,11 @@ Options:
   --no-open           Never create a sign-in link. By default a terminal run
                       asks, and the default answer is yes.
                       METICHE_OPEN_BOARD=ask|yes|no says the same.
+  --no-cli            Do not install the metiche command-line tool. By default
+                      the latest release is downloaded from GitHub, verified
+                      against its sha256 checksums file and installed as
+                      ~/.metiche/bin/metiche. METICHE_CLI_VERSION=vX.Y.Z pins a
+                      version. A failed download never fails the install.
   -h, --help          This.
 
 Joining, or creating. With no join code and no token of yours on this machine
@@ -354,6 +375,7 @@ while [ $# -gt 0 ]; do
         --only=*)        ONLY="${1#--only=}" ;;
         --open)          OPEN_BOARD="yes" ;;
         --no-open)       OPEN_BOARD="no" ;;
+        --no-cli)        INSTALL_CLI=0 ;;
         -h|--help)       usage; exit 0 ;;
         *)
             # A bare argument is most likely someone passing their join code
@@ -379,6 +401,16 @@ case "$URL" in
     https://*) ;;
     http://localhost*|http://127.0.0.1*) [ "$UNINSTALL" -eq 1 ] || warn "using a plaintext local endpoint: $URL" ;;
     *) die "--url must be https (or a local http endpoint), got: $URL" ;;
+esac
+
+for _cli_url in "$CLI_RELEASE_BASE" "$CLI_LATEST_URL"; do
+    case "$_cli_url" in
+        https://*|http://localhost*|http://127.0.0.1*) ;;
+        *) die "METICHE_CLI_RELEASE_BASE and METICHE_CLI_LATEST_URL must be https (or a local http address), got: $_cli_url" ;;
+    esac
+done
+case "$CLI_VERSION" in
+    *[!A-Za-z0-9.+-]*) die "METICHE_CLI_VERSION must look like v1.2.3, got: $CLI_VERSION" ;;
 esac
 
 case "$OPEN_BOARD" in
@@ -2697,6 +2729,204 @@ uninstall_profiles() {
     if [ "$_found_any" -eq 0 ]; then info "no profile loads ~/.metiche/env, nothing to remove"; fi
 }
 
+# ------------------------------------------------------------ metiche CLI ---
+#
+# docs/CLI.md §6.3. The CLI is optional: the joins are the product, so every
+# failure in this step is a warning and the install goes on. What is never
+# skipped is the checksum: an archive whose sha256 does not match the release's
+# checksums file is not installed, and nothing is written.
+
+cli_os() {
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin) printf 'Darwin' ;;
+        Linux)  printf 'Linux' ;;
+    esac
+    return 0
+}
+
+cli_arch() {
+    case "$(uname -m 2>/dev/null || true)" in
+        x86_64|amd64)  printf 'x86_64' ;;
+        aarch64|arm64) printf 'arm64' ;;
+    esac
+    return 0
+}
+
+# Sets CLI_LATEST (without the v) and CLI_LATEST_STATUS: ok, not_published or
+# error. Not for use in $(...): it sets variables.
+cli_latest() {
+    CLI_LATEST=""
+    CLI_LATEST_STATUS="error"
+    mcp_tmpdir
+    _lj="$MCP_TMP/cli-latest.json"
+    _lcode=$(curl -sS --max-time "$HTTP_TIMEOUT" -H 'Accept: application/vnd.github+json' \
+        -o "$_lj" -w '%{http_code}' "$CLI_LATEST_URL" 2>/dev/null) || _lcode="000"
+    case "$_lcode" in
+        404) CLI_LATEST_STATUS="not_published"; return 0 ;;
+        200) ;;
+        *) return 0 ;;
+    esac
+    _ltag=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_lj" | sed -n '1p')
+    _ltag=${_ltag#v}
+    case "$_ltag" in
+        ""|*[!A-Za-z0-9.+-]*) return 0 ;;
+    esac
+    CLI_LATEST="$_ltag"
+    CLI_LATEST_STATUS="ok"
+}
+
+# The ~/.local/bin symlink, only when that directory is on PATH and nothing of
+# somebody else's is already there. $1 is "dry" under --dry-run.
+cli_link() {
+    _lbin="$HOME/.local/bin"
+    _llink="$_lbin/metiche"
+    _lbinary="$ENV_DIR/bin/metiche"
+    case ":${PATH:-}:" in
+        *":$_lbin:"*)
+            if [ -L "$_llink" ]; then
+                case "$(readlink "$_llink" 2>/dev/null || true)" in
+                    "$ENV_DIR/bin/"*) ;;
+                    *) warn "$_llink is a symlink to somewhere else; leaving it"; return 0 ;;
+                esac
+            elif [ -e "$_llink" ]; then
+                warn "~/.local/bin/metiche exists and is not ours; leaving it"
+                return 0
+            fi
+            if [ "$(readlink "$_llink" 2>/dev/null || true)" = "$_lbinary" ]; then
+                info "$_llink already links to it"
+            elif [ "${1:-}" = "dry" ]; then
+                info "would link $_llink -> $_lbinary"
+            else
+                mkdir -p "$_lbin" && ln -sf "$_lbinary" "$_llink" && info "linked $_llink -> $_lbinary"
+            fi
+            ;;
+        *)
+            info "~/.local/bin is not on your PATH. To run it as \`metiche\`, add to your shell profile:"
+            say '      export PATH="$HOME/.metiche/bin:$PATH"'
+            ;;
+    esac
+    _lfirst=$(command -v metiche 2>/dev/null || true)
+    case "$_lfirst" in
+        ""|"$_llink"|"$_lbinary") ;;
+        *) warn "another metiche comes first on your PATH: $_lfirst" ;;
+    esac
+    return 0
+}
+
+install_cli() {
+    step "metiche CLI"
+    if [ "$INSTALL_CLI" -eq 0 ]; then
+        info "--no-cli: not installing the metiche command-line tool"
+        return 0
+    fi
+    _cos=$(cli_os)
+    _carch=$(cli_arch)
+    if [ -z "$_cos" ]; then
+        info "the metiche CLI has no build for $(uname -s 2>/dev/null || printf 'this system'); skipping"
+        return 0
+    fi
+    if [ -z "$_carch" ]; then
+        info "the metiche CLI has no build for $(uname -m 2>/dev/null || printf 'this machine'); skipping"
+        return 0
+    fi
+    _casset="metiche_${_cos}_${_carch}.tar.gz"
+    _cbin="$ENV_DIR/bin/metiche"
+    _cver=${CLI_VERSION#v}
+
+    if [ -z "$_cver" ]; then
+        if [ "$DRY_RUN" -eq 1 ]; then
+            info "would ask $CLI_LATEST_URL for the latest release"
+            info "would download $CLI_RELEASE_BASE/v<latest>/$_casset"
+            info "would verify it against $CLI_RELEASE_BASE/v<latest>/metiche_<latest>_checksums.txt (sha256)"
+            info "would install $_cbin (mode 0755)"
+            cli_link dry
+            return 0
+        fi
+        cli_latest
+        case "$CLI_LATEST_STATUS" in
+            not_published) info "metiche CLI not published yet"; return 0 ;;
+            error)
+                warn "could not resolve the latest metiche CLI (GitHub API: $CLI_LATEST_URL); set METICHE_CLI_VERSION=vX.Y.Z to pin one"
+                return 0 ;;
+        esac
+        _cver="$CLI_LATEST"
+    fi
+    _curl="$CLI_RELEASE_BASE/v$_cver/$_casset"
+    _csums="$CLI_RELEASE_BASE/v$_cver/metiche_${_cver}_checksums.txt"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        info "would download $_curl"
+        info "would verify it against $_csums (sha256)"
+        info "would install $_cbin (mode 0755)"
+        cli_link dry
+        return 0
+    fi
+    if [ -x "$_cbin" ] && [ "$("$_cbin" version --short 2>/dev/null || true)" = "$_cver" ]; then
+        info "metiche CLI $_cver already installed"
+        cli_link
+        return 0
+    fi
+    if ! command -v shasum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then
+        warn "cannot verify a metiche CLI download (no shasum or sha256sum); not installing it"
+        return 0
+    fi
+
+    mcp_tmpdir
+    _cdir="$MCP_TMP/cli"
+    rm -rf "$_cdir"
+    mkdir -p "$_cdir"
+    if ! curl -fsSL --retry 3 --max-time 120 -o "$_cdir/$_casset" "$_curl" 2>/dev/null; then
+        warn "could not download the metiche CLI $_cver from $_curl; skipping it"
+        return 0
+    fi
+    if ! curl -fsSL --retry 3 --max-time "$HTTP_TIMEOUT" -o "$_cdir/checksums.txt" "$_csums" 2>/dev/null; then
+        warn "could not download $_csums, so the CLI cannot be verified; not installing it"
+        return 0
+    fi
+    _cwant=$(grep " $_casset\$" "$_cdir/checksums.txt" 2>/dev/null | cut -d' ' -f1 | sed -n '1p' || true)
+    _cgot=$(sha256_of "$_cdir/$_casset")
+    if [ -z "$_cwant" ] || [ "$_cwant" != "$_cgot" ]; then
+        warn "the metiche CLI archive does not match its published sha256; not installing it. Nothing was written."
+        warn "  archive:   $_curl"
+        warn "  checksums: $_csums"
+        return 0
+    fi
+    info "sha256 verified: $_casset ($_cver)"
+    if ! tar -xzf "$_cdir/$_casset" -C "$_cdir" metiche 2>/dev/null || [ ! -f "$_cdir/metiche" ]; then
+        warn "the archive $_curl holds no metiche binary; not installing it"
+        return 0
+    fi
+    mkdir -p "$ENV_DIR/bin"
+    chmod 700 "$ENV_DIR" 2>/dev/null || true
+    if cp "$_cdir/metiche" "$ENV_DIR/bin/.metiche.new" && chmod 755 "$ENV_DIR/bin/.metiche.new" &&
+        mv -f "$ENV_DIR/bin/.metiche.new" "$_cbin"; then
+        info "installed $_cbin ($_cver)"
+        DID_SOMETHING=1
+    else
+        rm -f "$ENV_DIR/bin/.metiche.new"
+        warn "could not install $_cbin"
+        return 0
+    fi
+    cli_link
+    return 0
+}
+
+# --uninstall: ~/.metiche (the binary with it) goes in uninstall_env_dir. The
+# ~/.local/bin symlink goes here, and only when it points into ~/.metiche/bin.
+uninstall_cli_link() {
+    _ulink="$HOME/.local/bin/metiche"
+    [ -L "$_ulink" ] || return 0
+    case "$(readlink "$_ulink" 2>/dev/null || true)" in
+        "$ENV_DIR/bin/"*)
+            if plan "remove the symlink $_ulink (the metiche CLI)"; then
+                rm -f "$_ulink"
+                DID_SOMETHING=1
+            fi
+            ;;
+        *) info "$_ulink links somewhere other than ~/.metiche/bin; leaving it" ;;
+    esac
+    return 0
+}
+
 uninstall_env_dir() {
     step "~/.metiche"
     if [ -z "$HOME" ] || [ "$ENV_DIR" != "$HOME/.metiche" ]; then
@@ -2707,7 +2937,7 @@ uninstall_env_dir() {
         return 0
     fi
     _edbk="$ENV_DIR.metiche-backup-$TS"
-    info "$ENV_DIR: the anchor token and the plugin clone"
+    info "$ENV_DIR: the anchor token, the plugin clone and the metiche CLI (bin/metiche)"
     plan "remove $ENV_DIR" || { info "would back up $ENV_DIR to $_edbk first"; return 0; }
     cp -R -p "$ENV_DIR" "$_edbk" || die "could not back up $ENV_DIR; nothing was removed"
     chmod go-rwx "$_edbk" 2>/dev/null || true
@@ -2745,6 +2975,8 @@ main_uninstall() {
     fi
     if [ -z "$ONLY" ]; then
         uninstall_profiles
+        step "metiche CLI"
+        uninstall_cli_link
         uninstall_env_dir
     else
         info "(--only: the shell profile line and ~/.metiche are kept)"
@@ -2796,6 +3028,7 @@ main() {
     if want claude; then
         converge_skill_copy
     fi
+    install_cli
     handle_profile
     note_unverified
 
