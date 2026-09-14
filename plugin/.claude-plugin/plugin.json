@@ -1,7 +1,7 @@
 {
   "name": "metiche",
   "displayName": "metiche",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Live coordination between coding agents on one repo: the metiche-teamwork skill, so an agent declares what it is about to do and hears about collisions inside its own tool response.",
   "author": {
     "name": "mklfarha",

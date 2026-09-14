@@ -356,6 +356,10 @@ edits are invisible and their collisions with each other are never detected.
   sends the same `repo_url`, `project_key` and `team_slug` you use. Pass `confirm_new_project` only
   if you already have it: `"metiche_file"` from a `.metiche`, or `"person"` only when your person has
   already said yes.
+- **Link each subagent to you.** Start your own session first, then put your own `session_key` in
+  every brief. Each subagent passes it as `parent_session_key` in its `start_session`, so its lane
+  shows under yours on the board ("subagent of S-41") and in the run history. The parent must be one
+  of your live sessions on the same team; any other key is refused with `not_found`.
 - **Give each subagent its own files** where you can. Two subagents that claim one file collide like
   any two agents.
 - **Stay under 8 live sessions.** One agent may hold at most 8, yours included, and the ninth
@@ -376,8 +380,8 @@ The brief, with every `<placeholder>` filled in and nothing else added:
 ```
 Use metiche for this work.
 1. First call start_session with goal "<this subagent's task>", repo_url "<repo_url>",
-   project_key "<project_key>", team_slug "<team_slug>"<, confirm_new_project "<value>" if given>.
-   Use the session_key it returns on every later call.
+   project_key "<project_key>", team_slug "<team_slug>", parent_session_key "<your own session_key>"
+   <, confirm_new_project "<value>" if given>. Use the session_key it returns on every later call.
 2. Before editing, call declare_intent with a one-sentence summary, the specific files
    (paths: [<files you will edit>]) and mode "write". Before touching another file, add it
    with update_intent(add_paths).
