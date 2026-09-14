@@ -1,0 +1,60 @@
+# GoReleaser for the metiche CLI (docs/CLI.md §6.1). Modeled on nuzur-cli's
+# .goreleaser.yaml: version 2, CGO off, uname-compatible archive names,
+# release.mode replace. What differs from nuzur-cli, and why, is in §6: the
+# version comes from the tag through ldflags, no windows, no brew or scoop
+# (install.sh is the one owner of the binary), no git changelog (this monorepo's
+# commits are mostly not the CLI), and `before` never mutates the tree.
+#
+# Local proof, publishing nothing:  goreleaser release --snapshot --clean
+version: 2
+project_name: metiche
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: metiche
+    main: .
+    binary: metiche
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X github.com/mklfarha/metiche/cli/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/mklfarha/metiche/cli/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/mklfarha/metiche/cli/internal/buildinfo.Date={{ .CommitDate }}
+
+archives:
+  - formats: [tar.gz]
+    # The same scheme as nuzur-cli: `uname -s` and a mapped `uname -m` produce
+    # these names, which is what install.sh builds its download URL from.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    # The binary only. The LICENSE lives at the repository root, which
+    # GoReleaser 2.14 cannot glob from this workdir (../../LICENSE fails), and
+    # install.sh extracts the single member `metiche` anyway.
+    files:
+      - none*
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+# A release that failed partway can be re-run without "asset already_exists".
+release:
+  github:
+    owner: mklfarha
+    name: metiche
+  mode: replace
+  prerelease: auto
+
+changelog:
+  disable: true
