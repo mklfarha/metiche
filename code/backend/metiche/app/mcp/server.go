@@ -204,7 +204,9 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 
 	addTool(server, h, logger, &mcp.Tool{
 		Name: "create_team",
-		Description: "Create a new metiche team and join it in the same call. Use this when nobody has set the team up yet; if you were given a join code, use join_team instead. " +
+		Description: "Create a new metiche team and join it. Call list_teams first: if you are already on a team with this name, use its slug instead. " +
+			"create_team refuses a second team with the same name on your account unless you pass allow_duplicate_name: true, which you should do only when the person explicitly asked for a second team. " +
+			"If you were given a join code, use join_team instead. " +
 			"Returns the team's first join_code — the shared secret your teammates need — and, unless you sent this agent's own token, this agent's bearer token. " +
 			"There is no signup anywhere in metiche: a first call with no token mints you an anonymous identity and hands you this agent's token once, so abuse is bounded by per-address rate limiting and the team's plan rather than by a sign-in. " +
 			"Pass an idempotency_key of at least 8 characters (a uuid is ideal): retrying with the same key, carrying your token, returns the same team and the same join code instead of creating a second one.",

@@ -50,12 +50,15 @@ var ErrNoDefaultPlan = errors.New(
 // ─────────────────────────────────────────────
 
 type CreateTeamParams struct {
-	TeamName       string `json:"team_name" jsonschema:"What to call the team, as a person would say it - 'Hack Night', 'Payments squad'."`
-	MemberName     string `json:"member_name" jsonschema:"Your name, as your teammates would write it. You are joined to the team by this same call."`
-	AgentLabel     string `json:"agent_label" jsonschema:"A short label for THIS agent instance - 'backend', 'ui', 'tests'."`
-	ClientKey      string `json:"client_key" jsonschema:"A stable identifier for this agent process that survives a restart - your session id, or a hash of the working directory plus the label."`
-	ClientKind     string `json:"client_kind,omitempty" jsonschema:"What kind of client you are, e.g. 'claude-code', 'cursor', 'codex'."`
-	IdempotencyKey string `json:"idempotency_key" jsonschema:"A key of your own, at least 8 characters - a uuid is ideal. Required: retrying this call with the same key returns the same team instead of creating a second one."`
+	TeamName string `json:"team_name" jsonschema:"What to call the team, as a person would say it - 'Hack Night', 'Payments squad'."`
+	// AllowDuplicateName is the one way past the duplicate-name guard
+	// (docs/CLI.md §4.8, decision §10 Q8).
+	AllowDuplicateName bool   `json:"allow_duplicate_name,omitempty" jsonschema:"Only when the person explicitly asked for a SECOND team with the same name as one they are already on. Without it create_team refuses with already_exists and names the existing slug."`
+	MemberName         string `json:"member_name" jsonschema:"Your name, as your teammates would write it. You are joined to the team by this same call."`
+	AgentLabel         string `json:"agent_label" jsonschema:"A short label for THIS agent instance - 'backend', 'ui', 'tests'."`
+	ClientKey          string `json:"client_key" jsonschema:"A stable identifier for this agent process that survives a restart - your session id, or a hash of the working directory plus the label."`
+	ClientKind         string `json:"client_kind,omitempty" jsonschema:"What kind of client you are, e.g. 'claude-code', 'cursor', 'codex'."`
+	IdempotencyKey     string `json:"idempotency_key" jsonschema:"A key of your own, at least 8 characters - a uuid is ideal. Required: retrying this call with the same key returns the same team instead of creating a second one."`
 }
 
 type CreateTeamResult struct {
@@ -101,40 +104,70 @@ type CreateTeamResult struct {
 func (h *Handler) CreateTeam(ctx context.Context, _ *mcp.CallToolRequest, args CreateTeamParams) (*mcp.CallToolResult, any, error) {
 	if ok, retryIn := h.createLimit.Allow(ClientIPFromContext(ctx)); !ok {
 		return nil, nil, fmt.Errorf(
-			"too many teams created from this address; try again in %s. "+
+			"rate_limited: too many teams created from this address; try again in %s. "+
 				"If you are joining an existing team, use join_team with its join code instead", retryIn)
 	}
 
 	teamName := truncate(args.TeamName, 120)
 	if teamName == "" {
-		return nil, nil, errors.New("team_name is required")
+		return nil, nil, errors.New("invalid_argument: team_name is required")
 	}
 	if slugKey(teamName, 64) == "" {
-		return nil, nil, errors.New("team_name must contain at least one letter or digit")
+		return nil, nil, errors.New("invalid_argument: team_name must contain at least one letter or digit")
 	}
-	if strings.TrimSpace(args.MemberName) == "" {
-		return nil, nil, errors.New("member_name is required — create_team joins you to the team it creates")
+	memberName := strings.TrimSpace(args.MemberName)
+	if memberName == "" {
+		return nil, nil, errors.New("invalid_argument: member_name is required — create_team joins you to the team it creates")
 	}
 	clientKey := truncate(args.ClientKey, 120)
 	if clientKey == "" {
-		return nil, nil, errors.New("client_key is required — it is what lets a restarted agent re-join as itself rather than as a duplicate")
+		return nil, nil, errors.New("invalid_argument: client_key is required — it is what lets a restarted agent re-join as itself rather than as a duplicate")
 	}
 	idem := strings.TrimSpace(args.IdempotencyKey)
 	if len(idem) < minIdempotencyKeyLength {
 		return nil, nil, fmt.Errorf(
-			"idempotency_key is required and must be at least %d characters (a uuid is ideal) — without it a retry would create a second team",
+			"invalid_argument: idempotency_key is required and must be at least %d characters (a uuid is ideal) — without it a retry would create a second team",
 			minIdempotencyKeyLength)
 	}
 
 	teamID := uuid.NewV5(createTeamNamespace,
-		"create_team:"+teamName+"|"+strings.TrimSpace(args.MemberName)+"|"+clientKey+"|"+idem)
+		"create_team:"+teamName+"|"+memberName+"|"+clientKey+"|"+idem)
 
-	team, created, err := h.ensureTeam(ctx, teamID, teamName)
-	if err != nil {
-		return nil, nil, err
+	// Replay first, with no duplicate check: otherwise a retry of the very call
+	// that created the team would be refused by its own result (§4.8 step 2).
+	team, created := team_entity.Team{}, false
+	if existing, err := h.teamByID(ctx, teamID); err == nil {
+		team = existing
+	} else {
+		// The guard (§4.8 step 3) applies only when the request carries a
+		// token: only then is there an account whose teams can be compared.
+		ident, carried := IdentityFromContext(ctx)
+		if carried && !args.AllowDuplicateName {
+			release, err := h.lockAccountCreates(ctx, ident.Account.ID)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Held until joinAs has written the membership, so a concurrent
+			// create with another key sees this team when it checks.
+			defer release()
+			if existing, err := h.teamByID(ctx, teamID); err == nil {
+				team = existing
+			} else if refusal, err := h.duplicateTeamName(ctx, ident.Account.ID, teamName); err != nil {
+				return nil, nil, err
+			} else if refusal != nil {
+				return nil, nil, refusal
+			}
+		}
+		if team.ID.IsNil() {
+			var err error
+			team, created, err = h.ensureTeam(ctx, teamID, teamName)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 
-	joined, err := h.joinAs(ctx, team, args.MemberName, args.AgentLabel, clientKey, args.ClientKind)
+	joined, err := h.joinAs(ctx, team, memberName, args.AgentLabel, clientKey, args.ClientKind)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -1388,6 +1388,9 @@ func TestIntegrationCreateTeam(t *testing.T) {
 	// the same promise as "one team ever".
 	args2 := args
 	args2.IdempotencyKey = uuid.Must(uuid.NewV4()).String()
+	// Same name on the same account: the duplicate-name guard (§4.8) refuses
+	// it unless asked, so this deliberate second "Hack Night" says so.
+	args2.AllowDuplicateName = true
 	res, _, err = hs.h.CreateTeam(creator, nil, args2)
 	if err != nil {
 		t.Fatal(err)
