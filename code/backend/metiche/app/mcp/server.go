@@ -89,7 +89,10 @@ func Register(r chi.Router, coreImpl *core.Implementation, logger *zap.Logger) *
 		// installed with r.Use: chi panics if middleware is added to a mux
 		// that already has routes, and the generated CRUD routes are mounted
 		// before this runs.
-		authed := handler.authMiddleware(streamable)
+		//
+		// recordRequests sits inside it, so it sees the identity the middleware
+		// resolved from each request's own token: whoami's recent_requests.
+		authed := handler.authMiddleware(handler.recordRequests(streamable))
 
 		// Full paths including /v1 — the generated CRUD already owns that
 		// mount point, and r.Route("/v1", ...) here would panic while the
@@ -323,6 +326,14 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 		// changes nothing.
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), IdempotentHint: true, OpenWorldHint: boolPtr(false)},
 	}, h.RevokeInvite)
+
+	addTool(server, h, logger, &mcp.Tool{
+		Name: "whoami",
+		Description: "Who am I? Returns the agent your token names (label, client_key) and the header names this request carried. " +
+			"Call it instead of guessing an identity, and when a metiche call fails in a way that looks like authentication. " +
+			"Needs no token: without one it says so, and lists the headers that did arrive.",
+		Annotations: readOnly,
+	}, h.Whoami)
 
 	addTool(server, h, logger, &mcp.Tool{
 		Name:        "health",

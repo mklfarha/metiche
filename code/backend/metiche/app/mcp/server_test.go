@@ -93,6 +93,8 @@ func TestToolSurface(t *testing.T) {
 		"get_team_state": {true, false},
 		"list_teams":     {true, false},
 		"health":         {true, false},
+		// whoami (docs/CLI.md §4.1): reads the caller's own identity.
+		"whoami": {true, false},
 
 		// Tools 5-7, registered by RegisterWorkTools. declare_intent is
 		// additive and NOT idempotent: two calls are two real intents, and
