@@ -97,6 +97,7 @@ type command struct {
 
 func commands() []command {
 	return []command{
+		{"status", "who you are, your teams, projects, live sessions and boards", (*app).cmdStatus},
 		{"teams", "list your teams; teams create | show", (*app).cmdTeams},
 		{"version", "print the version", (*app).cmdVersion},
 		{"uninstall", "print how to remove metiche (the installer does it)", (*app).cmdUninstall},
