@@ -102,6 +102,7 @@ func commands() []command {
 		{"open", "open a team's board (signed in, for a private team)", (*app).cmdOpen},
 		{"init", "bind this repository to a team and project with a .metiche file", (*app).cmdInit},
 		{"invite", "invite list | create | revoke", (*app).cmdInvite},
+		{"doctor", "check this machine's metiche setup, and say how it knows", (*app).cmdDoctor},
 		{"version", "print the version", (*app).cmdVersion},
 		{"uninstall", "print how to remove metiche (the installer does it)", (*app).cmdUninstall},
 	}
