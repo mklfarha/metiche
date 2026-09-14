@@ -1,0 +1,94 @@
+#!/bin/sh
+# nuzur-agent-preflight — the init container in front of `nuzur-cli agent start`
+# in agent.mode=run. docs/NUZUR_AGENT.md §6.2.
+#
+# It refuses to let the daemon start unless this pod is EXACTLY the identity
+# that was paired and registered during setup. On the first failure it prints
+# one sentence and exits 1, so the pod shows Init:CrashLoopBackOff and
+#   kubectl -n metiche logs nuzur-agent-0 -c preflight
+# says why. It never pairs, adds, publishes or repairs anything, and it runs
+# with the PVC mounted read-only, which proves it writes nothing.
+#
+# Inputs, from ConfigMap nuzur-agent-ids (never secret):
+#   AGENT_UUID  CONNECTION_UUID  EXPECT_HOSTNAME  EXPECT_USER  MACHINE_ID_SHA256
+# plus the pod env the chart sets: HOME, XDG_CONFIG_HOME, USER, LOGNAME.
+#
+# Output holds uuids and yes/no only. Never a token, a DSN or the machine-id.
+
+set -u
+
+NAME=metiche-prod
+SCHEMA=metiche_nuzur
+MOUNT=/var/lib/nuzur
+WANT_XDG=/var/lib/nuzur/config
+
+fail() {
+    printf 'preflight FAILED: %s\n' "$*"
+    exit 1
+}
+ok() { printf 'preflight: %s\n' "$*"; }
+
+# ── 0. Inputs present ───────────────────────────────────────────────────────
+for _v in AGENT_UUID CONNECTION_UUID EXPECT_HOSTNAME EXPECT_USER MACHINE_ID_SHA256; do
+    eval "_val=\${${_v}:-}"
+    [ -n "${_val}" ] || fail "${_v} is empty or missing from ConfigMap nuzur-agent-ids; setup is incomplete (deploy/scripts/nuzur-agent-setup.md), and this pod never pairs itself."
+done
+
+# ── 1. Fingerprint: the three keyring-passphrase inputs and the config dir ──
+_host=$(hostname)
+[ "${_host}" = "nuzur-agent-0" ] || fail "hostname is '${_host}', not 'nuzur-agent-0'; the StatefulSet name or hostname settings changed, which changes the keyring passphrase (§4.D)."
+[ "${_host}" = "${EXPECT_HOSTNAME}" ] || fail "hostname '${_host}' does not equal the recorded EXPECT_HOSTNAME '${EXPECT_HOSTNAME}'."
+[ "${USER:-}" = "${EXPECT_USER}" ] || fail "USER is '${USER:-}', but the recorded EXPECT_USER is '${EXPECT_USER}'; a different USER derives a different keyring passphrase (§4.D)."
+[ -r /etc/machine-id ] || fail "/etc/machine-id is not readable; it must be mounted from Secret nuzur-agent-machine-id, because an unreadable input is silently skipped and changes the passphrase."
+_mid=$(sha256sum /etc/machine-id | cut -d' ' -f1)
+[ "${_mid}" = "${MACHINE_ID_SHA256}" ] || fail "sha256 of /etc/machine-id does not match the recorded MACHINE_ID_SHA256; restore the original machine-id into Secret nuzur-agent-machine-id from /etc/metiche/nuzur-agent.machine-id on the box (§4.D)."
+[ "${XDG_CONFIG_HOME:-}" = "${WANT_XDG}" ] || fail "XDG_CONFIG_HOME is '${XDG_CONFIG_HOME:-}', not '${WANT_XDG}'; the CLI would read its state from somewhere other than the PVC (duplicate path 9)."
+[ "${HOME:-}" = "${MOUNT}" ] || fail "HOME is '${HOME:-}', not '${MOUNT}'."
+awk -v m="${MOUNT}" '$5 == m { found = 1 } END { exit !found }' /proc/self/mountinfo \
+    || fail "${MOUNT} is not a mount in this container; the PVC is missing, so the config dir would be ephemeral."
+ok "fingerprint matches (hostname ${_host}, USER ${USER}, machine-id sha256, config dir on the PVC)"
+
+CFG="${XDG_CONFIG_HOME}/nuzur/agent"
+
+# ── 2. Forbidden state, before any nuzur-cli invocation ─────────────────────
+_nuzur_env=$(env | sed -n 's/^\(NUZUR_[A-Za-z0-9_]*\)=.*/\1/p' | tr '\n' ' ')
+[ -z "${_nuzur_env}" ] || fail "forbidden environment variable(s) set: ${_nuzur_env}; the chart never sets NUZUR_* (NUZUR_AGENT_DSN/NUZUR_AGENT_DRIVER would serve a plaintext fallback DSN, §4.E)."
+[ ! -e "${CFG}/local_agent_dsn.txt" ] || fail "${CFG}/local_agent_dsn.txt exists: a plaintext fallback DSN was saved on the PVC (§4.E). Remove it in setup mode and find out how it got there."
+[ ! -e "${CFG}/local_agent_driver.txt" ] || fail "${CFG}/local_agent_driver.txt exists: a fallback driver was saved (§4.E)."
+[ ! -e "${XDG_CONFIG_HOME}/nuzur/token.txt" ] || fail "${XDG_CONFIG_HOME}/nuzur/token.txt exists: someone ran 'nuzur-cli login' in this pod, which switches publishing to the user path that can re-pair (duplicate path 5)."
+[ ! -e /tmp/nuzur-cli ] || fail "/tmp/nuzur-cli exists; the CLI fell back to /tmp for its state at some point (duplicate path 9)."
+ok "no NUZUR_* env, no fallback DSN or driver files, no user login token, no /tmp state"
+
+# ── 3. Pairing ──────────────────────────────────────────────────────────────
+[ -s "${CFG}/local_agent_uuid.txt" ] || fail "agent not paired on this PVC; this pod never pairs itself — follow deploy/scripts/nuzur-agent-setup.md step 'pair' (or 'PVC loss')."
+_agent=$(tr -d ' \r\n' < "${CFG}/local_agent_uuid.txt")
+[ "${_agent}" = "${AGENT_UUID}" ] || fail "the agent uuid on the PVC (${_agent}) is not the recorded AGENT_UUID (${AGENT_UUID}); refusing to run a different pairing."
+[ -s "${CFG}/local_agent_token.txt" ] || fail "local_agent_token.txt is missing or empty; the pairing is incomplete (PVC loss procedure)."
+ok "paired as agent ${_agent}"
+
+# ── 4. Registry: exactly one entry, the recorded connection ─────────────────
+[ -f "${CFG}/local_agent_connections.json" ] || fail "no connection registry on the PVC; run the setup 'connection' step."
+_entries=$(grep -c '"uuid"' "${CFG}/local_agent_connections.json" || true)
+[ "${_entries}" = "1" ] || fail "the registry has ${_entries} entries; exactly one (${NAME}) is expected."
+grep -q "\"uuid\": \"${CONNECTION_UUID}\"" "${CFG}/local_agent_connections.json" \
+    || fail "the registry entry is not the recorded CONNECTION_UUID ${CONNECTION_UUID}."
+grep -q "\"name\": \"${NAME}\"" "${CFG}/local_agent_connections.json" \
+    || fail "the registry entry is not named ${NAME}."
+grep -q "\"default_schema\": \"${SCHEMA}\"" "${CFG}/local_agent_connections.json" \
+    || fail "the registry entry's default schema is not ${SCHEMA}."
+[ -f "${CFG}/keyring/dsn-${CONNECTION_UUID}" ] || fail "keyring item dsn-${CONNECTION_UUID} is missing; the DSN must be re-sealed (§4.D 're-seal')."
+ok "registry holds exactly ${NAME} (${CONNECTION_UUID}) and its keyring item"
+
+# ── 5. Decryption, with the real code path ──────────────────────────────────
+# `agent connection list` runs connections.Load, which decrypts the keyring
+# item with the passphrase derived from this pod's hostname, machine-id and
+# USER. It never publishes and touches no network. Its output (a masked DSN)
+# is discarded; only the match is reported.
+_out=$(nuzur-cli agent connection list 2>&1) \
+    || fail "'nuzur-cli agent connection list' failed, so the keyring item does not decrypt with this pod's identity (hostname/machine-id/USER changed?); see §4.D."
+_lines=$(printf '%s\n' "${_out}" | grep -c "${CONNECTION_UUID}" || true)
+[ "${_lines}" = "1" ] || fail "'nuzur-cli agent connection list' ran but does not show ${CONNECTION_UUID} exactly once."
+ok "the DSN decrypts with this pod's identity"
+
+ok "preflight ok: starting nuzur-cli agent start as agent ${AGENT_UUID}, connection ${CONNECTION_UUID}"
+exit 0

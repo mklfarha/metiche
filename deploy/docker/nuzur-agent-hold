@@ -1,0 +1,42 @@
+#!/bin/sh
+# nuzur-agent-hold — the process the nuzur-agent pod runs in agent.mode=setup.
+#
+# It keeps the pod alive for the one-time `kubectl exec` steps (pair, then
+# connection add) and prints one line of LOCAL state a minute. It never pairs,
+# never adds a connection, never starts the daemon and never touches the
+# network. It prints no uuid, token or DSN: only yes/no and counts.
+#
+# docs/NUZUR_AGENT.md §6.2 and deploy/scripts/nuzur-agent-setup.md.
+
+set -u
+
+CFG="${XDG_CONFIG_HOME:-}/nuzur/agent"
+
+# PID 1 in a container gets no default signal dispositions, so without this
+# trap the pod would wait out its whole grace period on every delete.
+trap 'exit 0' TERM INT
+
+state() {
+    _paired=no
+    [ -s "${CFG}/local_agent_uuid.txt" ] && _paired=yes
+    _entries=0
+    if [ -f "${CFG}/local_agent_connections.json" ]; then
+        _entries=$(grep -c '"uuid"' "${CFG}/local_agent_connections.json" 2>/dev/null || true)
+    fi
+    _items=0
+    if [ -d "${CFG}/keyring" ]; then
+        _items=$(ls "${CFG}/keyring" 2>/dev/null | grep -c '^dsn-' || true)
+    fi
+    _mounted=no
+    awk '$5 == "/var/lib/nuzur" { found = 1 } END { exit !found }' /proc/self/mountinfo 2>/dev/null && _mounted=yes
+    printf '%s nuzur-agent setup mode: hostname=%s USER=%s XDG_CONFIG_HOME=%s pvc_mounted=%s paired=%s registry_entries=%s keyring_items=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(hostname)" "${USER:-}" "${XDG_CONFIG_HOME:-}" \
+        "${_mounted}" "${_paired}" "${_entries:-0}" "${_items:-0}"
+}
+
+printf 'nuzur-agent: setup mode. This pod never pairs or registers anything by itself; follow deploy/scripts/nuzur-agent-setup.md.\n'
+while :; do
+    state
+    sleep 60 &
+    wait $!
+done
