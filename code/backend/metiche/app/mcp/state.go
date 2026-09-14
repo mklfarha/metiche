@@ -26,7 +26,7 @@ const (
 
 type GetTeamStateParams struct {
 	TeamSlug string `json:"team_slug,omitempty" jsonschema:"Which team's board to look at, by slug. Omit it if you are only on one team."`
-	Scope    string `json:"scope,omitempty" jsonschema:"What to look at: 'sessions' (who is working, on what branch, with what status line), 'events' (the team's recent activity in order), or 'me' (your own sessions). Defaults to sessions."`
+	Scope    string `json:"scope,omitempty" jsonschema:"What to look at: 'sessions' (who is working, on what branch, with what status line), 'events' (the team's recent activity in order), 'me' (your own sessions), 'projects' (the team's projects: repository, live sessions, last activity) or 'members' (who is on the team and which agents they run here). Defaults to sessions."`
 	Cursor   string `json:"cursor,omitempty" jsonschema:"Pass the next_cursor from the previous page to continue. Omit for the first page."`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Rows per page, 1-50. Defaults to 20."`
 	Since    int64  `json:"since_sequence,omitempty" jsonschema:"For scope=events only: return events after this sequence. Use the sequence from your last response to catch up on exactly what you missed."`
@@ -42,8 +42,12 @@ type GetTeamStateParams struct {
 // the whole map of who holds what.
 type TeamStateResult struct {
 	Envelope
-	Scope      string           `json:"scope"`
+	Scope string `json:"scope"`
+	// Team is on every scope (docs/CLI.md §4.2): stateprojects.go.
+	Team       *StateTeam       `json:"team,omitempty"`
 	Sessions   []StateSession   `json:"sessions,omitempty"`
+	Projects   []StateProject   `json:"projects,omitempty"`
+	Members    []StateMember    `json:"members,omitempty"`
 	Events     []StateEvent     `json:"events,omitempty"`
 	NextCursor string           `json:"next_cursor,omitempty"`
 	Truncated  bool             `json:"truncated,omitempty"`
@@ -118,6 +122,7 @@ func (h *Handler) GetTeamState(ctx context.Context, _ *mcp.CallToolRequest, args
 	out := TeamStateResult{
 		Envelope: Envelope{OK: true, Key: who.Member.Key, Sequence: seq, Revision: rev},
 		Scope:    scope,
+		Team:     teamBlock(who),
 	}
 
 	switch scope {
@@ -138,8 +143,24 @@ func (h *Handler) GetTeamState(ctx context.Context, _ *mcp.CallToolRequest, args
 		out.Events = events
 		out.NextCursor = next
 		out.Truncated = next != ""
+	case "projects":
+		projects, next, err := h.listProjects(ctx, db, who.Team.ID, args.Cursor, limit)
+		if err != nil {
+			return nil, nil, err
+		}
+		out.Projects = projects
+		out.NextCursor = next
+		out.Truncated = next != ""
+	case "members":
+		members, next, err := h.listMembers(ctx, db, who, args.Cursor, limit)
+		if err != nil {
+			return nil, nil, err
+		}
+		out.Members = members
+		out.NextCursor = next
+		out.Truncated = next != ""
 	default:
-		return nil, nil, fmt.Errorf("scope must be one of sessions, events, me (got %q)", args.Scope)
+		return nil, nil, fmt.Errorf("scope must be one of sessions, events, me, projects, members (got %q)", args.Scope)
 	}
 
 	pending, err := h.pendingCounts(ctx, db, nil)
