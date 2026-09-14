@@ -54,9 +54,9 @@ type CreateTeamParams struct {
 	// AllowDuplicateName is the one way past the duplicate-name guard
 	// (docs/CLI.md §4.8, decision §10 Q8).
 	AllowDuplicateName bool   `json:"allow_duplicate_name,omitempty" jsonschema:"Only when the person explicitly asked for a SECOND team with the same name as one they are already on. Without it create_team refuses with already_exists and names the existing slug."`
-	MemberName         string `json:"member_name" jsonschema:"Your name, as your teammates would write it. You are joined to the team by this same call."`
-	AgentLabel         string `json:"agent_label" jsonschema:"A short label for THIS agent instance - 'backend', 'ui', 'tests'."`
-	ClientKey          string `json:"client_key" jsonschema:"A stable identifier for this agent process that survives a restart - your session id, or a hash of the working directory plus the label."`
+	MemberName         string `json:"member_name,omitempty" jsonschema:"Your name, as your teammates would write it. You are joined to the team by this same call. Optional when you send this agent's own token: it defaults to your account's name."`
+	AgentLabel         string `json:"agent_label,omitempty" jsonschema:"A short label for THIS agent instance - 'backend', 'ui', 'tests'. Optional when you send this agent's own token and omit client_key: it defaults to this agent's label."`
+	ClientKey          string `json:"client_key,omitempty" jsonschema:"A stable identifier for this agent process that survives a restart. Omit it when you send this agent's own token: your token already names this agent, and nothing is minted. Required without a token."`
 	ClientKind         string `json:"client_kind,omitempty" jsonschema:"What kind of client you are, e.g. 'claude-code', 'cursor', 'codex'."`
 	IdempotencyKey     string `json:"idempotency_key" jsonschema:"A key of your own, at least 8 characters - a uuid is ideal. Required: retrying this call with the same key returns the same team instead of creating a second one."`
 }
@@ -116,10 +116,35 @@ func (h *Handler) CreateTeam(ctx context.Context, _ *mcp.CallToolRequest, args C
 		return nil, nil, errors.New("invalid_argument: team_name must contain at least one letter or digit")
 	}
 	memberName := strings.TrimSpace(args.MemberName)
+	clientKey := truncate(args.ClientKey, 120)
+	agentLabel, clientKind := args.AgentLabel, args.ClientKind
+	// Identity defaults for an agent token (docs/CLI.md §4.8). The token
+	// already names this agent, so client_key defaults to its own — joinAs then
+	// keeps the token (token_kept) and mints no agent — and member_name to the
+	// account's display name. This is what lets `metiche teams create` send
+	// none of the three.
+	//
+	// DEVIATION from §4.8: a DIFFERENT client_key is not refused. install.sh
+	// creates the team once as its first client while carrying the anchor,
+	// which may be another client's token; joinAs then mints for that client,
+	// as it always has. Refusing would break that path.
+	if id, ok := IdentityFromContext(ctx); ok && id.Agent != nil {
+		if clientKey == "" {
+			clientKey = id.Agent.ClientKey
+			if strings.TrimSpace(agentLabel) == "" {
+				agentLabel = id.Agent.Label
+			}
+			if strings.TrimSpace(clientKind) == "" {
+				clientKind = id.Agent.ClientKind.String
+			}
+		}
+		if memberName == "" {
+			memberName = strings.TrimSpace(id.Account.DisplayName)
+		}
+	}
 	if memberName == "" {
 		return nil, nil, errors.New("invalid_argument: member_name is required — create_team joins you to the team it creates")
 	}
-	clientKey := truncate(args.ClientKey, 120)
 	if clientKey == "" {
 		return nil, nil, errors.New("invalid_argument: client_key is required — it is what lets a restarted agent re-join as itself rather than as a duplicate")
 	}
@@ -167,7 +192,7 @@ func (h *Handler) CreateTeam(ctx context.Context, _ *mcp.CallToolRequest, args C
 		}
 	}
 
-	joined, err := h.joinAs(ctx, team, memberName, args.AgentLabel, clientKey, args.ClientKind)
+	joined, err := h.joinAs(ctx, team, memberName, agentLabel, clientKey, clientKind)
 	if err != nil {
 		return nil, nil, err
 	}
