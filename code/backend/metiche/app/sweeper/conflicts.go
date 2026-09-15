@@ -46,6 +46,7 @@ func (s *Sweeper) settleAfterAbandon(ctx context.Context, teamUUID uuid.UUID, se
 	for _, c := range sessions {
 		project, agent, member := c.projectUUID, c.agentUUID, c.memberUUID
 		s.settleConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, mcp.ReleaseSessionAbandoned, rep)
+		s.settleContractConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, rep)
 	}
 }
 
@@ -110,6 +111,60 @@ func (s *Sweeper) settleConflicts(ctx context.Context, teamUUID, sessionUUID uui
 		switch {
 		case err != nil:
 			rep.addErr("settling conflict "+conflictID.String(), err)
+		case wrote:
+			rep.ConflictsResolved++
+			rep.EventsEmitted++
+		}
+	}
+}
+
+// settleContractConflicts closes the contract conflicts an abandoned session
+// took part in, one conflict_resolved event each. Same shape as
+// settleConflicts: candidates outside the lock, the decision inside it.
+func (s *Sweeper) settleContractConflicts(ctx context.Context, teamUUID, sessionUUID uuid.UUID,
+	projectUUID, agentUUID, memberUUID *uuid.UUID, rep *Report) {
+	ids, err := mcp.OpenContractConflictsOfSession(ctx, s.db, teamUUID, sessionUUID)
+	if err != nil {
+		rep.addErr("finding the contract conflicts an abandoned session may have settled", err)
+		return
+	}
+	for _, id := range ids {
+		conflictID, session := id, sessionUUID
+		var settled mcp.SettledConflict
+		wrote, err := s.appendEvent(ctx, sweepEvent{
+			teamUUID:       teamUUID,
+			idempotencyKey: "sweep:conflict_resolved:" + conflictID.String(),
+			kind:           enums.EVENT_KIND_CONFLICT_RESOLVED,
+			structural:     true,
+			projectUUID:    projectUUID,
+			sessionUUID:    &session,
+			agentUUID:      agentUUID,
+			memberUUID:     memberUUID,
+			subjectKind:    enums.SUBJECT_KIND_CONFLICT,
+			subjectUUID:    &conflictID,
+			extra: func(ctx context.Context, tx *sql.Tx, _ int64, now time.Time) error {
+				out, ok, err := mcp.SettleContractConflict(ctx, tx, conflictID, mcp.ContractRelease{
+					TeamUUID:    teamUUID,
+					SessionUUID: session,
+					Kind:        mcp.ContractReleaseSessionAbandoned,
+					At:          now,
+				})
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return errNothingToSay
+				}
+				settled = out
+				return nil
+			},
+			finish: func() (string, string, []byte) {
+				return mcp.ConflictResolvedSummary(settled), settled.Key, mcp.ConflictResolvedPayload(settled).ToJSON()
+			},
+		})
+		switch {
+		case err != nil:
+			rep.addErr("settling contract conflict "+conflictID.String(), err)
 		case wrote:
 			rep.ConflictsResolved++
 			rep.EventsEmitted++

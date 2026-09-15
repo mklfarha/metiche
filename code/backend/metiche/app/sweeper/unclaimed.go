@@ -240,12 +240,13 @@ func (s *Sweeper) raiseUnclaimed(ctx context.Context, t teamRow, c unclaimedCons
 	notify := int64(severity) >= int64(t.notifyFloor) && !t.ruleDemoted(DetectorRuleUnclaimed)
 
 	suggested := fmt.Sprintf(
-		"Nobody has published a producer for %s. Ask who owns it, or claim it yourself before building against a shape that may not land.",
+		"Nobody produces %s yet. Ask your teammates who builds it; if it is yours, build it and publish_contract it as produces. Don't build further on a shape that may not land.",
 		c.contractKey)
 
 	evidence := conflict_evidence_entity.ConflictEvidence{
-		ASummary: null.StringFrom(fmt.Sprintf("session %s consumes %s", c.sessionKey, c.contractKey)),
-		BSummary: null.StringFrom("no active producer"),
+		OverlapPath: null.StringFrom(c.contractKey),
+		ASummary:    null.StringFrom(fmt.Sprintf("session %s consumes %s", c.sessionKey, c.contractKey)),
+		BSummary:    null.StringFrom("no active producer"),
 		Detail: null.StringFrom(fmt.Sprintf("waiting %s, past the %s threshold for a %s project",
 			c.waited.Round(time.Second), s.opts.unclaimedThreshold(c.cadence), c.cadence.String())),
 	}
@@ -267,6 +268,7 @@ func (s *Sweeper) raiseUnclaimed(ctx context.Context, t teamRow, c unclaimedCons
 		Severity:     severity,
 		ConflictUUID: &conflictUUID,
 		ContractUUID: &c.contractUUID,
+		Paths:        []string{c.contractKey},
 		Message:      null.StringFrom("no producer for " + c.contractKey),
 		Detail:       null.StringFrom(suggested),
 	}
@@ -325,8 +327,10 @@ func (s *Sweeper) raiseUnclaimed(ctx context.Context, t teamRow, c unclaimedCons
 			// The instruction IS the push. MCP cannot push, so the count of
 			// these rides on every tool response and the consumer learns on
 			// its next call — including a bare heartbeat.
-			body := fmt.Sprintf("No active producer for %s (waiting %s). %s",
-				c.contractKey, c.waited.Round(time.Second), suggested)
+			// "<key> (<severity>) on <contract>, waiting <d>: <action>" is the
+			// shape get_instructions splits into what happened and what to do.
+			body := fmt.Sprintf("%s (%s) on %s, waiting %s: %s",
+				conflictKey, severity.String(), c.contractKey, c.waited.Round(time.Second), suggested)
 			if _, err := tx.ExecContext(ctx,
 				"INSERT INTO `instruction` (`id`,`team_uuid`,`target_session_uuid`,`target_agent_uuid`,`key`,`source`,`kind`,`body`,"+
 					"`ref_kind`,`ref_uuid`,`requires_report`,`status`,`created_at`,`updated_at`) "+

@@ -9,6 +9,7 @@ import (
 	"github.com/gofrs/uuid"
 
 	"github.com/guregu/null/v6"
+	"github.com/mklfarha/metiche/backend/app/mcp"
 	payload_entity "github.com/mklfarha/metiche/backend/entity/event_payload"
 	"github.com/mklfarha/metiche/backend/enums"
 )
@@ -257,6 +258,13 @@ func (s *Sweeper) sweepSessions(ctx context.Context, t teamRow, now time.Time, r
 
 		if err := s.dropClaimsOfSessions(ctx, ids, now, rep); err != nil {
 			rep.addErr("dropping the claims of abandoned sessions", err)
+		}
+		// Their contract assertions stop counting too. Detection already skips an
+		// abandoned session's assertions; this makes the rows and the board agree.
+		for _, c := range toAbandon {
+			if _, err := mcp.WithdrawSessionAssertions(ctx, s.db, c.projectUUID, c.uuid, now); err != nil {
+				rep.addErr("withdrawing the contract assertions of an abandoned session", err)
+			}
 		}
 
 		for _, c := range toAbandon {
