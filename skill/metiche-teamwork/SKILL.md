@@ -52,6 +52,7 @@ list, in the order you meet them.
 | `start_session` | once per piece of work | `repo_url`, `project_key`, `branch` straight from git (see below), `base_commit`, `goal`. Returns your `session_key`. |
 | **`declare_intent`** | **before each chunk** | summary + paths + mode. Creates the intent *and* its claims in one transaction. |
 | `check_paths` | before exploring | read-only, no commitment: "who else is in here?" |
+| **`publish_contract`** | **before building or calling an interface** | `produces` or `consumes` an endpoint, event, type, table or env var, with its `request` / `response` fields. See "Publish the contracts between parts". |
 | **`heartbeat`** | **~every 60s** | alive + extend claims + status line + pending counts. Cheapest call in the system. |
 | **`update_intent`** | **as things change** | status line, `add_paths` / `drop_paths`, mark done |
 | `get_instructions` | when `pending.instructions > 0` | **not read-only** — reading is the delivery receipt |
@@ -70,8 +71,8 @@ extends and completes them. One concept, not two.
 
 ### Coming next, not available yet
 
-`publish_contract`, `record_decision`, `get_review_context`, `report_judgement` and
-`resolve_conflict` are planned but **not on the server**. Never call them. If a note, a suggested
+`record_decision`, `get_review_context`, `report_judgement` and `resolve_conflict` are planned but
+**not on the server**. Never call them. If a note, a suggested
 action or an instruction names one, skip that step and do what works today: read the conflict,
 change course or coordinate, narrow or drop paths with `update_intent`, and answer instructions
 with `report_back` (a request to judge a pair gets `blocked`, noting that judging is not built).
@@ -101,6 +102,8 @@ note says it created a project while the team already has others, and one of tho
 repository, `end_session` and start again with the right `repo_url`.
 
 **Which team, which project.** Before `start_session`, look for a `.metiche` file, walking up from your working directory to the git root. If you find one, pass its `team` as `team_slug` and its `project` as `project_key` (take `project` only from a file at or below the git root), always send `repo_url`, and add `confirm_new_project: "metiche_file"`. If `start_session` answers `code: "confirm_repo_binding"`, nothing went wrong and nothing was created: this repository isn't a project on that team yet, and putting its work on a board every member can see is your person's decision. Ask them, verbatim: "Should work in <repo> go on team <name>'s board, where its members can see it?" On yes, call `start_session` again with the same arguments plus `confirm_new_project: "person"`, then write `.metiche` at the git root with `team = <slug>` and `project = <key>` so nobody is asked again. On no, don't use metiche in this repository, or `create_team` for this work and start the session with that `team_slug`. Never pass `"person"` unless your person actually said yes.
+
+**Session keys like S-5 are per team.** If you are on more than one team, pass the team_slug start_session returned on every call; when you brief a subagent, give it both its session_key and team_slug.
 
 **Every path is relative to the git root, never to your working directory.** Started in `~/src`
 with the repository at `~/src/shop`? The file is `app/rest.go`, not `shop/app/rest.go`. Started in
@@ -199,6 +202,56 @@ Paths are normalized on insert: no absolute paths, no `..`, a trailing `/` becom
 name with no wildcard and no dot (`app/mcp`) is read as a folder (`app/mcp/**`).
 Generated code is dropped from claims entirely by the project's ignore patterns, so do not bother
 claiming it and do not be surprised when it does not appear.
+
+---
+
+## Publish the contracts between parts
+
+When you are about to build or call an interface between parts of the system — an HTTP endpoint,
+an event, a shared type, a table, an env var, a component prop, a CLI flag, a config key — call
+`publish_contract` **before you write the code**, the way you declare an intent before you edit.
+
+- `role: "produces"` if you are building it (the handler, the publisher, the table owner);
+  `role: "consumes"` if you are writing code that calls or reads it.
+- `key` the way a teammate would say it: `POST /api/login`, `GET /api/users/{id}`, `user.created`.
+  Letter case, a trailing slash and path-parameter spellings do not matter.
+- `request`: the fields the producer reads. `response`: the fields it returns. Field name to type
+  (`string`, `int`, `float`, `bool`, `timestamp`, `uuid`, `json`, `object`, `string[]`, nested
+  objects), with `!` for required and `?` for nullable. A producer lists everything it returns; a
+  consumer lists only what it reads, and marks with `!` what it cannot work without.
+
+```
+publish_contract(session_key: "S-22", key: "POST /api/login", role: "consumes",
+  request:  {"email!": "string", "password!": "string"},
+  response: {"token!": "string", "expires_at!": "timestamp"})
+```
+
+metiche hashes the shape itself and compares it with the other side in the same call. Publish again
+whenever your shape changes; the same shape again changes nothing. There is no retract: your
+contracts stop counting when your session ends.
+
+**What comes back, and how to settle it.**
+
+- **`contract_mismatch`** in `conflicts[]`, or as a `conflict_notice` through `get_instructions`,
+  means the two sides disagree. `at_fault` says who has to change and `fields` says what:
+  - `producer`: the consumer requires a response field the producer does not return. If you
+    produce it, add the field and `publish_contract` again. If you consume it, don't build on that
+    field yet (the producer was told), or drop the requirement and publish again.
+  - `consumer`: the producer requires a request field the consumer does not send. If you consume
+    it, send it and publish again. If you produce it and it is really optional, make it optional
+    and publish again.
+  - `both`: a type disagreement. Agree between you which side changes; that side publishes again.
+- **Nobody is building this** (`contract_unclaimed`) arrives as an instruction when you consume
+  something nobody produces for longer than the project allows (five minutes on a hackathon
+  project). Ask your teammates or your human who builds it. If it is yours, build it and publish it
+  as `produces`. If you used the wrong key, publish the right one.
+- **`contract_naming_variant`** is low: the same field under another spelling, or your key one or
+  two characters from a produced one (`/api/session` and `/api/sessions`). It interrupts nobody;
+  settle on one spelling when you see it on the board.
+
+You never close these yourself. A contract conflict closes by itself as `converged` once the shapes
+agree or a producer appears, and as `superseded` once a session in it ends. Answer a notice with
+`report_back` saying what you changed.
 
 ---
 
@@ -357,7 +410,7 @@ edits are invisible and their collisions with each other are never detected.
   if you already have it: `"metiche_file"` from a `.metiche`, or `"person"` only when your person has
   already said yes.
 - **Link each subagent to you.** Start your own session first, then put your own `session_key` in
-  every brief. Each subagent passes it as `parent_session_key` in its `start_session`, so its lane
+  every brief, with your `team_slug`. Each subagent passes it as `parent_session_key` in its `start_session`, so its lane
   shows under yours on the board ("subagent of S-41") and in the run history. The parent must be one
   of your live sessions on the same team; any other key is refused with `not_found`.
 - **Give each subagent its own files** where you can. Two subagents that claim one file collide like
@@ -381,7 +434,8 @@ The brief, with every `<placeholder>` filled in and nothing else added:
 Use metiche for this work.
 1. First call start_session with goal "<this subagent's task>", repo_url "<repo_url>",
    project_key "<project_key>", team_slug "<team_slug>", parent_session_key "<your own session_key>"
-   <, confirm_new_project "<value>" if given>. Use the session_key it returns on every later call.
+   <, confirm_new_project "<value>" if given>. Pass the session_key and team_slug it returns on
+   every later call.
 2. Before editing, call declare_intent with a one-sentence summary, the specific files
    (paths: [<files you will edit>]) and mode "write". Before touching another file, add it
    with update_intent(add_paths).
@@ -492,6 +546,7 @@ happen live.
 - `declare_intent` **before** you touch anything, with the specific files and a real sentence.
 - `heartbeat` every ~60s and around every batch of edits, with a status line that says *why*.
 - Drop paths as soon as you are done with them.
+- `publish_contract` before you build or call an interface between parts, and again when your shape changes.
 - Read `pending` on every response. Act when non-zero, do nothing when zero.
 - Answer every instruction with `report_back`, including a refusal.
 - Settle a collision with the other agent yourselves — split the file or sequence the work — and
