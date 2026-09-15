@@ -34,6 +34,8 @@ type stubLogin struct {
 	inv stubInvites
 	// runs is the run history routes (runs_stub_test.go).
 	runs stubRuns
+	// hist is the rest of the board history (history_stub_test.go).
+	hist stubBoardHistory
 }
 
 type stubSession struct {

@@ -274,7 +274,7 @@ func TestBoardHTMLHasNoControls(t *testing.T) {
 
 	forbidden := []string{"hx-post", "<form", "<select", "/resolve", "/nudge", "/cadence", ">nudge<", "Mark resolved", "Acknowledge<", "Dismiss as false positive"}
 	for _, board := range []string{slug, "demo"} {
-		for _, page := range []string{"", "/graph", "/conflicts", "/contracts", "/decisions", "/runs", "/runs/S-17"} {
+		for _, page := range []string{"", "/graph", "/conflicts", "/contracts", "/decisions", "/runs", "/runs/S-17", "/activity"} {
 			path := "/t/" + board + page
 			if board == "demo" && page == "/runs/S-17" {
 				continue // no such session in the demo

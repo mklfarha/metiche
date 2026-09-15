@@ -400,6 +400,12 @@ func graphNodeClass(n state.GraphNode) string {
 	switch {
 	case n.Alert:
 		classes = append(classes, "gn-alert")
+	case n.Degree > 1 && n.Handoff:
+		// Two sessions in one area, never at the same moment: no crossing.
+		classes = append(classes, "gn-handoff")
+		if n.Severity != "" {
+			classes = append(classes, "gn-sev-"+n.Severity)
+		}
 	case n.Degree > 1:
 		classes = append(classes, "gn-cross")
 		if n.Severity != "" {

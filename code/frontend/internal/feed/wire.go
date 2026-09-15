@@ -135,6 +135,10 @@ type conflictJSON struct {
 	DismissReason  string  `json:"dismiss_reason"`
 	ResolvedAt     *string `json:"resolved_at"`
 
+	// Paths are the overlapping path and the two claimed patterns, from the
+	// detector's evidence. Absent from a backend that predates them.
+	Paths []string `json:"paths"`
+
 	Participants []participantJSON `json:"participants"`
 }
 
@@ -259,6 +263,7 @@ func (c conflictJSON) conflict(memberBySession map[string]string) *model.Conflic
 		Resolution:      firstNonEmpty(c.Resolution, c.DismissReason),
 		ResolutionNote:  c.ResolutionNote,
 		Occurrences:     int(c.OccurrenceCount),
+		Paths:           c.Paths,
 	}
 	if out.RaisedAt.IsZero() {
 		out.RaisedAt = parseTime(c.LastDetectedAt)
@@ -271,7 +276,9 @@ func (c conflictJSON) conflict(memberBySession map[string]string) *model.Conflic
 			// subject_kind is what this participant is in the conflict by —
 			// their claim, their contract assertion, their intent. It is the
 			// only per-participant detail the API returns.
-			Detail: p.SubjectKind,
+			Detail:     p.SubjectKind,
+			MemberName: p.MemberName,
+			AgentLabel: p.AgentLabel,
 		})
 	}
 	return out

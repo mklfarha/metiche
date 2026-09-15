@@ -263,6 +263,10 @@ type Participant struct {
 	MemberKey  string `json:"member_key"`
 	Role       string `json:"role"` // holder|challenger|producer|consumer
 	Detail     string `json:"detail"`
+	// MemberName and AgentLabel name the session's person and agent as the
+	// backend reported them, for a session this board does not hold.
+	MemberName string `json:"member_name,omitempty"`
+	AgentLabel string `json:"agent_label,omitempty"`
 }
 
 // Conflict is a detected collision. It always carries a suggested action —

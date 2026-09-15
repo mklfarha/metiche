@@ -603,7 +603,7 @@ func (s *Store) mutate(ev model.Event) {
 func toParticipants(in []participant) []model.Participant {
 	out := make([]model.Participant, 0, len(in))
 	for _, p := range in {
-		out = append(out, model.Participant(p))
+		out = append(out, model.Participant{SessionKey: p.SessionKey, MemberKey: p.MemberKey, Role: p.Role, Detail: p.Detail})
 	}
 	return out
 }

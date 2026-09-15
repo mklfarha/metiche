@@ -18,6 +18,9 @@ templ Rail(s state.Snapshot) {
 			</span>
 		</div>
 		<ul id="timeline" sse-swap="timeline" hx-swap="beforeend">
+			if HasHistory(ctx) && RailBefore(s) > 1 {
+				@railMore(s.Team.Slug, RailBefore(s))
+			}
 			for _, ev := range s.RecentEvents(120) {
 				@TimelineItem(s, ev)
 			}

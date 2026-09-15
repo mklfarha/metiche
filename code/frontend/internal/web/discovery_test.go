@@ -125,6 +125,10 @@ func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b.serveRuns(w, r, slug, sub)
 		return
 	}
+	if sub == "conflicts/history" || sub == "events" || sub == "graph" {
+		b.serveBoardHistory(w, r, slug, sub)
+		return
+	}
 	switch sub {
 	case "":
 		if gate != nil {

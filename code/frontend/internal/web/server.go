@@ -245,6 +245,10 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/decisions", s.decisions)
 		r.Get("/runs", s.runs)
 		r.Get("/runs/{session}", s.run)
+		// The rest of the history (history.go): the event log, and the
+		// rail's older rows. Conflicts and the graph read theirs above.
+		r.Get("/activity", s.activity)
+		r.Get("/timeline", s.timeline)
 		// Invites (invites.go): the board's only writes, for a signed-in
 		// member with the CSRF token. Everybody else gets the NotFound page.
 		r.Get("/invites", s.invites)
@@ -346,21 +350,8 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 	s.page(w, r, t, snap, view.TabBoard, view.BoardPage(snap))
 }
 
-func (s *Server) graph(w http.ResponseWriter, r *http.Request) {
-	t, snap, r, ok := s.team(w, r)
-	if !ok {
-		return
-	}
-	s.page(w, r, t, snap, view.TabGraph, view.GraphPage(snap))
-}
-
-func (s *Server) conflicts(w http.ResponseWriter, r *http.Request) {
-	t, snap, r, ok := s.team(w, r)
-	if !ok {
-		return
-	}
-	s.page(w, r, t, snap, view.TabConflicts, view.ConflictsPage(snap))
-}
+// graph and conflicts, which read a history next to the live state, are in
+// history.go.
 
 func (s *Server) contracts(w http.ResponseWriter, r *http.Request) {
 	t, snap, r, ok := s.team(w, r)
@@ -614,6 +605,10 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request, t *Team, snap stat
 	streamURL := fmt.Sprintf("/t/%s/stream?after=%d", t.Slug, snap.Team.Sequence)
 	if t.Demo {
 		r = r.WithContext(view.WithDemo(r.Context()))
+	}
+	if boardHistoryOf(t) != nil {
+		// The rail offers older events only on a board that can read them.
+		r = r.WithContext(view.WithHistory(r.Context()))
 	}
 	s.render(w, r, view.Layout(snap, tab, streamURL, body))
 }

@@ -129,6 +129,7 @@ templ topbar(s state.Snapshot, tab Tab) {
 			@tab_(tab, TabContracts, "Contracts", fmt.Sprintf("/t/%s/contracts", s.Team.Slug), "nav-n-contracts", len(s.Contracts), false, false)
 			@tab_(tab, TabDecisions, "Decisions", fmt.Sprintf("/t/%s/decisions", s.Team.Slug), "nav-n-decisions", len(s.Decisions), false, false)
 			@tab_(tab, TabRuns, "Runs", fmt.Sprintf("/t/%s/runs", s.Team.Slug), "nav-n-runs", len(s.Sessions), false, false)
+			@tab_(tab, TabActivity, "Activity", fmt.Sprintf("/t/%s/activity", s.Team.Slug), "nav-n-activity", 0, false, false)
 			if ViewerFrom(ctx).Member {
 				@tab_(tab, TabInvites, "Invites", fmt.Sprintf("/t/%s/invites", s.Team.Slug), "nav-n-invites", 0, false, false)
 			}

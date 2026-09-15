@@ -1,0 +1,404 @@
+package view
+
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/model"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+)
+
+// ConflictsHistoryPage is the Conflicts page of a board read from the
+// backend: the open conflicts this board holds, exactly as ConflictsPage draws
+// them, then every conflict that is over, newest first, a page at a time. A
+// demo board keeps ConflictsPage.
+templ ConflictsHistoryPage(s state.Snapshot, p ConflictHistoryParams) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>Conflicts</h2>
+				<div class="sub">
+					Advisory, always. Nothing here blocked anybody — it is a record of collisions
+					detected at the moment they were declared.
+				</div>
+				if len(s.OpenConflicts()) == 0 {
+					<div class="empty">
+						<div class="glyph">✓</div>
+						<div class="title">Nothing open</div>
+						<div class="hint">No collisions detected across the live sessions.</div>
+					</div>
+				}
+				for _, c := range s.OpenConflicts() {
+					@conflictCard(s, c, true)
+				}
+				<h2 class="hist-h" id="history">History</h2>
+				<div class="sub">Every conflict that is over — resolved, dismissed or expired — newest first, with how it ended.</div>
+				@conflictHistoryFilters(p)
+				if p.Older {
+					<div class="runs-note"><a href={ templ.SafeURL(ConflictHistoryURL(p.Slug, p.Status, p.Kind, "")) }>← Back to the newest conflicts</a></div>
+				}
+				if p.Unavailable {
+					<div class="runs-note">The conflict history could not be loaded right now. Reload the page to try again. These are the settled conflicts this board holds.</div>
+					for _, c := range s.ClosedConflicts() {
+						@conflictCard(s, c, false)
+					}
+				} else if len(p.Rows) == 0 && p.OlderURL == "" {
+					if p.Filtered() {
+						<div class="runs-note">No past conflict matches these filters.</div>
+					} else {
+						<div class="runs-note">No conflict has ended yet.</div>
+					}
+				}
+				<div class="histlist" id="conflict-history">
+					@ConflictHistoryRows(p)
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+// conflictHistoryFilters are links, not a form: the board carries no
+// controls, and a filter is just another URL of the same read.
+templ conflictHistoryFilters(p ConflictHistoryParams) {
+	<div class="hist-filter">
+		<nav class="hist-chips" aria-label="Filter by status">
+			<span class="k">Status</span>
+			@filterChip(ConflictHistoryURL(p.Slug, "", p.Kind, ""), "every past status", p.Status == "")
+			for _, st := range p.Statuses {
+				@filterChip(ConflictHistoryURL(p.Slug, st, p.Kind, ""), st, p.Status == st)
+			}
+		</nav>
+		<nav class="hist-chips" aria-label="Filter by kind">
+			<span class="k">Kind</span>
+			@filterChip(ConflictHistoryURL(p.Slug, p.Status, "", ""), "every kind", p.Kind == "")
+			for _, k := range p.Kinds {
+				@filterChip(ConflictHistoryURL(p.Slug, p.Status, k, ""), conflictLabel(k), p.Kind == k)
+			}
+		</nav>
+	</div>
+}
+
+templ filterChip(href string, label string, on bool) {
+	if on {
+		<a class="fchip on" aria-current="true" href={ templ.SafeURL(href) }>{ label }</a>
+	} else {
+		<a class="fchip" href={ templ.SafeURL(href) }>{ label }</a>
+	}
+}
+
+// ConflictHistoryRows is one page of past conflicts and the control for the
+// next. It is also the whole answer to that control's htmx request, which
+// replaces the control with it, so each page lands below the last. Without
+// JavaScript the control is a link to a page that starts there.
+templ ConflictHistoryRows(p ConflictHistoryParams) {
+	for _, c := range p.Rows {
+		@conflictHistoryRow(p.Slug, c)
+	}
+	if p.OlderURL != "" {
+		<div class="runs-more" id="conflicts-more">
+			<a
+				class="btn"
+				href={ templ.SafeURL(p.OlderURL) }
+				hx-get={ p.OlderURL }
+				hx-target="#conflicts-more"
+				hx-swap="outerHTML"
+			>Load older conflicts</a>
+		</div>
+	}
+}
+
+// conflictHistoryRow is one conflict told from the backend: what collided,
+// where, between which runs, and how it ended.
+templ conflictHistoryRow(slug string, c *model.Conflict) {
+	<article class="card settled hist-conflict" id={ "past-" + c.Key } data-status={ c.Status }>
+		<div class="card-head">
+			<span class="key">{ c.Key }</span>
+			<span class="badge kind">{ conflictLabel(c.Kind) }</span>
+			<span class={ "badge", conflictBadge(c) }>
+				<span class="glyph">{ severityGlyph(c.Severity) }</span>
+				{ c.Severity }
+			</span>
+			<div class="right">
+				<span class={ "badge", pastStatusBadge(c.Status) }>{ c.Status }</span>
+				if c.Resolution != "" {
+					<span class="badge plain" title="how it ended">{ c.Resolution }</span>
+				}
+			</div>
+		</div>
+		if c.ResolutionNote != "" {
+			<div class="suggest settled-note">
+				<span class="tag">how it ended</span>
+				<span class="text">{ c.ResolutionNote }</span>
+			</div>
+		}
+		if len(c.Paths) > 0 {
+			<div class="paths">
+				for _, path := range c.Paths {
+					<div class="path" title={ path }><span>{ path }</span></div>
+				}
+			</div>
+		}
+		if len(c.Participants) > 0 {
+			<div class="parties">
+				for _, pt := range c.Participants {
+					<span class={ "party", partyClass(pt.Role) }>
+						if pt.Role != "" {
+							<span class="role">{ pt.Role }</span>
+						}
+						if pt.SessionKey != "" {
+							<a class="mono" href={ runURL(slug, pt.SessionKey) }>{ pt.SessionKey }</a>
+						}
+						if who := participantWho(pt); who != "" {
+							<span>{ who }</span>
+						}
+					</span>
+				}
+			</div>
+		}
+		<div class="kv">
+			<span>first detected <b>{ runStamp(c.RaisedAt) }</b></span>
+			if !c.ResolvedAt.IsZero() {
+				<span>· ended <b>{ runStamp(c.ResolvedAt) }</b></span>
+			}
+			if c.Occurrences > 1 {
+				<span>· detected { fmt.Sprint(c.Occurrences) } times</span>
+			}
+		</div>
+	</article>
+}
+
+// ActivityPage is the team's event log, newest first, filtered by kind and
+// session. On a demo board it is the recording's log so far, and nothing more.
+templ ActivityPage(s state.Snapshot, p ActivityParams) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<h2>Activity</h2>
+				if p.Demo {
+					<div class="sub">The events this recording has replayed so far, newest first.</div>
+				} else {
+					<div class="sub">Every event this team has logged, newest first. Filter by kind or by session.</div>
+				}
+				@activityFilters(p)
+				if p.Older {
+					<div class="runs-note"><a href={ templ.SafeURL(ActivityURL(p.Slug, 0, p.Kind, p.Session)) }>← Back to the newest events</a></div>
+				}
+				if p.Unavailable {
+					<div class="runs-note">Older events could not be loaded right now; these are the ones this board holds. Reload the page to try again.</div>
+				}
+				if len(p.Rows) == 0 && p.OlderURL == "" {
+					if p.Filtered() {
+						<div class="runs-note">No events match these filters.</div>
+					} else {
+						<div class="runs-note">Nothing has been logged yet.</div>
+					}
+				}
+				<div class="card hist-log">
+					<ul class="log activity" id="activity-log">
+						@ActivityRows(p)
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+// activityFilters are links too. Kinds sit behind a disclosure, there being
+// twenty-odd of them; a session is chosen from any row's "only this run".
+templ activityFilters(p ActivityParams) {
+	<div class="hist-filter">
+		<details class="hist-kinds" open?={ p.Kind != "" }>
+			<summary><span class="k">Kind</span> { kindOrEvery(p.Kind) }</summary>
+			<nav class="hist-chips" aria-label="Filter by kind">
+				@filterChip(ActivityURL(p.Slug, 0, "", p.Session), "every kind", p.Kind == "")
+				for _, k := range p.Kinds {
+					@filterChip(ActivityURL(p.Slug, 0, k, p.Session), k, p.Kind == k)
+				}
+			</nav>
+		</details>
+		<div class="hist-chips">
+			<span class="k">Session</span>
+			if p.Session != "" {
+				<a class="fchip on" aria-current="true" title="show every session" href={ templ.SafeURL(ActivityURL(p.Slug, 0, p.Kind, "")) }>{ p.Session } ✕</a>
+			} else {
+				<span class="hint">every session · choose “only this run” on a row to see one</span>
+			}
+		</div>
+	</div>
+}
+
+// ActivityRows is one page of events and the control for the next; like
+// ConflictHistoryRows it is also that control's whole htmx answer.
+templ ActivityRows(p ActivityParams) {
+	for _, ev := range p.Rows {
+		@historyEventRow(p.Slug, ev, true, activityOnlyURL(p, ev))
+	}
+	if p.OlderURL != "" {
+		<li class="runs-more" id="activity-more">
+			<a
+				class="btn"
+				href={ templ.SafeURL(p.OlderURL) }
+				hx-get={ p.OlderURL }
+				hx-target="#activity-more"
+				hx-swap="outerHTML"
+			>Load older events</a>
+		</li>
+	}
+}
+
+templ historyEventRow(slug string, ev model.HistoryEvent, stamp bool, onlyURL string) {
+	<li class={ eventClass(ev.Event()) } data-seq={ fmt.Sprint(ev.Sequence) }>
+		<span class="seq">{ fmt.Sprint(ev.Sequence) }</span>
+		<span class="body">
+			<span class="line">{ ev.Summary }</span>
+			<br/>
+			<span class="kind">{ ev.Kind }</span>
+			if who := ev.Who(); who != "" {
+				<span class="who"> · { who }</span>
+			}
+			if ev.SessionKey != "" {
+				<span class="who"> · <a class="mono" href={ runURL(slug, ev.SessionKey) }>{ ev.SessionKey }</a></span>
+			}
+			if stamp && !ev.OccurredAt.IsZero() {
+				<span class="who"> · { runStamp(ev.OccurredAt) }</span>
+			}
+			if onlyURL != "" {
+				<span class="who"> · <a class="fonly" href={ templ.SafeURL(onlyURL) }>only this run</a></span>
+			}
+		</span>
+	</li>
+}
+
+// RailOlderRows answers the rail's "Load older events": the control for the
+// page before this one, then this page oldest first, so the rows land above
+// the ones already drawn.
+templ RailOlderRows(p RailOlderParams) {
+	if p.Next > 0 {
+		@railMore(p.Slug, p.Next)
+	}
+	for _, ev := range p.Rows {
+		@historyEventRow(p.Slug, ev, false, "")
+	}
+}
+
+templ railMore(slug string, before int64) {
+	<li class="rail-more" id="rail-more">
+		<a
+			href={ templ.SafeURL(ActivityURL(slug, before, "", "")) }
+			hx-get={ railFragmentURL(slug) }
+			hx-vals={ railVals(before) }
+			hx-target="#rail-more"
+			hx-swap="outerHTML"
+		>Load older events</a>
+	</li>
+}
+
+// graphWindowSelect is the graph's time range: live, or a past window. Plain
+// links, so it works without JavaScript and every range has its own URL.
+templ graphWindowSelect(slug string, active string) {
+	<nav class="win-select" aria-label="Time range">
+		for _, c := range graphWindowChoices {
+			if c.Window == active {
+				<a class="on" aria-current="page" href={ graphWindowURL(slug, c.Window) }>{ c.Label }</a>
+			} else {
+				<a href={ graphWindowURL(slug, c.Window) }>{ c.Label }</a>
+			}
+		}
+	</nav>
+}
+
+// GraphWindowPage is the entanglement graph over a past window, drawn from
+// when each hold began and ended. It is not live: the page carries no graph
+// container for the stream to repaint.
+templ GraphWindowPage(s state.Snapshot, p GraphParams) {
+	<div class="main full view-graph">
+		<div class="stage">
+			<div class="page" style="max-width:none">
+				<h2>Entanglement</h2>
+				<div class="sub">
+					Every session active in { windowPhrase(p.Window) } on the left, and the areas of the repo it
+					held paths in on the right. Two strokes cross only where two sessions held the same area at the
+					same moment, from when each hold began and ended. An area two sessions held at different times is
+					drawn dashed, and a ring marks an area a conflict was raised about.
+				</div>
+				@graphWindowSelect(p.Slug, p.Window)
+				if p.Unavailable {
+					<div class="runs-note">
+						This time range could not be loaded right now. Reload the page to try again, or go back to
+						<a href={ graphWindowURL(p.Slug, "") }>the live graph</a>.
+					</div>
+				} else {
+					<div id="graph-window" class="gbody">
+						@graphWindowBody(p)
+					</div>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ graphWindowBody(p GraphParams) {
+	if len(p.Graph.Nodes) == 0 {
+		<div class="empty">
+			<div class="glyph">◌</div>
+			<div class="title">Nothing ran in { windowPhrase(p.Window) }</div>
+			<div class="hint">No session was active in this time range, so there is nothing to draw.</div>
+		</div>
+	} else {
+		<div class="gsummary">
+			<span class="badge plain">{ plural(len(p.Data.Sessions), "session", "sessions") }</span>
+			if p.Graph.Contended > 0 {
+				<span class="badge critical"><span class="glyph">◆</span> { plural(p.Graph.Contended, "area held by two sessions at once", "areas held by two sessions at once") }</span>
+			} else {
+				<span class="badge good"><span class="glyph">✓</span> no area held by two sessions at once</span>
+			}
+			if p.Graph.Handoffs > 0 {
+				<span class="badge plain">{ plural(p.Graph.Handoffs, "area held in turn", "areas held in turn") }</span>
+			}
+			<span class="badge plain">{ plural(len(p.Data.Conflicts), "conflict", "conflicts") }</span>
+		</div>
+		if p.Data.Truncated {
+			<div class="runs-note">This time range holds more than one drawing shows; the most recently started sessions are drawn.</div>
+		}
+		@graphDrawing(p.Graph)
+		<div class="legend" style="margin-top:14px">
+			<span class="item"><i class="sw round a"></i> a session</span>
+			<span class="item"><i class="sw b"></i> an area of the repo</span>
+			<span class="item"><i class="sw round cross"></i> held by two sessions at the same time</span>
+			<span class="item"><i class="sw round handoff"></i> held by two sessions at different times</span>
+		</div>
+		if len(p.Data.Conflicts) > 0 {
+			<h3 class="runs-h">Conflicts in this time range</h3>
+			<div class="histlist">
+				for _, c := range p.Data.Conflicts {
+					@conflictHistoryRow(p.Slug, c)
+				}
+			</div>
+		}
+	}
+}
+
+// graphDrawing is the SVG itself, shared by the live graph and a past window.
+templ graphDrawing(g state.Graph) {
+	<div class="gwrap">
+		<svg
+			class="graph"
+			viewBox={ fmt.Sprintf("0 0 %.0f %.0f", g.Width, g.Height) }
+			width="100%"
+			preserveAspectRatio="xMidYMin meet"
+			role="img"
+			aria-label="entanglement graph"
+		>
+			<g class="gedges">
+				for _, e := range g.Edges {
+					<path class={ graphEdgeClass(e) } d={ graphCurve(e) } fill="none">
+						<title>{ e.Title }</title>
+					</path>
+				}
+			</g>
+			<g class="gnodes">
+				for _, n := range g.Nodes {
+					@graphNode(n)
+				}
+			</g>
+		</svg>
+	</div>
+}

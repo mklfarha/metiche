@@ -216,6 +216,10 @@ func (l *Live) readHistory(ctx context.Context, target string, v any) error {
 			return fmt.Errorf("run history: malformed answer")
 		}
 		return nil
+	case resp.StatusCode == http.StatusBadRequest:
+		// A filter value or cursor the backend does not accept: a 400 for
+		// this request, never a verdict on the team.
+		return fmt.Errorf("history: %w", ErrBadRequest)
 	case resp.StatusCode == http.StatusNotFound:
 		return fmt.Errorf("run history: %w", ErrNotFound)
 	case resp.StatusCode == http.StatusUnauthorized && l.BrowserSession != "":

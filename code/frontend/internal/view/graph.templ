@@ -18,6 +18,9 @@ templ GraphPage(s state.Snapshot) {
 					reach the same thing, that node is the collision — and it is drawn the way the
 					mark draws it: two strokes crossing.
 				</div>
+				if HasHistory(ctx) {
+					@graphWindowSelect(s.Team.Slug, "")
+				}
 				@GraphPanel(s)
 			</div>
 		</div>
@@ -75,29 +78,7 @@ templ graphBody(s state.Snapshot) {
 					</span>
 				</div>
 			}
-			<div class="gwrap">
-				<svg
-					class="graph"
-					viewBox={ fmt.Sprintf("0 0 %.0f %.0f", g.Width, g.Height) }
-					width="100%"
-					preserveAspectRatio="xMidYMin meet"
-					role="img"
-					aria-label="entanglement graph"
-				>
-					<g class="gedges">
-						for _, e := range g.Edges {
-							<path class={ graphEdgeClass(e) } d={ graphCurve(e) } fill="none">
-								<title>{ e.Title }</title>
-							</path>
-						}
-					</g>
-					<g class="gnodes">
-						for _, n := range g.Nodes {
-							@graphNode(n)
-						}
-					</g>
-				</svg>
-			</div>
+			@graphDrawing(g)
 			<div class="legend" style="margin-top:14px">
 				<span class="item"><i class="sw round a"></i> a session — coral or indigo, one per side</span>
 				<span class="item"><i class="sw b"></i> an area of the repo</span>
