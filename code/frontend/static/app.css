@@ -456,6 +456,9 @@ button.badge    { cursor: pointer; }
 .ev .body { min-width: 0; }
 .ev .line { font-size: 11.5px; color: var(--ink-2); word-wrap: break-word; }
 .ev .who { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+/* .who is also the topbar's signed-in indicator (a flex box with a rule on
+ * its left); inside a log row it is only a run of text. */
+.ev .who { display: inline; border-left: 0; padding-left: 0; }
 .ev .kind { font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; color: var(--ink-3); text-transform: uppercase; }
 /* structural rows are indigo-marked: they are the ones that moved the board */
 .ev.structural .seq { color: var(--indigo-ink); font-weight: 600; }
