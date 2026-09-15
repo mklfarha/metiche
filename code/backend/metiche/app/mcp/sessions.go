@@ -470,12 +470,28 @@ func (h *Handler) EndSession(ctx context.Context, _ *mcp.CallToolRequest, args E
 			// After the session row says ended, so the explanation can say how
 			// it ended and a conflict whose other side is already over is
 			// recognised as superseded.
-			return h.settleAfterRelease(ctx, tc, Release{
+			actor := eventActor{ProjectUUID: sess.ProjectUUID, SessionUUID: sess.ID, AgentUUID: ag.ID, MemberUUID: who.Member.ID}
+			if err := h.settleAfterRelease(ctx, tc, Release{
 				TeamUUID:    who.Team.ID,
 				SessionUUID: sess.ID,
 				Kind:        ReleaseSessionEnded,
 				At:          tc.Now,
-			}, eventActor{ProjectUUID: sess.ProjectUUID, SessionUUID: sess.ID, AgentUUID: ag.ID, MemberUUID: who.Member.ID})
+			}, actor); err != nil {
+				return err
+			}
+
+			// Its contract assertions stop counting the way its claims do, and
+			// the contract conflicts it was part of are re-evaluated: a side that
+			// is gone supersedes them.
+			if _, err := WithdrawSessionAssertions(ctx, tc.Tx, sess.ProjectUUID, sess.ID, tc.Now); err != nil {
+				return err
+			}
+			return h.settleContractConflicts(ctx, tc, ContractRelease{
+				TeamUUID:    who.Team.ID,
+				SessionUUID: sess.ID,
+				Kind:        ContractReleaseSessionEnded,
+				At:          tc.Now,
+			}, uuid.Nil, sess.ID, actor)
 		},
 	})
 	if err != nil {

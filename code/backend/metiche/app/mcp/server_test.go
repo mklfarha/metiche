@@ -104,6 +104,10 @@ func TestToolSurface(t *testing.T) {
 		"update_intent":  {false, true},
 		"check_paths":    {true, false},
 
+		// Tool 8, registered by RegisterContractTools. Idempotent: the same
+		// shape published twice changes nothing more than once.
+		"publish_contract": {false, true},
+
 		// Tools 13-14, registered by RegisterInstructionTools.
 		// get_instructions is NOT readOnly however much it looks like it:
 		// reading an instruction is what marks it delivered, and a client

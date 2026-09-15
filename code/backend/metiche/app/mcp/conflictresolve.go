@@ -114,7 +114,9 @@ type Release struct {
 
 // SettledConflict is one conflict this release closed.
 type SettledConflict struct {
-	ID          uuid.UUID
+	ID uuid.UUID
+	// Kind is the conflict's kind; the summary is worded for it.
+	Kind        enums.ConflictKind
 	Key         string
 	ProjectUUID uuid.UUID
 	Severity    enums.ConflictSeverity
@@ -165,7 +167,7 @@ func OpenConflictsOfSession(ctx context.Context, q queryer, teamUUID, sessionUUI
 // and the conditional UPDATE are one decision, and an agent re-declaring the
 // file between them would otherwise be closed out of a live collision.
 func SettleConflict(ctx context.Context, q queryer, conflictID uuid.UUID, rel Release) (SettledConflict, bool, error) {
-	out := SettledConflict{ID: conflictID}
+	out := SettledConflict{ID: conflictID, Kind: enums.CONFLICT_KIND_PATH_OVERLAP}
 	var (
 		project     string
 		sev, status int64
@@ -715,6 +717,11 @@ func sanitizeNoteText(s string) string {
 
 // ConflictResolvedSummary is the timeline line for a settled conflict.
 func ConflictResolvedSummary(s SettledConflict) string {
+	switch s.Kind {
+	case enums.CONFLICT_KIND_CONTRACT_MISMATCH, enums.CONFLICT_KIND_CONTRACT_UNCLAIMED, enums.CONFLICT_KIND_CONTRACT_NAMING_VARIANT:
+		what := strings.ReplaceAll(s.Kind.String(), "_", " ")
+		return truncate(fmt.Sprintf("%s settled (%s): the %s on %s", s.Key, s.Resolution.String(), what, firstNonEmpty(s.OverlapPath, "the contract")), 240)
+	}
 	where := s.OverlapPath
 	if where == "" {
 		where = "the shared path"

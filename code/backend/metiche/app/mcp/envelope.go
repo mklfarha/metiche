@@ -120,11 +120,17 @@ func (p Pending) NoteForPending() string {
 // POST /api/login contract instead" is signal, and the difference is whether
 // the agent can act on it without asking anybody.
 type ConflictNotice struct {
-	Key             string   `json:"key"`
-	Kind            string   `json:"kind"`
-	Severity        string   `json:"severity"`
-	With            string   `json:"with,omitempty"`
-	Paths           []string `json:"paths,omitempty"`
+	Key      string   `json:"key"`
+	Kind     string   `json:"kind"`
+	Severity string   `json:"severity"`
+	With     string   `json:"with,omitempty"`
+	Paths    []string `json:"paths,omitempty"`
+	// Contract, AtFault and Fields are set only on a contract conflict, so a
+	// path overlap notice renders byte for byte as it always did. AtFault is
+	// which side has to change on a mismatch: producer, consumer or both.
+	Contract        string   `json:"contract,omitempty"`
+	AtFault         string   `json:"at_fault,omitempty"`
+	Fields          []string `json:"fields,omitempty"`
 	SuggestedAction string   `json:"suggested_action"`
 }
 

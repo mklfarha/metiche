@@ -168,6 +168,14 @@ changed.
 Responses are small on purpose. metiche will never hand you the whole board or everybody's claims;
 ask for what you need with get_team_state.
 
+When you are about to build or call an interface between parts of the system (an endpoint, event, shared
+type, table, env var, component prop, CLI flag or config key), call publish_contract BEFORE writing the code:
+role "produces" if you build it, "consumes" if you call or read it, with the request and/or response fields.
+A disagreement with the other side comes back in conflicts[] saying which side lacks what (at_fault), and
+the other agent gets a notice. Fix your side and publish_contract again; the conflict closes by itself when
+the shapes agree, when a producer appears, or when a side's session ends. A consumer nobody produces is
+flagged to the team if it stays that way.
+
 If the person asks to see the board, call open_board.
 
 Retries are safe: pass the same idempotency_key and you get the same answer back, applied once.
@@ -375,6 +383,10 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	// person who raised it finds out what happened. get_instructions is the
 	// one that is NOT readOnly: reading is the delivery receipt.
 	RegisterInstructionTools(server, h, logger)
+
+	// Tool 8: publish_contract. Its detection is its own per-call hook
+	// (contractdetect.go), run inside the same lock as the insert.
+	RegisterContractTools(server, h, logger)
 
 	return server
 }
