@@ -80,6 +80,72 @@ func TestConflictsPageShowsHowItWasSettled(t *testing.T) {
 	t.Logf("settled card: %s", strings.Join(strings.Fields(card[:strings.Index(card, `class="parties"`)]), " "))
 }
 
+// convergedNote is §9.4's settled resolution_note, verbatim.
+const convergedNote = "Settled by the agents: S-22 (ui) revised INT-91 at 14:15 UTC and judged it no longer contradicts #auth-jwt-cookie (r2): \"plan now relies on the httpOnly cookie\". A person was asked at 14:12 UTC."
+
+// TestConflictsPageDecisionCards: an open decision conflict shows its
+// decision key, what the judge said under the suggested action, and that a
+// person was asked, with the time; a converged one shows the note unchanged.
+func TestConflictsPageDecisionCards(t *testing.T) {
+	now := time.Date(2026, 9, 15, 14, 20, 0, 0, time.UTC)
+	parts := []model.Participant{
+		{SessionKey: "S-22", Role: "initiator", Detail: "intent", MemberName: "Bob", AgentLabel: "ui"},
+		{SessionKey: "S-17", Role: "incumbent", Detail: "decision", MemberName: "Ana", AgentLabel: "backend"},
+	}
+	snap := state.Snapshot{
+		Team: model.Team{Slug: "test", Name: "Test"},
+		Now:  now,
+		Conflicts: []*model.Conflict{
+			{Key: "CF-31", Kind: model.KindDecisionContradiction, Severity: "high", Status: "open",
+				SuggestedAction: "test: change the plan to follow #auth-jwt-cookie", DecisionKey: "#auth-jwt-cookie",
+				JudgeNote:   "S-22's model (0.90): plan stores the token in localStorage; #auth-jwt-cookie forbids it",
+				EscalatedAt: time.Date(2026, 9, 15, 14, 12, 40, 0, time.UTC), RaisedAt: now.Add(-18 * time.Minute),
+				Paths: []string{"web/src/auth/session.ts", "web/src/auth/**"}, Participants: parts},
+			{Key: "CF-30", Kind: model.KindDecisionContradiction, Severity: "high", Status: "resolved", Resolution: "converged",
+				ResolutionNote: convergedNote, DecisionKey: "#auth-jwt-cookie", JudgeNote: "test: an older note",
+				EscalatedAt: time.Date(2026, 9, 15, 14, 12, 40, 0, time.UTC),
+				RaisedAt:    now.Add(-40 * time.Minute), ResolvedAt: time.Date(2026, 9, 15, 14, 15, 2, 0, time.UTC), Participants: parts},
+		},
+	}
+	page := renderHTML(t, ConflictsPage(snap))
+
+	open := section(t, page, "CF-31")
+	openText := flat(open)
+	for _, want := range []string{
+		"contradicts a decision #auth-jwt-cookie a person was asked 14:12 UTC",
+		"do this", "what the judge said S-22's model (0.90): plan stores the token in localStorage; #auth-jwt-cookie forbids it",
+	} {
+		if !strings.Contains(openText, want) {
+			t.Errorf("the open decision card does not read %q:\n%s", want, openText)
+		}
+	}
+	if strings.Index(openText, "do this") > strings.Index(openText, "what the judge said") {
+		t.Error("the judge's note is not under the suggested action")
+	}
+	for _, want := range []string{`class="badge dec-asked"`, `title="metiche asked a person at 2026-09-15 14:12 UTC`, `href="/t/test/decisions/history?key=%23auth-jwt-cookie"`} {
+		if !strings.Contains(open, want) {
+			t.Errorf("the open decision card is missing %s", want)
+		}
+	}
+	// Only the plan's side contradicts the decision; the decider does not.
+	if strings.Contains(openText, "S-17 is about to contradict") || strings.Contains(openText, "and S-17") {
+		t.Errorf("the decider was named as contradicting its own decision:\n%s", openText)
+	}
+
+	settled := section(t, page, "CF-30")
+	settledText := flat(settled)
+	for _, want := range []string{"converged", "how it was settled", convergedNote, "a person was asked 14:12 UTC"} {
+		if !strings.Contains(settledText, want) {
+			t.Errorf("the converged card does not read %q:\n%s", want, settledText)
+		}
+	}
+	if strings.Contains(settledText, "what the judge said") || strings.Contains(settledText, "do this") {
+		t.Errorf("a settled decision card still shows the judge's note or an action:\n%s", settledText)
+	}
+	t.Logf("open card: %s", openText)
+	t.Logf("settled card: %s", settledText)
+}
+
 // TestBoardBadgesSkipSettledConflicts: the lane badges and the banner are for
 // open conflicts only.
 func TestBoardBadgesSkipSettledConflicts(t *testing.T) {

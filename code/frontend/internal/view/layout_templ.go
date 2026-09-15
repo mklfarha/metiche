@@ -299,7 +299,7 @@ func topbar(s state.Snapshot, tab Tab) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = tab_(tab, TabDecisions, "Decisions", fmt.Sprintf("/t/%s/decisions", s.Team.Slug), "nav-n-decisions", len(s.Decisions), false, false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = tab_(tab, TabDecisions, "Decisions", fmt.Sprintf("/t/%s/decisions", s.Team.Slug), "nav-n-decisions", len(s.AcceptedDecisions()), false, false).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -693,7 +693,7 @@ func NavCounts(s state.Snapshot) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = navBadge("nav-n-decisions", len(s.Decisions), false, true).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = navBadge("nav-n-decisions", len(s.AcceptedDecisions()), false, true).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

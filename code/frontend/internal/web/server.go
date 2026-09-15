@@ -243,6 +243,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/conflicts", s.conflicts)
 		r.Get("/contracts", s.contracts)
 		r.Get("/decisions", s.decisions)
+		r.Get("/decisions/history", s.decisionHistory)
 		r.Get("/runs", s.runs)
 		r.Get("/runs/{session}", s.run)
 		// The rest of the history (history.go): the event log, and the
@@ -350,8 +351,8 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 	s.page(w, r, t, snap, view.TabBoard, view.BoardPage(snap))
 }
 
-// graph and conflicts, which read a history next to the live state, are in
-// history.go.
+// graph, conflicts and decisions, which read a history next to the live
+// state, are in history.go.
 
 func (s *Server) contracts(w http.ResponseWriter, r *http.Request) {
 	t, snap, r, ok := s.team(w, r)
@@ -359,14 +360,6 @@ func (s *Server) contracts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.page(w, r, t, snap, view.TabContracts, view.ContractsPage(snap))
-}
-
-func (s *Server) decisions(w http.ResponseWriter, r *http.Request) {
-	t, snap, r, ok := s.team(w, r)
-	if !ok {
-		return
-	}
-	s.page(w, r, t, snap, view.TabDecisions, view.DecisionsPage(snap))
 }
 
 // runs and run, the Runs page and one run, are in runs.go.

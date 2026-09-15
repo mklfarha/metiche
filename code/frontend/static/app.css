@@ -1068,3 +1068,46 @@ svg.graph { display: block; min-width: 720px; }
   .win-select a { min-height: 40px; }
   #timeline .rail-more a { display: inline-flex; align-items: center; min-height: 40px; }
 }
+
+/* ---------------------------------------------------------------- decisions
+ *
+ * The Decisions tab's cards, its Past section and history page, and the
+ * decision parts of a conflict card. Every class is prefixed dec-: .who and
+ * .empty already mean something else on this board. Nothing here is wider
+ * than its column; scope chips and keys wrap anywhere. */
+.dec-card .card-head .key { color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.dec-card .card-head .key:hover { color: var(--accent); }
+.dec-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; overflow-wrap: anywhere; }
+.dec-scope { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; min-width: 0; }
+.dec-chip {
+  max-width: 100%; padding: 1px 7px; font-family: var(--mono); font-size: 11px; color: var(--ink-2);
+  background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 4px; overflow-wrap: anywhere;
+}
+.dec-meta, .dec-judged { margin-top: 2px; }
+.dec-card .kv a, .dec-all a, a.dec-key { color: var(--accent); }
+.dec-card .kv a:hover, .dec-all a:hover { text-decoration: underline; }
+.dec-why { margin-top: 8px; font-size: 12px; color: var(--ink-2); }
+.dec-why summary {
+  cursor: pointer; width: max-content; max-width: 100%;
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+}
+.dec-why summary:hover { color: var(--ink); }
+.dec-why p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.dec-all { margin-top: 10px; }
+.page h2.dec-h { overflow-wrap: anywhere; }
+.dec-revs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dec-rev { margin-bottom: 0; }
+.dec-rev .kv .dec-kind { font-family: var(--mono); font-size: 10.5px; }
+/* a conflict about a decision: the key, the person asked, what the judge said */
+a.badge.dec-key { overflow-wrap: anywhere; }
+a.badge.dec-key:hover { border-color: var(--accent); }
+.badge.dec-asked { color: var(--violet-ink); border-color: var(--sev-critical-line); background: var(--violet-bg); font-weight: 600; }
+.suggest.dec-judge { border-left-color: var(--indigo-ink); }
+.suggest.dec-judge .tag { color: var(--indigo-ink); }
+@media (max-width: 760px) {
+  .suggest.dec-judge { flex-wrap: wrap; row-gap: 4px; }
+}
+@media (max-width: 1180px), (pointer: coarse) {
+  .dec-why summary { display: flex; align-items: center; min-height: 40px; }
+  a.badge.dec-key { min-height: 40px; }
+}

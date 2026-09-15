@@ -5,7 +5,9 @@ package view
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 
@@ -315,7 +317,9 @@ func suggestedAction(s state.Snapshot, c *model.Conflict) string {
 	case model.KindDecisionContradiction:
 		kind = wording.KindDecision
 		vars["what"] = c.DecisionKey
-		vars["who"] = wording.Join(all)
+		// Only the plan's side is contradicting anything: the decider's
+		// session takes part as the decision's side (docs/DECISIONS.md §9.4).
+		vars["who"] = wording.Join(planSide(s, c))
 
 	case model.KindDuplicateWork:
 		kind = wording.KindDuplicate
@@ -343,6 +347,129 @@ func suggestedAction(s state.Snapshot, c *model.Conflict) string {
 	}
 	return c.SuggestedAction
 }
+
+// planSide names the sessions whose plan contradicts the decision: the
+// participants there by their intent, or, in a recording that does not say,
+// the ones that arrived into it.
+func planSide(s state.Snapshot, c *model.Conflict) []string {
+	out := []string{}
+	for _, p := range c.Participants {
+		if p.Detail == "intent" {
+			out = append(out, s.SessionLabel(p.SessionKey))
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, p := range c.Participants {
+		if p.Detail != "decision" && (p.Role == "initiator" || p.Role == "challenger") {
+			out = append(out, s.SessionLabel(p.SessionKey))
+		}
+	}
+	return out
+}
+
+// ---------------------------------------------------------------- decisions
+
+// DecisionHistoryParams is the Past section of the Decisions page, and the
+// decisions history page (/t/{slug}/decisions/history).
+type DecisionHistoryParams struct {
+	Slug string
+	Now  time.Time
+
+	// Status is the filter applied ("" is superseded and revoked); Statuses
+	// is what it accepts.
+	Status   string
+	Statuses []string
+
+	Rows []*model.Decision // newest first
+	// OlderURL loads the next, older page; "" when there is none.
+	OlderURL string
+	// Older is true when the page starts from a cursor (no JavaScript).
+	Older bool
+	// Unavailable is true when the backend could not be read.
+	Unavailable bool
+	// Demo: Rows are what this board's recording holds; there is no backend
+	// to page through and no revisions to read.
+	Demo bool
+
+	// Key is the one decision asked for with ?key=, and Revisions the
+	// wordings it was recorded with, newest first.
+	Key       string
+	Revisions []model.DecisionRevision
+}
+
+// Filtered reports whether a filter is applied.
+func (p DecisionHistoryParams) Filtered() bool { return p.Status != "" }
+
+// DecisionHistoryURL is the decisions history with this status, from cursor.
+func DecisionHistoryURL(slug, status, cursor string) string {
+	v := url.Values{}
+	if status != "" {
+		v.Set("status", status)
+	}
+	if cursor != "" {
+		v.Set("cursor", cursor)
+	}
+	return withQuery("/t/"+url.PathEscape(slug)+"/decisions/history", v)
+}
+
+// decisionURL is one decision, in any status, with its revisions.
+func decisionURL(slug, key string) templ.SafeURL {
+	return templ.SafeURL(withQuery("/t/"+url.PathEscape(slug)+"/decisions/history", url.Values{"key": {key}}))
+}
+
+func decisionsURL(slug string) templ.SafeURL {
+	return templ.SafeURL("/t/" + url.PathEscape(slug) + "/decisions")
+}
+
+func conflictAnchorURL(slug, key string) templ.SafeURL {
+	return templ.SafeURL("/t/" + url.PathEscape(slug) + "/conflicts#" + url.PathEscape(key))
+}
+
+// decisionCardID is a card's element id: the key without its #.
+func decisionCardID(key string, past bool) string {
+	id := "dec-" + strings.TrimPrefix(key, "#")
+	if past {
+		return "past-" + id
+	}
+	return id
+}
+
+// decisionWhere is the card's scope badge: team-wide, or the project it
+// governs.
+func decisionWhere(d *model.Decision) string {
+	if d.TeamWide() {
+		return "team-wide"
+	}
+	return d.ProjectKey
+}
+
+func decisionStatusBadge(d *model.Decision) string {
+	if d.Active() {
+		return "good"
+	}
+	return "plain"
+}
+
+// decisionJudgedParts are the parts of "checked against 6 plans · 1 open
+// conflict CF-31 · 2 waiting" that are not zero. conflicts is "" when the
+// decision has no open conflict; the keys are linked by the template.
+func decisionJudgedParts(d *model.Decision) (checked, conflicts, waiting string) {
+	if n := d.Judged.Checked(); n > 0 {
+		checked = "checked against " + plural(int(n), "plan", "plans")
+	}
+	if n := len(d.OpenConflicts); n > 0 {
+		conflicts = plural(n, "open conflict", "open conflicts")
+	}
+	if n := d.Judged.Pending; n > 0 {
+		waiting = fmt.Sprintf("%d waiting", n)
+	}
+	return checked, conflicts, waiting
+}
+
+// clock is a time of day for a badge, with the whole stamp in its title.
+func clock(t time.Time) string { return t.UTC().Format("15:04 UTC") }
 
 // waitingFiles counts the files the affected sessions currently hold, which is
 // the closest honest answer to "how much work is riding on this".

@@ -1,55 +1,258 @@
 package view
 
-import "github.com/mklfarha/metiche/frontend/internal/state"
+import (
+	"fmt"
+	"github.com/mklfarha/metiche/frontend/internal/model"
+	"github.com/mklfarha/metiche/frontend/internal/state"
+	"time"
+)
 
-// DecisionsPage lists the calls the team has settled.
-templ DecisionsPage(s state.Snapshot) {
+// DecisionsPage lists the calls the team has settled and that are in force,
+// then the Past section: the ones superseded or revoked, newest first. On a
+// board read from the backend the Past rows are the history endpoint's first
+// page and "Load older" pages on; on a demo board they are what the recording
+// holds.
+templ DecisionsPage(s state.Snapshot, p DecisionHistoryParams) {
 	<div class="main full">
 		<div class="stage">
 			<div class="page">
 				<h2>Decisions</h2>
 				<div class="sub">
-					Short, quotable, and shipped inline to agents that are about to contradict one.
+					Short, quotable calls the code has to obey. When a live plan touches one, the plan's own agent
+					judges the plan against it.
 				</div>
-				if len(s.Decisions) == 0 {
+				if accepted := s.AcceptedDecisions(); len(accepted) == 0 {
 					<div class="empty">
 						<div class="glyph">§</div>
-						<div class="title">No decisions recorded</div>
+						if len(p.Rows) == 0 {
+							<div class="title">No decisions recorded</div>
+						} else {
+							<div class="title">No decision in force</div>
+						}
 						<div class="hint">
 							An agent records one with <code>record_decision</code> when the team
 							settles something the rest of the code has to obey.
 						</div>
 					</div>
+				} else {
+					<div class="grid2">
+						for _, d := range accepted {
+							@decisionCard(p.Slug, s.Now, d, false)
+						}
+					</div>
 				}
-				<div class="grid2">
-					for _, d := range s.Decisions {
-						<div class={ "card", templ.KV("settled", d.Status != "active") }>
-							<div class="card-head">
-								<span class="key">{ d.Key }</span>
-								<div class="right">
-									if d.Status == "active" {
-										<span class="badge good">active</span>
-									} else {
-										<span class="badge plain">{ d.Status }</span>
-									}
-									if d.AlwaysShow {
-										<span class="badge kind">always-show</span>
-									}
-								</div>
-							</div>
-							<div style="font-weight:600;margin-bottom:4px">{ d.Title }</div>
-							<div class="detail">{ d.Statement }</div>
-							<div class="kv">
-								<b>{ d.Scope }</b>
-								<span>recorded { state.Ago(s.Now, d.RecordedAt) } ago</span>
-								if d.SessionKey != "" {
-									<span>by { s.SessionLabel(d.SessionKey) }</span>
-								}
-							</div>
-						</div>
-					}
+				<h2 class="hist-h" id="past">Past</h2>
+				<div class="sub">Superseded or revoked, newest first. Nothing is checked against these any more.</div>
+				if p.Unavailable {
+					<div class="runs-note">The past decisions could not be loaded right now. Reload the page to try again.</div>
+				} else if len(p.Rows) == 0 && p.OlderURL == "" {
+					<div class="runs-note">No decision has been superseded or revoked yet.</div>
+				}
+				<div class="histlist" id="decision-history">
+					@DecisionHistoryRows(p)
 				</div>
+				if !p.Demo {
+					<div class="runs-note dec-all">
+						<a href={ templ.SafeURL(DecisionHistoryURL(p.Slug, "", "")) }>Past decisions</a>, by status, and every wording a decision was recorded with.
+					</div>
+				}
 			</div>
 		</div>
 	</div>
+}
+
+// DecisionHistoryPage is /t/{slug}/decisions/history: every past decision a
+// page at a time, filtered by status, or with ?key= one decision in any status
+// and the wordings it was recorded with.
+templ DecisionHistoryPage(s state.Snapshot, p DecisionHistoryParams) {
+	<div class="main full">
+		<div class="stage">
+			<div class="page">
+				<div class="runs-note"><a href={ decisionsURL(p.Slug) }>← Decisions in force</a></div>
+				if p.Key != "" {
+					<h2 class="mono dec-h">{ p.Key }</h2>
+					<div class="sub">This decision as it stands, and the wordings it was recorded with, newest first.</div>
+					if p.Unavailable {
+						<div class="runs-note">This decision could not be loaded right now. Reload the page to try again.</div>
+					} else if len(p.Rows) == 0 {
+						<div class="runs-note">No decision on this team has that key.</div>
+					} else {
+						for _, d := range p.Rows {
+							@decisionCard(p.Slug, p.Now, d, !d.Active())
+						}
+						<h3 class="runs-h">Revisions</h3>
+						if len(p.Revisions) == 0 {
+							if p.Demo {
+								<div class="runs-note">A recording keeps no earlier wordings; the one above is the decision as it stands.</div>
+							} else {
+								<div class="runs-note">No earlier wording is left in the event log. The wording above is kept for good.</div>
+							}
+						} else {
+							<ol class="dec-revs">
+								for _, r := range p.Revisions {
+									@decisionRevision(r)
+								}
+							</ol>
+						}
+					}
+				} else {
+					<h2>Past decisions</h2>
+					<div class="sub">Every decision that was superseded or revoked, newest first, with what replaced it.</div>
+					@decisionHistoryFilters(p)
+					if p.Older {
+						<div class="runs-note"><a href={ templ.SafeURL(DecisionHistoryURL(p.Slug, p.Status, "")) }>← Back to the newest past decisions</a></div>
+					}
+					if p.Unavailable {
+						<div class="runs-note">The past decisions could not be loaded right now. Reload the page to try again.</div>
+					} else if len(p.Rows) == 0 && p.OlderURL == "" {
+						if p.Filtered() {
+							<div class="runs-note">No past decision matches this filter.</div>
+						} else {
+							<div class="runs-note">No decision has been superseded or revoked yet.</div>
+						}
+					}
+					<div class="histlist" id="decision-history">
+						@DecisionHistoryRows(p)
+					</div>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ decisionHistoryFilters(p DecisionHistoryParams) {
+	<div class="hist-filter">
+		<nav class="hist-chips" aria-label="Filter by status">
+			<span class="k">Status</span>
+			@filterChip(DecisionHistoryURL(p.Slug, "", ""), "superseded or revoked", p.Status == "")
+			for _, st := range p.Statuses {
+				@filterChip(DecisionHistoryURL(p.Slug, st, ""), st, p.Status == st)
+			}
+		</nav>
+	</div>
+}
+
+// DecisionHistoryRows is one page of past decisions and the control for the
+// next. It is also the whole answer to that control's htmx request, which
+// replaces the control with it, so each page lands below the last. Without
+// JavaScript the control is a link to a page that starts there.
+templ DecisionHistoryRows(p DecisionHistoryParams) {
+	for _, d := range p.Rows {
+		@decisionCard(p.Slug, p.Now, d, true)
+	}
+	if p.OlderURL != "" {
+		<div class="runs-more" id="decisions-more">
+			<a
+				class="btn"
+				href={ templ.SafeURL(p.OlderURL) }
+				hx-get={ p.OlderURL }
+				hx-target="#decisions-more"
+				hx-swap="outerHTML"
+			>Load older decisions</a>
+		</div>
+	}
+}
+
+// decisionCard is one decision: its key and badges, what was decided, the
+// paths it governs, who decided it and when, how many plans were judged
+// against it, and why, folded.
+templ decisionCard(slug string, now time.Time, d *model.Decision, past bool) {
+	<article
+		class={ "card", "dec-card", templ.KV("settled", past) }
+		id={ decisionCardID(d.Key, past) }
+		data-status={ d.Status }
+	>
+		<div class="card-head dec-head">
+			<a class="key" href={ decisionURL(slug, d.Key) }>{ d.Key }</a>
+			<span class={ "badge", decisionStatusBadge(d) }>{ d.Status }</span>
+			if d.AlwaysShow {
+				<span class="badge kind" title="checked against every live plan in its project">always-show</span>
+			}
+			if d.TeamWide() {
+				<span class="badge plain" title="holds for every project on the team">team-wide</span>
+			} else {
+				<span class="badge plain mono" title="the project it governs">{ d.ProjectKey }</span>
+			}
+		</div>
+		if d.Title != "" {
+			<div class="dec-title">{ d.Title }</div>
+		}
+		<div class="detail">{ d.Statement }</div>
+		if parts := d.ScopeParts(); len(parts) > 0 {
+			<div class="dec-scope" aria-label="scope">
+				for _, part := range parts {
+					<span class="dec-chip">{ part }</span>
+				}
+			</div>
+		}
+		<div class="kv dec-meta">
+			if d.Revision > 0 {
+				<b>r{ fmt.Sprint(d.Revision) }</b>
+			}
+			if d.DecidedBy != "" {
+				<span>· decided by { d.DecidedBy }</span>
+			}
+			if !d.RecordedAt.IsZero() {
+				<span title={ runStamp(d.RecordedAt) }>· { state.Ago(now, d.RecordedAt) } ago</span>
+			}
+			if d.Revision > 1 && !d.UpdatedAt.IsZero() {
+				<span title={ runStamp(d.UpdatedAt) }>· revised { state.Ago(now, d.UpdatedAt) } ago</span>
+			}
+			if past && !d.EndedAt.IsZero() {
+				<span>· ended <b>{ runStamp(d.EndedAt) }</b></span>
+			}
+			if d.Supersedes != "" {
+				<span>· supersedes <a class="mono" href={ decisionURL(slug, d.Supersedes) }>{ d.Supersedes }</a></span>
+			}
+			if d.SupersededBy != "" {
+				<span>· superseded by <a class="mono" href={ decisionURL(slug, d.SupersededBy) }>{ d.SupersededBy }</a></span>
+			}
+		</div>
+		if checked, conflicts, waiting := decisionJudgedParts(d); checked != "" || conflicts != "" || waiting != "" {
+			<div class="kv dec-judged">
+				if checked != "" {
+					<span>{ checked }</span>
+				}
+				if conflicts != "" {
+					<span>
+						if checked != "" {
+							·
+						}
+						{ conflicts }
+						for _, key := range d.OpenConflicts {
+							{ " " }
+							<a class="mono" href={ conflictAnchorURL(slug, key) }>{ key }</a>
+						}
+					</span>
+				}
+				if waiting != "" {
+					<span>
+						if checked != "" || conflicts != "" {
+							·
+						}
+						{ waiting }
+					</span>
+				}
+			</div>
+		}
+		if d.Rationale != "" {
+			<details class="dec-why">
+				<summary>why</summary>
+				<p>{ d.Rationale }</p>
+			</details>
+		}
+	</article>
+}
+
+templ decisionRevision(r model.DecisionRevision) {
+	<li class="card dec-rev" data-seq={ fmt.Sprint(r.Sequence) }>
+		if r.Statement != "" {
+			<div class="detail">{ r.Statement }</div>
+		}
+		<div class="kv">
+			<span>recorded <b>{ runStamp(r.OccurredAt) }</b></span>
+			<span>· { r.Summary }</span>
+			<span class="dec-kind">· { r.Kind } #{ fmt.Sprint(r.Sequence) }</span>
+		</div>
+	</li>
 }

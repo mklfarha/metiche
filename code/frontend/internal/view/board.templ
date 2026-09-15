@@ -71,7 +71,7 @@ templ banner(s state.Snapshot) {
 				{ calmLine(s) } { plural(s.LiveSessions(), "session", "sessions") } in flight.
 			</span>
 			<span style="margin-left:auto">
-				{ plural(len(s.Contracts), "contract", "contracts") } · { plural(len(s.Decisions), "decision", "decisions") }
+				{ plural(len(s.Contracts), "contract", "contracts") } · { plural(len(s.AcceptedDecisions()), "decision", "decisions") }
 			</span>
 		</div>
 	}

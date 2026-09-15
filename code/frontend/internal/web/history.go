@@ -20,6 +20,9 @@ import (
 //	GET /t/{slug}/activity[?kind=&session=&before=]  the event log, newest first
 //	GET /t/{slug}/timeline?before=N                  the rail's older rows (htmx)
 //	GET /t/{slug}/graph[?window=24h|7d]              live (hub), or a past window (backend)
+//	GET /t/{slug}/decisions                          decisions in force (hub), then past ones (backend)
+//	GET /t/{slug}/decisions/history[?status=&cursor=&key=]
+//	                                                 past decisions a page at a time, or one decision and its revisions
 //
 // The same rules as runs.go. Every request has already been through s.team:
 // the same resolution, the same /access check for a signed-in viewer and the
@@ -28,14 +31,14 @@ import (
 // demo board's feed is a recording and is never asked: its pages are what the
 // recording holds, and nothing on them offers to load more.
 //
-// Contracts and Decisions have no history here: nothing writes those tables
-// yet, and their pages keep their empty states.
+// Contracts have no history here: the backend keeps only live assertions.
 //
 // Every one of these is a read, so "Load older" is a plain GET with no CSRF
 // token. A cursor in a URL is the backend's opaque page marker and no secret.
 
 const (
 	conflictHistoryPageSize = 50
+	decisionHistoryPageSize = 50
 	activityPageSize        = 100
 	railPageSize            = 100
 )
@@ -46,7 +49,14 @@ var (
 	filterWordPattern = regexp.MustCompile(`^[a-z_]{1,40}$`)
 	// sequencePattern bounds a before-cursor.
 	sequencePattern = regexp.MustCompile(`^[1-9][0-9]{0,17}$`)
+	// decisionKeyPattern bounds a decision key taken from a URL: the stored
+	// form (docs/DECISIONS.md §3.1), with or without its leading #.
+	decisionKeyPattern = regexp.MustCompile(`^#?[a-z0-9-]{3,60}$`)
 )
+
+// pastDecisionStatuses are the statuses a past decision can have, for a demo
+// board's filter; a live board's come from the backend.
+var pastDecisionStatuses = []string{"superseded", "revoked"}
 
 // boardHistoryOf is the team's history reader, or nil for a demo board and for
 // any feed that cannot read one.
@@ -132,6 +142,149 @@ func (s *Server) conflicts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.page(w, r, t, snap, view.TabConflicts, view.ConflictsHistoryPage(snap, p))
+}
+
+// ---------------------------------------------------------------- decisions
+
+// decisionHistoryOf is the team's decision history reader, or nil for a demo
+// board and for any feed that cannot read one.
+func decisionHistoryOf(t *Team) feed.DecisionHistory {
+	if t == nil || t.Demo {
+		return nil
+	}
+	h, _ := t.Feed.(feed.DecisionHistory)
+	return h
+}
+
+// decisions is the Decisions tab: the decisions in force, which the board
+// holds (GET /decisions returns accepted ones only), then the Past section,
+// which is the history's first page, as Conflicts shows its History.
+func (s *Server) decisions(w http.ResponseWriter, r *http.Request) {
+	t, snap, r, ok := s.team(w, r)
+	if !ok {
+		return
+	}
+	p := view.DecisionHistoryParams{Slug: t.Slug, Now: snap.Now}
+	h := decisionHistoryOf(t)
+	if h == nil {
+		p.Demo, p.Rows, p.Statuses = true, snap.PastDecisions(), pastDecisionStatuses
+		s.page(w, r, t, snap, view.TabDecisions, view.DecisionsPage(snap, p))
+		return
+	}
+	if t.viewer {
+		privateHeaders(w)
+	}
+	page, err := h.DecisionHistory(r.Context(), model.DecisionQuery{Limit: decisionHistoryPageSize})
+	switch {
+	case err == nil:
+		p.Rows, p.Statuses = page.Decisions, page.Statuses
+		if page.NextCursor != "" {
+			p.OlderURL = view.DecisionHistoryURL(t.Slug, "", page.NextCursor)
+		}
+	case errors.Is(err, feed.ErrSessionInvalid):
+		s.historyNotFound(w, r, t)
+		return
+	default:
+		// The decisions in force are the board's own, and the team read that
+		// decides whether this reader may see the team already answered. A
+		// 404 here is a backend without the history endpoint, not a verdict
+		// on the team: only the Past section says it could not be read.
+		s.log.Warn("reading the decision history failed", "err", err)
+		p.Unavailable = true
+	}
+	s.page(w, r, t, snap, view.TabDecisions, view.DecisionsPage(snap, p))
+}
+
+// decisionHistory is /t/{slug}/decisions/history: past decisions newest first
+// with "Load older", or ?key= one decision with its revisions.
+func (s *Server) decisionHistory(w http.ResponseWriter, r *http.Request) {
+	t, snap, r, ok := s.team(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	status, cursor, key := q.Get("status"), q.Get("cursor"), strings.TrimSpace(q.Get("key"))
+	if status == "all" {
+		status = ""
+	}
+	if !optional(filterWordPattern, status) || !optional(runCursorPattern, cursor) || !optional(decisionKeyPattern, key) {
+		http.Error(w, "that page of decisions does not exist", http.StatusBadRequest)
+		return
+	}
+	if key != "" {
+		key = "#" + strings.TrimPrefix(key, "#")
+		status, cursor = "", ""
+	}
+	w.Header().Add("Vary", "HX-Request")
+	p := view.DecisionHistoryParams{Slug: t.Slug, Now: snap.Now, Status: status, Key: key, Older: cursor != ""}
+
+	h := decisionHistoryOf(t)
+	if h == nil {
+		// A recording has no older pages and no revisions: the page is what
+		// this board holds, and a cursor is ignored rather than honoured.
+		p.Demo, p.Older, p.Statuses = true, false, pastDecisionStatuses
+		p.Rows = hubDecisions(snap, status, key)
+		s.page(w, r, t, snap, view.TabDecisions, view.DecisionHistoryPage(snap, p))
+		return
+	}
+	if t.viewer {
+		privateHeaders(w)
+	}
+	fragment := cursor != "" && isFragment(r)
+
+	page, err := h.DecisionHistory(r.Context(), model.DecisionQuery{
+		Status: status, Cursor: cursor, Key: key, Limit: decisionHistoryPageSize,
+	})
+	switch {
+	case err == nil:
+		p.Rows, p.Statuses, p.Revisions = page.Decisions, page.Statuses, page.Revisions
+		if page.NextCursor != "" && key == "" {
+			p.OlderURL = view.DecisionHistoryURL(t.Slug, status, page.NextCursor)
+		}
+	case historyRefused(err) && key != "" && errors.Is(err, feed.ErrNotFound):
+		// The team answered its own reads; a 404 naming a key is "no such
+		// decision", which the page says, not a verdict on the team.
+		p.Rows = nil
+	case historyRefused(err):
+		s.historyNotFound(w, r, t)
+		return
+	case errors.Is(err, feed.ErrBadRequest):
+		http.Error(w, "that page of decisions does not exist", http.StatusBadRequest)
+		return
+	default:
+		s.log.Warn("reading the decision history failed", "err", err)
+		if fragment {
+			http.Error(w, "older decisions are unavailable right now; try again shortly", http.StatusServiceUnavailable)
+			return
+		}
+		p.Unavailable, p.Older = true, false
+	}
+
+	if fragment {
+		s.render(w, r, view.DecisionHistoryRows(p))
+		return
+	}
+	s.page(w, r, t, snap, view.TabDecisions, view.DecisionHistoryPage(snap, p))
+}
+
+// hubDecisions is what a demo board holds for the history page: its past
+// decisions with this status, or the one decision with this key in any status.
+func hubDecisions(snap state.Snapshot, status, key string) []*model.Decision {
+	if key != "" {
+		for _, d := range snap.Decisions {
+			if d.Key == key {
+				return []*model.Decision{d}
+			}
+		}
+		return nil
+	}
+	var out []*model.Decision
+	for _, d := range snap.PastDecisions() {
+		if status == "" || d.Status == status {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------- activity

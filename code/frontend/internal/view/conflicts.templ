@@ -50,6 +50,12 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 			</span>
 			<span class="key">{ c.Key }</span>
 			<span class="badge kind">{ conflictLabel(c.Kind) }</span>
+			if c.DecisionKey != "" {
+				<a class="badge kind dec-key" href={ decisionURL(s.Team.Slug, c.DecisionKey) } title="the decision this plan contradicts">{ c.DecisionKey }</a>
+			}
+			if !c.EscalatedAt.IsZero() {
+				<span class="badge dec-asked" title={ "metiche asked a person at " + runStamp(c.EscalatedAt) + ", because the agents had not settled it" }>a person was asked { clock(c.EscalatedAt) }</span>
+			}
 			if text, class, show := ageBadge(s, c); show {
 				<span class={ "badge", class } title="how long this has been open, against what this cadence tolerates">{ text }</span>
 			}
@@ -84,6 +90,14 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 				<span class="tag">do this</span>
 				<span class="text">{ action }</span>
 			</div>
+			if open && c.JudgeNote != "" {
+				// The plan's own agent judged it; its confidence and reason are
+				// on the board so a person can weigh a self-judged verdict.
+				<div class="suggest dec-judge">
+					<span class="tag">what the judge said</span>
+					<span class="text">{ c.JudgeNote }</span>
+				</div>
+			}
 		} else if open {
 			<div class="suggest" style="border-left-color:var(--critical)">
 				<span class="tag" style="color:var(--critical)">defect</span>

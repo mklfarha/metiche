@@ -338,6 +338,12 @@ type payload struct {
 	Statement   string        `json:"statement"`
 	AlwaysShow  bool          `json:"always_show"`
 	Scope       string        `json:"scope"`
+	Revision    int64         `json:"revision"`
+	DecidedBy   string        `json:"decided_by"`
+	Rationale   string        `json:"rationale"`
+	Supersedes  string        `json:"supersedes"`
+	SuperBy     string        `json:"superseded_by"`
+	JudgeNote   string        `json:"judge_note"`
 	ProjectKey  string        `json:"project_key"`
 	RepoURL     string        `json:"repo_url"`
 	Cadence     string        `json:"cadence"`
@@ -547,18 +553,45 @@ func (s *Store) mutate(ev model.Event) {
 		}
 
 	case "decision_recorded":
+		// Recording a key again revises it; the backend has no separate
+		// "updated" event (docs/DECISIONS.md §3.1).
+		_, existed := s.decisions[p.DecisionKey]
 		d := s.decision(p.DecisionKey)
-		d.Title, d.Statement = p.Title, p.Statement
-		d.Status = orDefault(p.Status, "active")
-		d.Scope, d.AlwaysShow, d.SessionKey, d.RecordedAt = p.Scope, p.AlwaysShow, p.SessionKey, at
-
-	case "decision_updated":
-		d := s.decision(p.DecisionKey)
-		if p.Status != "" {
-			d.Status = p.Status
+		statement := orDefault(p.Statement, p.Message)
+		switch {
+		case p.Revision > 0:
+			d.Revision = p.Revision
+		case !existed || d.Revision == 0:
+			d.Revision = 1
+		case statement != d.Statement:
+			d.Revision++
 		}
-		if p.Statement != "" {
-			d.Statement = p.Statement
+		d.Title, d.Statement = orDefault(p.Title, d.Title), statement
+		d.Status = decisionFoldStatus(orDefault(p.Status, p.NewStatus))
+		d.Scope, d.AlwaysShow, d.SessionKey = p.Scope, p.AlwaysShow, p.SessionKey
+		d.DecidedBy, d.Rationale, d.Supersedes = p.DecidedBy, p.Rationale, p.Supersedes
+		d.ProjectKey = p.ProjectKey
+		d.EndedAt, d.SupersededBy = time.Time{}, ""
+		if d.RecordedAt.IsZero() {
+			d.RecordedAt = at
+		}
+		d.UpdatedAt = at
+		if p.Supersedes != "" {
+			if old, ok := s.decisions[p.Supersedes]; ok && old.Active() {
+				old.Status, old.SupersededBy, old.EndedAt, old.UpdatedAt = "superseded", d.Key, at, at
+			}
+		}
+
+	case "decision_superseded":
+		// new_status is superseded or revoked: the decision stops being in
+		// force and moves to the Past section. Anything else is not an end.
+		switch p.NewStatus {
+		case "superseded", "revoked":
+			d := s.decision(p.DecisionKey)
+			d.Status, d.EndedAt, d.UpdatedAt = p.NewStatus, at, at
+			if p.SuperBy != "" {
+				d.SupersededBy = p.SuperBy
+			}
 		}
 
 	case "conflict_raised":
@@ -567,6 +600,7 @@ func (s *Store) mutate(ev model.Event) {
 		c.Status = orDefault(p.Status, "open")
 		c.Detail, c.SuggestedAction = p.Detail, p.Suggested
 		c.ContractKey, c.DecisionKey, c.Paths = p.ContractKey, p.DecisionKey, p.Paths
+		c.JudgeNote = p.JudgeNote
 		c.Participants = toParticipants(p.Members)
 		if c.RaisedAt.IsZero() {
 			c.RaisedAt = at
@@ -574,7 +608,13 @@ func (s *Store) mutate(ev model.Event) {
 		c.Occurrences++
 
 	case "conflict_escalated":
+		// For a decision conflict this event means metiche asked a person
+		// (docs/DECISIONS.md §4.7). Older recordings use it for a finding
+		// that sat too long, where nobody was asked, so only that kind counts.
 		c := s.conflict(p.ConflictKey)
+		if c.Kind == model.KindDecisionContradiction && c.EscalatedAt.IsZero() {
+			c.EscalatedAt = at
+		}
 		c.Severity = orDefault(p.Severity, c.Severity)
 		if p.Suggested != "" {
 			c.SuggestedAction = p.Suggested
@@ -598,6 +638,64 @@ func (s *Store) mutate(ev model.Event) {
 		// Log-only. These are exactly the events that must NOT move
 		// board_revision, and the fixture marks them non-structural.
 	}
+}
+
+// decisionFoldStatus is a recorded decision's status in the board's words:
+// the backend's accepted, and a recording's blank, are active.
+func decisionFoldStatus(s string) string {
+	if s == "" || s == "accepted" {
+		return "active"
+	}
+	return s
+}
+
+// AcceptedDecisions are the decisions in force, as GET /decisions orders them:
+// always-show first, then the most recently changed, then by key.
+func (snap Snapshot) AcceptedDecisions() []*model.Decision {
+	out := []*model.Decision{}
+	for _, d := range snap.Decisions {
+		if d.Active() {
+			out = append(out, d)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.AlwaysShow != b.AlwaysShow {
+			return a.AlwaysShow
+		}
+		if ta, tb := decisionChanged(a), decisionChanged(b); !ta.Equal(tb) {
+			return ta.After(tb)
+		}
+		return a.Key < b.Key
+	})
+	return out
+}
+
+// PastDecisions are the superseded and revoked decisions this board holds,
+// newest end first, as the history endpoint orders them.
+func (snap Snapshot) PastDecisions() []*model.Decision {
+	out := []*model.Decision{}
+	for _, d := range snap.Decisions {
+		if !d.Active() {
+			out = append(out, d)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if ta, tb := decisionChanged(out[i]), decisionChanged(out[j]); !ta.Equal(tb) {
+			return ta.After(tb)
+		}
+		return out[i].Key < out[j].Key
+	})
+	return out
+}
+
+func decisionChanged(d *model.Decision) time.Time {
+	for _, t := range []time.Time{d.EndedAt, d.UpdatedAt, d.RecordedAt} {
+		if !t.IsZero() {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 func toParticipants(in []participant) []model.Participant {

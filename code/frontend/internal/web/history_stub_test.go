@@ -21,13 +21,56 @@ type stubBoardHistory struct {
 	graphs    map[string]map[string]map[string]any // slug -> window -> answer
 	hits      map[string]map[string]int            // slug -> route -> requests
 	queries   map[string]map[string][]string       // slug -> route -> raw queries, in order
+
+	// pastDecisions is GET /v1/teams/{slug}/decisions/history (newest first,
+	// cursor hd-N, 50 by default and 100 at most, status superseded|revoked,
+	// key= one decision in any status with its revisions); decisionsGone
+	// answers that route 404, as a backend that predates it does.
+	pastDecisions map[string][]map[string]any
+	revisions     map[string]map[string][]map[string]any // slug -> key -> newest first
+	decisionsGone bool
 }
 
 var (
 	stubConflictStatuses = []string{"resolved", "dismissed", "expired"}
-	stubConflictKinds    = []string{"path_overlap", "contract_mismatch", "stale_base"}
+	// stubConflictKinds is app/webapi's liveConflictKinds, which gains
+	// decision_contradiction (docs/DECISIONS.md §5.1).
+	stubConflictKinds    = []string{"path_overlap", "contract_mismatch", "stale_base", "decision_contradiction"}
 	stubEventKinds       = []string{"session_started", "intent_declared", "claim_released", "conflict_raised"}
+	stubDecisionStatuses = []string{"superseded", "revoked"}
 )
+
+func (b *stubBackend) setDecisions(accepted []any, past []map[string]any, slugs ...string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.decisions = accepted
+	h := &b.login.hist
+	if h.pastDecisions == nil {
+		h.pastDecisions = map[string][]map[string]any{}
+	}
+	for _, slug := range slugs {
+		h.pastDecisions[slug] = past
+	}
+}
+
+func (b *stubBackend) setDecisionRevisions(slug, key string, revs []map[string]any) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	h := &b.login.hist
+	if h.revisions == nil {
+		h.revisions = map[string]map[string][]map[string]any{}
+	}
+	if h.revisions[slug] == nil {
+		h.revisions[slug] = map[string][]map[string]any{}
+	}
+	h.revisions[slug][key] = revs
+}
+
+func (b *stubBackend) setDecisionHistoryGone(gone bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.login.hist.decisionsGone = gone
+}
 
 func (b *stubBackend) setConflictHistory(slug string, rows []map[string]any) {
 	b.mu.Lock()
@@ -116,6 +159,62 @@ func (b *stubBackend) serveBoardHistory(w http.ResponseWriter, r *http.Request, 
 	}
 
 	switch sub {
+	case "decisions/history":
+		if h.decisionsGone {
+			http.NotFound(w, r)
+			return
+		}
+		out := map[string]any{"sequence": 3, "board_revision": 1, "status": q.Get("status"), "statuses": stubDecisionStatuses}
+		if key := q.Get("key"); key != "" {
+			var found []any
+			for _, d := range b.decisions {
+				if d.(map[string]any)["key"] == key {
+					found = append(found, d)
+				}
+			}
+			for _, d := range h.pastDecisions[slug] {
+				if d["key"] == key {
+					found = append(found, d)
+				}
+			}
+			if len(found) == 0 {
+				problemJSON(w, http.StatusNotFound, "not found", "no such decision")
+				return
+			}
+			out["status"], out["decisions"] = "", found
+			if revs := h.revisions[slug][key]; len(revs) > 0 {
+				out["revisions"] = revs
+			}
+			writeJSON(w, out)
+			return
+		}
+		status := q.Get("status")
+		if status != "" && !slices.Contains(stubDecisionStatuses, status) {
+			bad("status must be superseded or revoked")
+			return
+		}
+		rows := []map[string]any{}
+		for _, d := range h.pastDecisions[slug] {
+			if status == "" || d["status"] == status {
+				rows = append(rows, d)
+			}
+		}
+		off := 0
+		if c := q.Get("cursor"); c != "" {
+			n, err := strconv.Atoi(strings.TrimPrefix(c, "hd-"))
+			if !strings.HasPrefix(c, "hd-") || err != nil || n < 0 || n > len(rows) {
+				bad("cursor is not one this endpoint issued")
+				return
+			}
+			off = n
+		}
+		end := min(off+limit(50, 100), len(rows))
+		out["decisions"] = rows[off:end]
+		if end < len(rows) {
+			out["next_cursor"] = fmt.Sprintf("hd-%d", end)
+		}
+		writeJSON(w, out)
+
 	case "conflicts/history":
 		status, kind := q.Get("status"), q.Get("kind")
 		if status != "" && !slices.Contains(stubConflictStatuses, status) {

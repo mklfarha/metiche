@@ -247,14 +247,64 @@ func (c *Contract) byRole(role string) []*Assertion {
 
 // Decision is a settled call the whole team is meant to code against.
 type Decision struct {
-	Key        string    `json:"key"` // #auth-jwt-cookie
-	Title      string    `json:"title"`
-	Statement  string    `json:"statement"`
-	Status     string    `json:"status"` // active|superseded|revoked
-	Scope      string    `json:"scope"`
-	AlwaysShow bool      `json:"always_show"`
-	SessionKey string    `json:"session_key"`
+	Key       string `json:"key"` // #auth-jwt-cookie
+	Title     string `json:"title"`
+	Statement string `json:"statement"`
+	Status    string `json:"status"` // active|superseded|revoked
+	// Scope is the governed paths joined with ", ", as the card has always
+	// taken them; ScopeParts splits them back into chips.
+	Scope      string `json:"scope"`
+	AlwaysShow bool   `json:"always_show"`
+	SessionKey string `json:"session_key"`
+	// RecordedAt is when it was decided (the backend's decided_at).
 	RecordedAt time.Time `json:"recorded_at"`
+
+	// Revision is the wording's revision: recording the same key again with a
+	// new statement or scope bumps it.
+	Revision int64 `json:"revision"`
+	// DecidedBy is the member who decided it, or who last changed it.
+	DecidedBy string `json:"decided_by"`
+	// ProjectKey is the project it governs; "" is team-wide.
+	ProjectKey   string `json:"project_key"`
+	Supersedes   string `json:"supersedes"`
+	SupersededBy string `json:"superseded_by"`
+	// Rationale is why, for people. Agents are never sent it inline.
+	Rationale string         `json:"rationale"`
+	Judged    DecisionJudged `json:"judged"`
+	// OpenConflicts are the keys of the open conflicts on this decision.
+	OpenConflicts []string  `json:"open_conflicts"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	// EndedAt is when it was superseded or revoked; zero while in force.
+	EndedAt time.Time `json:"ended_at"`
+}
+
+// DecisionJudged counts the verdicts on a decision's current revision: how
+// many plans were checked against it, and how many still wait for a judge.
+type DecisionJudged struct {
+	NoConflict int64 `json:"no_conflict"`
+	Conflict   int64 `json:"conflict"`
+	Unsure     int64 `json:"unsure"`
+	Pending    int64 `json:"pending"`
+}
+
+// Checked is how many plans a judge has answered for.
+func (j DecisionJudged) Checked() int64 { return j.NoConflict + j.Conflict + j.Unsure }
+
+// Active reports whether the decision is in force.
+func (d *Decision) Active() bool { return d.Status == "active" }
+
+// TeamWide reports whether the decision holds for every project on the team.
+func (d *Decision) TeamWide() bool { return d.ProjectKey == "" }
+
+// ScopeParts is the scope as separate patterns.
+func (d *Decision) ScopeParts() []string {
+	out := []string{}
+	for _, p := range strings.Split(d.Scope, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------- conflicts
@@ -313,6 +363,12 @@ type Conflict struct {
 	// agents said. Empty for a conflict that is still open.
 	ResolutionNote string `json:"resolution_note"`
 	Occurrences    int    `json:"occurrences"`
+	// JudgeNote is what the plan's own agent said when it judged the plan
+	// against a decision: its confidence and reason. decision_contradiction only.
+	JudgeNote string `json:"judge_note"`
+	// EscalatedAt is when metiche asked a person, because the agents did not
+	// settle it in time. Zero when nobody was asked.
+	EscalatedAt time.Time `json:"escalated_at"`
 }
 
 // Open reports whether the conflict still wants a human's attention.

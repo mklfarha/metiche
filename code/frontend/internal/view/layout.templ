@@ -127,7 +127,7 @@ templ topbar(s state.Snapshot, tab Tab) {
 			@tab_(tab, TabGraph, "Graph", fmt.Sprintf("/t/%s/graph", s.Team.Slug), "nav-n-graph", 0, false, false)
 			@tab_(tab, TabConflicts, "Conflicts", fmt.Sprintf("/t/%s/conflicts", s.Team.Slug), "nav-n-conflicts", len(s.OpenConflicts()), len(s.OpenConflicts()) > 0, false)
 			@tab_(tab, TabContracts, "Contracts", fmt.Sprintf("/t/%s/contracts", s.Team.Slug), "nav-n-contracts", len(s.Contracts), false, false)
-			@tab_(tab, TabDecisions, "Decisions", fmt.Sprintf("/t/%s/decisions", s.Team.Slug), "nav-n-decisions", len(s.Decisions), false, false)
+			@tab_(tab, TabDecisions, "Decisions", fmt.Sprintf("/t/%s/decisions", s.Team.Slug), "nav-n-decisions", len(s.AcceptedDecisions()), false, false)
 			@tab_(tab, TabRuns, "Runs", fmt.Sprintf("/t/%s/runs", s.Team.Slug), "nav-n-runs", len(s.Sessions), false, false)
 			@tab_(tab, TabActivity, "Activity", fmt.Sprintf("/t/%s/activity", s.Team.Slug), "nav-n-activity", 0, false, false)
 			if ViewerFrom(ctx).Member {
@@ -222,6 +222,6 @@ templ NavCounts(s state.Snapshot) {
 	@navBadge("nav-n-board", s.LiveSessions(), false, true)
 	@navBadge("nav-n-conflicts", len(s.OpenConflicts()), len(s.OpenConflicts()) > 0, true)
 	@navBadge("nav-n-contracts", len(s.Contracts), false, true)
-	@navBadge("nav-n-decisions", len(s.Decisions), false, true)
+	@navBadge("nav-n-decisions", len(s.AcceptedDecisions()), false, true)
 	@navBadge("nav-n-runs", len(s.Sessions), false, true)
 }

@@ -461,7 +461,8 @@ func TestDemoBoardsMakeNoHistoryCalls(t *testing.T) {
 	for _, slug := range []string{"demo-live", "demo"} {
 		for _, who := range []string{"", memberSecret} {
 			for _, path := range []string{"", "/conflicts", "/conflicts?cursor=hc-50&kind=path_overlap", "/activity",
-				"/activity?before=5&kind=claim_released", "/timeline?before=5", "/graph?window=24h", "/graph?window=7d"} {
+				"/activity?before=5&kind=claim_released", "/timeline?before=5", "/graph?window=24h", "/graph?window=7d",
+				"/decisions", "/decisions/history", "/decisions/history?cursor=hd-50", "/decisions/history?key=%23ids-are-ulid"} {
 				r := x.do(http.MethodGet, "/t/"+slug+path, "", withHeader("HX-Request", "true"), func(r *http.Request) {
 					if who != "" {
 						withCookie(who)(r)
@@ -471,7 +472,8 @@ func TestDemoBoardsMakeNoHistoryCalls(t *testing.T) {
 				if r.Code != http.StatusOK && r.Code != http.StatusNotFound {
 					t.Fatalf("%s%s (signed in %v): %d", slug, path, who != "", r.Code)
 				}
-				for _, never := range []string{`id="rail-more"`, `id="history"`, `class="win-select"`, `id="past-`, "test event 9", `id="graph-window"`} {
+				for _, never := range []string{`id="rail-more"`, `id="history"`, `class="win-select"`, `id="past-`, "test event 9", `id="graph-window"`,
+					`id="decisions-more"`, "Back to the newest past decisions"} {
 					if strings.Contains(body, never) {
 						t.Fatalf("%s%s drew %q on a demo board", slug, path, never)
 					}
@@ -485,18 +487,17 @@ func TestDemoBoardsMakeNoHistoryCalls(t *testing.T) {
 	}
 }
 
-// TestContractsAndDecisionsMakeNoHistoryCalls: nothing writes contracts or
-// decisions yet, so their pages keep their empty states and ask the backend
-// for no history, for an anonymous viewer of a public team and a member of a
-// private one.
-func TestContractsAndDecisionsMakeNoHistoryCalls(t *testing.T) {
+// TestContractsMakeNoHistoryCalls: the backend keeps only live assertions, so
+// the Contracts page keeps its empty state and asks for no history; the
+// Decisions page keeps its empty state too, and reads exactly one page of past
+// decisions — for an anonymous viewer of a public team and a member of a
+// private one. Its query parameters are not forwarded.
+func TestContractsMakeNoHistoryCalls(t *testing.T) {
 	x := historyWorld(t)
 	for _, c := range []struct{ slug, who string }{{pubSlug, ""}, {privSlug, memberSecret}} {
 		for _, p := range []struct{ path, empty string }{
 			{"/contracts", "No contracts published yet"},
 			{"/contracts?cursor=hc-50&window=24h&before=9", "No contracts published yet"},
-			{"/decisions", "No decisions recorded"},
-			{"/decisions?cursor=hc-50&window=7d&before=9", "No decisions recorded"},
 		} {
 			rec := x.getAs(c.who, "/t/"+c.slug+p.path)
 			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), p.empty) {
@@ -504,9 +505,20 @@ func TestContractsAndDecisionsMakeNoHistoryCalls(t *testing.T) {
 			}
 		}
 		if n := x.backend.allHistoryHits(c.slug); n != 0 {
-			t.Fatalf("Contracts and Decisions on %s made %d history requests", c.slug, n)
+			t.Fatalf("Contracts on %s made %d history requests", c.slug, n)
 		}
-		t.Logf("%s (member %v): Contracts and Decisions rendered their empty states with 0 history requests", c.slug, c.who != "")
+		rec := x.getAs(c.who, "/t/"+c.slug+"/decisions?cursor=hc-50&window=7d&before=9")
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK || !strings.Contains(body, "No decisions recorded") || !strings.Contains(body, "No decision has been superseded or revoked yet.") {
+			t.Fatalf("%s/decisions: %d, want 200 with the empty state", c.slug, rec.Code)
+		}
+		if n := x.backend.allHistoryHits(c.slug); n != 1 {
+			t.Fatalf("Decisions on %s made %d history requests, want 1", c.slug, n)
+		}
+		if q := x.backend.lastHistoryQuery(c.slug, "decisions/history"); q != "limit=50" {
+			t.Fatalf("Decisions on %s forwarded %q", c.slug, q)
+		}
+		t.Logf("%s (member %v): Contracts 0 history requests; Decisions empty state with 1 (%s)", c.slug, c.who != "", "limit=50")
 	}
 }
 
@@ -516,7 +528,8 @@ func TestContractsAndDecisionsMakeNoHistoryCalls(t *testing.T) {
 func TestPrivateHistoryIsNotFoundForAnybodyButAMember(t *testing.T) {
 	x := historyWorld(t)
 	paths := []string{"/conflicts", "/conflicts?cursor=hc-50", "/activity", "/activity?before=151&kind=claim_released",
-		"/timeline?before=151", "/graph?window=24h", "/graph?window=7d"}
+		"/timeline?before=151", "/graph?window=24h", "/graph?window=7d",
+		"/decisions", "/decisions/history", "/decisions/history?cursor=hd-50", "/decisions/history?key=%23auth-jwt-cookie"}
 
 	for _, who := range []string{"", outsiderSecret} {
 		for _, p := range paths {

@@ -31,9 +31,9 @@ import (
 //   - session.base_commit. Not exposed; the board shows it as a tooltip on the
 //     branch and in the runs list, so those render empty.
 //   - claim.intent_key. Not exposed. Nothing on the board reads it today.
-//   - conflict.paths and conflict.detail. The conflict's evidence json is not
-//     exposed, so a live board cannot highlight WHICH held path is contended.
-//     The suggested action, which is the part that matters, is exposed.
+//   - conflict.detail. Not exposed. The paths, the contract key, and for a
+//     decision_contradiction the decision key and the judge's note, are read
+//     from the conflict's evidence on the backend and are on the wire.
 //   - conflict participants' member_key. Only member_name comes back, so the
 //     key is resolved through the participant's session where there is one.
 //   - contract assertion fields. The API returns shape_hash and field_count
@@ -141,6 +141,14 @@ type conflictJSON struct {
 
 	// ContractKey is the contract a contract_* conflict is about.
 	ContractKey string `json:"contract_key"`
+
+	// DecisionKey, JudgeNote and EscalatedAt (docs/DECISIONS.md §9.4): the
+	// decision a decision_contradiction is about, what the plan's own agent
+	// said when it judged it, and when metiche asked a person. The first two
+	// are decision_contradiction only; EscalatedAt is any kind.
+	DecisionKey string  `json:"decision_key"`
+	JudgeNote   string  `json:"judge_note"`
+	EscalatedAt *string `json:"escalated_at"`
 
 	Participants []participantJSON `json:"participants"`
 }
@@ -268,6 +276,11 @@ func (c conflictJSON) conflict(memberBySession map[string]string) *model.Conflic
 		Occurrences:     int(c.OccurrenceCount),
 		Paths:           c.Paths,
 		ContractKey:     c.ContractKey,
+		// DecisionKey is what lights a decision node on the graph
+		// (state.EntanglementGraph); before §9.4 no wire carried it.
+		DecisionKey: c.DecisionKey,
+		JudgeNote:   c.JudgeNote,
+		EscalatedAt: parseTime(c.EscalatedAt),
 	}
 	if out.RaisedAt.IsZero() {
 		out.RaisedAt = parseTime(c.LastDetectedAt)
@@ -373,16 +386,34 @@ func liveFields(in []contractFieldJSON) []model.Field {
 
 // ---------------------------------------------------------------- decisions
 
+// decisionJSON is app/webapi's decisionWire (docs/DECISIONS.md §9.2), field
+// for field. GET /decisions returns accepted decisions only; the history
+// endpoint returns the superseded and revoked ones with ended_at.
 type decisionJSON struct {
-	Key        string   `json:"key"`
-	Title      string   `json:"title"`
-	Statement  string   `json:"statement"`
-	Status     string   `json:"status"`
-	AlwaysShow bool     `json:"always_show"`
-	Revision   int64    `json:"revision"`
-	DecidedBy  string   `json:"decided_by"`
-	DecidedAt  *string  `json:"decided_at"`
-	Scope      []string `json:"scope"`
+	Key           string             `json:"key"`
+	Title         string             `json:"title"`
+	Statement     string             `json:"statement"`
+	Status        string             `json:"status"`
+	AlwaysShow    bool               `json:"always_show"`
+	Revision      int64              `json:"revision"`
+	DecidedBy     string             `json:"decided_by"`
+	DecidedAt     *string            `json:"decided_at"`
+	UpdatedAt     *string            `json:"updated_at"`
+	EndedAt       *string            `json:"ended_at"`
+	Scope         []string           `json:"scope"`
+	ProjectKey    string             `json:"project_key"`
+	Rationale     string             `json:"rationale"`
+	Supersedes    string             `json:"supersedes"`
+	SupersededBy  string             `json:"superseded_by"`
+	Judged        decisionJudgedJSON `json:"judged"`
+	OpenConflicts []string           `json:"open_conflicts"`
+}
+
+type decisionJudgedJSON struct {
+	NoConflict int64 `json:"no_conflict"`
+	Conflict   int64 `json:"conflict"`
+	Unsure     int64 `json:"unsure"`
+	Pending    int64 `json:"pending"`
 }
 
 type decisionsWire struct {
@@ -394,17 +425,68 @@ type decisionsWire struct {
 func (d decisionsWire) decisions() []*model.Decision {
 	out := make([]*model.Decision, 0, len(d.Decisions))
 	for _, dw := range d.Decisions {
-		out = append(out, &model.Decision{
-			Key:       dw.Key,
-			Title:     dw.Title,
-			Statement: dw.Statement,
-			Status:    decisionStatus(dw.Status),
-			// The scope patterns are normalized the same way claim paths are,
-			// which is the point of showing them: it is what the detector
-			// matches on rather than a paraphrase of it.
-			Scope:      strings.Join(dw.Scope, ", "),
-			AlwaysShow: dw.AlwaysShow,
-			RecordedAt: parseTime(dw.DecidedAt),
+		out = append(out, dw.decision())
+	}
+	return out
+}
+
+func (dw decisionJSON) decision() *model.Decision {
+	return &model.Decision{
+		Key:       dw.Key,
+		Title:     dw.Title,
+		Statement: dw.Statement,
+		Status:    decisionStatus(dw.Status),
+		// The scope patterns are normalized the same way claim paths are,
+		// which is the point of showing them: it is what the detector
+		// matches on rather than a paraphrase of it.
+		Scope:        strings.Join(dw.Scope, ", "),
+		AlwaysShow:   dw.AlwaysShow,
+		RecordedAt:   parseTime(dw.DecidedAt),
+		Revision:     dw.Revision,
+		DecidedBy:    dw.DecidedBy,
+		ProjectKey:   dw.ProjectKey,
+		Supersedes:   dw.Supersedes,
+		SupersededBy: dw.SupersededBy,
+		Rationale:    dw.Rationale,
+		Judged: model.DecisionJudged{
+			NoConflict: dw.Judged.NoConflict, Conflict: dw.Judged.Conflict,
+			Unsure: dw.Judged.Unsure, Pending: dw.Judged.Pending,
+		},
+		OpenConflicts: dw.OpenConflicts,
+		UpdatedAt:     parseTime(dw.UpdatedAt),
+		EndedAt:       parseTime(dw.EndedAt),
+	}
+}
+
+// decisionHistoryWire is app/webapi's decisionHistoryResponse (§9.3).
+type decisionHistoryWire struct {
+	cursorsWire
+	Team       teamWire               `json:"team"`
+	Status     string                 `json:"status"`
+	Statuses   []string               `json:"statuses"`
+	Decisions  []decisionJSON         `json:"decisions"`
+	NextCursor string                 `json:"next_cursor"`
+	Revisions  []decisionRevisionJSON `json:"revisions"`
+}
+
+type decisionRevisionJSON struct {
+	Sequence   int64   `json:"sequence"`
+	Kind       string  `json:"kind"`
+	Summary    string  `json:"summary"`
+	Statement  string  `json:"statement"`
+	OccurredAt *string `json:"occurred_at"`
+}
+
+func (h decisionHistoryWire) page() model.DecisionPage {
+	out := model.DecisionPage{NextCursor: h.NextCursor, Statuses: h.Statuses,
+		Decisions: make([]*model.Decision, 0, len(h.Decisions))}
+	for _, dw := range h.Decisions {
+		out.Decisions = append(out.Decisions, dw.decision())
+	}
+	for _, r := range h.Revisions {
+		out.Revisions = append(out.Revisions, model.DecisionRevision{
+			Sequence: r.Sequence, Kind: r.Kind, Summary: r.Summary, Statement: r.Statement,
+			OccurredAt: parseTime(r.OccurredAt),
 		})
 	}
 	return out

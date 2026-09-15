@@ -23,6 +23,37 @@ type ConflictPage struct {
 	Kinds    []string
 }
 
+// DecisionQuery asks for one page of past decisions, or for one decision.
+type DecisionQuery struct {
+	Status string // "" (superseded and revoked) | superseded | revoked
+	Cursor string // "" for the newest page, else DecisionPage.NextCursor
+	// Key, when set, asks for that one decision in any status, with its
+	// revisions; Status and Cursor are then not sent.
+	Key   string
+	Limit int
+}
+
+// DecisionPage is one page of past decisions, newest first, or one decision
+// and its revisions.
+type DecisionPage struct {
+	Decisions  []*Decision
+	NextCursor string
+	// Statuses is what the status filter accepts, as the backend says.
+	Statuses []string
+	// Revisions are the decision's recorded wordings, newest first; only
+	// for a DecisionQuery with a Key.
+	Revisions []DecisionRevision
+}
+
+// DecisionRevision is one event that recorded, revised or ended a decision.
+type DecisionRevision struct {
+	Sequence   int64
+	Kind       string // decision_recorded | decision_superseded
+	Summary    string
+	Statement  string // the wording that event recorded, when it carried one
+	OccurredAt time.Time
+}
+
 // HistoryEvent is one event of the log as the history returns it: no
 // payload, and the session's member and agent by name.
 type HistoryEvent struct {

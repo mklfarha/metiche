@@ -35,6 +35,8 @@ type stubBackend struct {
 	// sessions and conflicts, when non-nil, are what every snapshot carries.
 	sessions  []any
 	conflicts []any
+	// decisions, when non-nil, is what GET /decisions answers: accepted only.
+	decisions []any
 
 	// login is the browser-session half of the backend (login_stub_test.go).
 	login stubLogin
@@ -104,10 +106,13 @@ func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if sub == "stream" && public && !failing {
 		b.streams[slug]++
 	}
-	sessions, conflicts := b.sessions, b.conflicts
+	sessions, conflicts, decisions := b.sessions, b.conflicts, b.decisions
 	b.mu.Unlock()
 	if sessions == nil {
 		sessions = []any{}
+	}
+	if decisions == nil {
+		decisions = []any{}
 	}
 	if conflicts == nil {
 		conflicts = []any{}
@@ -125,7 +130,7 @@ func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b.serveRuns(w, r, slug, sub)
 		return
 	}
-	if sub == "conflicts/history" || sub == "events" || sub == "graph" {
+	if sub == "conflicts/history" || sub == "events" || sub == "graph" || sub == "decisions/history" {
 		b.serveBoardHistory(w, r, slug, sub)
 		return
 	}
@@ -142,7 +147,7 @@ func (b *stubBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "contracts":
 		writeJSON(w, map[string]any{"contracts": []any{}})
 	case "decisions":
-		writeJSON(w, map[string]any{"decisions": []any{}})
+		writeJSON(w, map[string]any{"decisions": decisions})
 	case "stream":
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
