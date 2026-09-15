@@ -121,6 +121,7 @@ func RegisterWorkTools(s *mcp.Server, h *Handler, logger *zap.Logger) {
 
 type DeclareIntentParams struct {
 	SessionKey string   `json:"session_key" jsonschema:"The session_key start_session gave you."`
+	TeamSlug   string   `json:"team_slug,omitempty" jsonschema:"The team this session is on, by slug: the team_slug start_session returned. Optional on one team; pass team_slug when you are on more than one team, because session keys are per team."`
 	Summary    string   `json:"summary" jsonschema:"One sentence on what you are about to do, written for a teammate: 'add the POST /api/login handler and its token refresh'. Max 280 characters. This is what other agents judge against, so name the thing, not the file."`
 	Paths      []string `json:"paths,omitempty" jsonschema:"The specific files, or the narrowest folder, you are about to edit: 'app/rest.go', 'app/mcp/*.go'. Relative to the git root ('git rev-parse --show-toplevel'), NOT to your working directory: send 'app/rest.go', never 'myrepo/app/rest.go' or 'rest.go'. An absolute path is refused. '*' does not cross '/', so '*.go' means files at the repo root only. A repo-wide or top-level pattern ('**', '**/*.go', '.', 'app/**') is accepted but recorded at low severity and warns nobody, so it protects nothing. Widen later with update_intent add_paths as the work moves. Generated and vendored paths are dropped automatically."`
 	Mode       string   `json:"mode,omitempty" jsonschema:"What you are doing to every path in this call: 'read' (just reading; two readers never conflict), 'write' (editing, the default) or 'structural' (renaming, moving or deleting). Say structural when it applies - it breaks other people's code without any merge conflict to warn them, so it is scored high even against someone only reading."`
@@ -143,7 +144,7 @@ type DeclareIntentParams struct {
 // Not structural: a declaration fills in an existing lane on the board rather
 // than adding one, so sequence advances and board_revision does not.
 func (h *Handler) DeclareIntent(ctx context.Context, _ *mcp.CallToolRequest, args DeclareIntentParams) (*mcp.CallToolResult, any, error) {
-	who, err := h.RequireSession(ctx, args.SessionKey)
+	who, err := h.RequireSessionOnTeam(ctx, args.SessionKey, args.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -308,6 +309,7 @@ func (h *Handler) DeclareIntent(ctx context.Context, _ *mcp.CallToolRequest, arg
 
 type UpdateIntentParams struct {
 	SessionKey string `json:"session_key" jsonschema:"The session_key start_session gave you."`
+	TeamSlug   string `json:"team_slug,omitempty" jsonschema:"The team this session is on, by slug: the team_slug start_session returned. Optional on one team; pass team_slug when you are on more than one team, because session keys are per team."`
 	IntentKey  string `json:"intent_key,omitempty" jsonschema:"Which intent, by the key declare_intent returned (INT-12). Omit it to update the one you declared most recently."`
 
 	Status     string `json:"status,omitempty" jsonschema:"Where the work is now: 'active' (you have started), 'done' (finished - this releases your files immediately), 'abandoned' (you are not doing it after all) or 'superseded' (replaced by a different intent). Marking it done the moment you finish is the difference between unblocking a teammate now and in fifteen minutes."`
@@ -329,7 +331,7 @@ type UpdateIntentParams struct {
 // "record_activity" when it meant "complete_intent" leaves its files held.
 // One noun, one verb, and the parameters say what changed.
 func (h *Handler) UpdateIntent(ctx context.Context, _ *mcp.CallToolRequest, args UpdateIntentParams) (*mcp.CallToolResult, any, error) {
-	who, err := h.RequireSession(ctx, args.SessionKey)
+	who, err := h.RequireSessionOnTeam(ctx, args.SessionKey, args.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}

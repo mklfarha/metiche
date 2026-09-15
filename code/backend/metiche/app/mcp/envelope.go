@@ -39,6 +39,12 @@ type Envelope struct {
 	// ProjectKey.
 	ParentSessionKey string `json:"parent_session_key,omitempty"`
 
+	// TeamSlug is the team start_session put the session on. Session keys are
+	// per team, so an agent on several teams passes it back as team_slug with
+	// the session_key on every later call. Set only by start_session; absent
+	// everywhere else, for the same reason as ProjectKey.
+	TeamSlug string `json:"team_slug,omitempty"`
+
 	// Sequence is the team's event cursor. It advances on EVERY event.
 	// A client uses it to notice it missed something.
 	Sequence int64 `json:"sequence"`

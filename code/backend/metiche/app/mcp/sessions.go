@@ -210,6 +210,7 @@ func (h *Handler) StartSession(ctx context.Context, _ *mcp.CallToolRequest, args
 			env.Key = sessionKey
 			env.ProjectKey = proj.Key
 			env.ParentSessionKey = parent.Key
+			env.TeamSlug = team.Slug
 			env.Note = "heartbeat every ~60s with this session_key, or your claims lapse"
 			if len(open) > 0 {
 				env.Note = otherSessionsNote(open, sessionKey, tc.Now) + "; " + env.Note
@@ -391,6 +392,7 @@ func sessionAge(d time.Duration) string {
 
 type EndSessionParams struct {
 	SessionKey string `json:"session_key" jsonschema:"The session_key start_session gave you."`
+	TeamSlug   string `json:"team_slug,omitempty" jsonschema:"The team this session is on, by slug: the team_slug start_session returned. Optional on one team; pass team_slug when you are on more than one team, because session keys are per team."`
 	Outcome    string `json:"outcome,omitempty" jsonschema:"How it ended: succeeded, failed, or abandoned. Defaults to succeeded."`
 	Note       string `json:"note,omitempty" jsonschema:"One closing line - for a failure, what went wrong. Max 400 characters."`
 }
@@ -405,7 +407,7 @@ type EndSessionParams struct {
 // between a teammate being unblocked now and being unblocked in fifteen
 // minutes.
 func (h *Handler) EndSession(ctx context.Context, _ *mcp.CallToolRequest, args EndSessionParams) (*mcp.CallToolResult, any, error) {
-	who, err := h.RequireSession(ctx, args.SessionKey)
+	who, err := h.RequireSessionOnTeam(ctx, args.SessionKey, args.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -516,6 +518,7 @@ func releaseSessionClaims(ctx context.Context, q queryer, sessionUUID uuid.UUID,
 
 type HeartbeatParams struct {
 	SessionKey string `json:"session_key" jsonschema:"The session_key start_session gave you."`
+	TeamSlug   string `json:"team_slug,omitempty" jsonschema:"The team this session is on, by slug: the team_slug start_session returned. Optional on one team; pass team_slug when you are on more than one team, because session keys are per team."`
 	StatusLine string `json:"status_line,omitempty" jsonschema:"What you are doing RIGHT NOW, one line, max 120 characters - 'rewriting the token refresh in auth.go'. This is what a teammate sees on the board."`
 	HeadCommit string `json:"head_commit,omitempty" jsonschema:"Your current HEAD sha, if it moved."`
 }
@@ -535,7 +538,7 @@ type HeartbeatParams struct {
 // possible delivery vehicle for the push-that-cannot-push: a teammate's nudge
 // reaches an agent on its next bare heartbeat, with no polling and no event.
 func (h *Handler) Heartbeat(ctx context.Context, _ *mcp.CallToolRequest, args HeartbeatParams) (*mcp.CallToolResult, any, error) {
-	who, err := h.RequireSession(ctx, args.SessionKey)
+	who, err := h.RequireSessionOnTeam(ctx, args.SessionKey, args.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}

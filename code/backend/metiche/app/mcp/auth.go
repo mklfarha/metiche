@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -474,6 +475,26 @@ type Resolved struct {
 // nothing above the session layer tells terminals apart. A legacy account
 // token names no agent and keeps the account-wide reach it always had.
 func (h *Handler) RequireSession(ctx context.Context, sessionKey string) (Resolved, error) {
+	return h.RequireSessionOnTeam(ctx, sessionKey, "")
+}
+
+// RequireSessionOnTeam is RequireSession with the caller's optional team_slug.
+//
+// Session keys are per team, so one person on two teams has an S-5 on each.
+// When the key alone matches more than one of this account's sessions, the
+// candidates are narrowed in a fixed order, each step a PREFERENCE that is
+// applied only while it leaves something:
+//
+//  1. team_slug, when the call carries one: that team only (a filter, not a
+//     preference — a slug that matches nothing is "no such session there").
+//  2. the calling agent's own sessions, when the token names an agent. A
+//     subagent shares its supervisor's token, so it is the same agent.
+//  3. live or stale sessions over ended and abandoned ones: an S-5 that
+//     finished last week on another team must never block the S-5 working now.
+//
+// Anything still ambiguous after that is two usable sessions with one key, and
+// is refused with the team slugs to choose from — never picked arbitrarily.
+func (h *Handler) RequireSessionOnTeam(ctx context.Context, sessionKey, teamSlug string) (Resolved, error) {
 	acct, err := h.requireAccount(ctx)
 	if err != nil {
 		return Resolved{}, err
@@ -482,29 +503,41 @@ func (h *Handler) RequireSession(ctx context.Context, sessionKey string) (Resolv
 	if key == "" {
 		return Resolved{}, errors.New("session_key is required")
 	}
+	slug := strings.ToLower(strings.TrimSpace(teamSlug))
 
-	rows, err := h.core.DB().QueryContext(ctx,
-		"SELECT s.`id`, s.`team_uuid` FROM `session` s "+
-			"JOIN `agent` a ON a.`id` = s.`agent_uuid` "+
-			"WHERE s.`key` = ? AND a.`account_uuid` = ?",
-		key, acct.ID.String())
+	q := "SELECT s.`id`, s.`team_uuid`, s.`agent_uuid`, s.`status`, t.`slug` FROM `session` s " +
+		"JOIN `agent` a ON a.`id` = s.`agent_uuid` " +
+		"JOIN `team` t ON t.`id` = s.`team_uuid` " +
+		"WHERE s.`key` = ? AND a.`account_uuid` = ?"
+	qargs := []any{key, acct.ID.String()}
+	if slug != "" {
+		q += " AND t.`slug` = ?"
+		qargs = append(qargs, slug)
+	}
+	rows, err := h.core.DB().QueryContext(ctx, q, qargs...)
 	if err != nil {
 		return Resolved{}, retryable(err, "looking up the session")
 	}
-	type ref struct{ session, team uuid.UUID }
+	type ref struct {
+		session, team, agent uuid.UUID
+		status               enums.SessionStatus
+		slug                 string
+	}
 	var mine []ref
 	for rows.Next() {
-		var sid, tid string
-		if err := rows.Scan(&sid, &tid); err != nil {
+		var sid, tid, aid, tslug string
+		var status int64
+		if err := rows.Scan(&sid, &tid, &aid, &status, &tslug); err != nil {
 			_ = rows.Close()
 			return Resolved{}, err
 		}
 		s, err1 := uuid.FromString(sid)
 		t, err2 := uuid.FromString(tid)
-		if err1 != nil || err2 != nil {
+		a, err3 := uuid.FromString(aid)
+		if err1 != nil || err2 != nil || err3 != nil {
 			continue
 		}
-		mine = append(mine, ref{session: s, team: t})
+		mine = append(mine, ref{session: s, team: t, agent: a, status: enums.SessionStatus(status), slug: tslug})
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
@@ -512,26 +545,71 @@ func (h *Handler) RequireSession(ctx context.Context, sessionKey string) (Resolv
 	}
 	_ = rows.Close()
 
+	narrow := func(keep func(ref) bool) []ref {
+		var out []ref
+		for _, r := range mine {
+			if keep(r) {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	if len(mine) > 1 {
+		if id, ok := IdentityFromContext(ctx); ok && id.Agent != nil {
+			own := narrow(func(r ref) bool { return r.agent == id.Agent.ID })
+			if len(own) == 0 {
+				return Resolved{}, fmt.Errorf(
+					"session %q belongs to another of your agents, not the one this connection's token names; "+
+						"each client acts only on its own sessions — call start_session for this one", key)
+			}
+			mine = own
+		}
+	}
+	if len(mine) > 1 {
+		if live := narrow(func(r ref) bool {
+			return r.status == enums.SESSION_STATUS_LIVE || r.status == enums.SESSION_STATUS_STALE
+		}); len(live) > 0 {
+			mine = live
+		}
+	}
+
 	switch len(mine) {
 	case 0:
 		// Tell the two cases apart only as far as is safe: if the key names a
 		// session on a team this account is a live member of, it belongs to a
 		// teammate, and saying so is more useful than "no such session" and
 		// leaks nothing the caller cannot already see on the board.
+		cq := "SELECT COUNT(*) FROM `session` s JOIN `member` m ON m.`team_uuid` = s.`team_uuid` " +
+			"JOIN `team` t ON t.`id` = s.`team_uuid` " +
+			"WHERE s.`key` = ? AND m.`account_uuid` = ? AND m.`revoked_at` IS NULL AND m.`status` = ?"
+		cargs := []any{key, acct.ID.String(), enums.RECORD_STATUS_ACTIVE}
+		if slug != "" {
+			cq += " AND t.`slug` = ?"
+			cargs = append(cargs, slug)
+		}
 		var n int
-		if err := h.core.DB().QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM `session` s JOIN `member` m ON m.`team_uuid` = s.`team_uuid` "+
-				"WHERE s.`key` = ? AND m.`account_uuid` = ? AND m.`revoked_at` IS NULL AND m.`status` = ?",
-			key, acct.ID.String(), enums.RECORD_STATUS_ACTIVE).Scan(&n); err == nil && n > 0 {
+		if err := h.core.DB().QueryRowContext(ctx, cq, cargs...).Scan(&n); err == nil && n > 0 {
 			return Resolved{}, fmt.Errorf("session %q belongs to another agent", key)
+		}
+		if slug != "" {
+			return Resolved{}, fmt.Errorf(
+				"no session with key %q on team %q among the teams you are a member of — check team_slug, or call start_session first "+
+					"(session keys are per team and case-sensitive)", key, slug)
 		}
 		return Resolved{}, fmt.Errorf(
 			"no session with key %q on any team you are a member of — call start_session first "+
 				"(session keys are per team and case-sensitive)", key)
 	case 1:
 	default:
+		slugs := make([]string, 0, len(mine))
+		for _, r := range mine {
+			slugs = append(slugs, r.slug)
+		}
+		sort.Strings(slugs)
 		return Resolved{}, fmt.Errorf(
-			"session key %q names a session on more than one of your teams; end the ones you are not using", key)
+			"session key %q names a session on more than one of your teams (%s); "+
+				"pass team_slug with the team this session is on — the team_slug start_session returned", key,
+			strings.Join(slugs, ", "))
 	}
 
 	res, err := h.RequireTeamByID(ctx, mine[0].team)

@@ -141,6 +141,7 @@ func RegisterInstructionTools(s *mcp.Server, h *Handler, logger *zap.Logger) {
 
 type GetInstructionsParams struct {
 	SessionKey string `json:"session_key" jsonschema:"The session_key start_session gave you. You only ever see instructions addressed to your own session."`
+	TeamSlug   string `json:"team_slug,omitempty" jsonschema:"The team this session is on, by slug: the team_slug start_session returned. Optional on one team; pass team_slug when you are on more than one team, because session keys are per team."`
 	Limit      int    `json:"limit,omitempty" jsonschema:"How many to take this call, 1-10. Defaults to 3. Anything left over stays waiting and is reported as more_waiting."`
 
 	IncludeDelivered bool `json:"include_delivered,omitempty" jsonschema:"Also return instructions already delivered to you that you have not reported back on yet. Use it when you lost a response mid-call, or to re-read what you were asked before you report_back. Off by default, because an instruction repeated looks like a new one."`
@@ -239,7 +240,7 @@ type DeliveredInstruction struct {
 // instruction delivered with no report against it, and include_delivered=true
 // hands the agent back anything it was given but never answered.
 func (h *Handler) GetInstructions(ctx context.Context, _ *mcp.CallToolRequest, args GetInstructionsParams) (*mcp.CallToolResult, any, error) {
-	who, err := h.RequireSession(ctx, args.SessionKey)
+	who, err := h.RequireSessionOnTeam(ctx, args.SessionKey, args.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -728,6 +729,7 @@ func deliveryNote(items []DeliveredInstruction, more int) string {
 
 type ReportBackParams struct {
 	SessionKey     string `json:"session_key" jsonschema:"The session_key start_session gave you."`
+	TeamSlug       string `json:"team_slug,omitempty" jsonschema:"The team this session is on, by slug: the team_slug start_session returned. Optional on one team; pass team_slug when you are on more than one team, because session keys are per team."`
 	InstructionKey string `json:"instruction_key" jsonschema:"Which instruction, by the key get_instructions returned (IN-12)."`
 	Outcome        string `json:"outcome" jsonschema:"What you did about it: 'done' (you did it), 'acknowledged' (you have taken it on but are not finished), 'refused' (you are not going to, and the note says why), 'blocked' (you cannot until something else moves) or 'not_applicable' (it does not apply to you). Refusing is a fine answer; silence is not."`
 	Note           string `json:"note,omitempty" jsonschema:"One line for the person watching the board: what you did, or why you did not. Required when you refuse or are blocked - a refusal with no reason leaves the loop open anyway."`
@@ -749,7 +751,7 @@ type ReportBackParams struct {
 // received. Reporting a DIFFERENT outcome later (acknowledged, then done) is a
 // different key and a real second event, which is correct: that is news.
 func (h *Handler) ReportBack(ctx context.Context, _ *mcp.CallToolRequest, args ReportBackParams) (*mcp.CallToolResult, any, error) {
-	who, err := h.RequireSession(ctx, args.SessionKey)
+	who, err := h.RequireSessionOnTeam(ctx, args.SessionKey, args.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}

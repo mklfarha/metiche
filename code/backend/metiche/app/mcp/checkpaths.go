@@ -39,6 +39,7 @@ const CheckPathsMaxFindings = 10
 
 type CheckPathsParams struct {
 	SessionKey string   `json:"session_key" jsonschema:"The session_key start_session gave you."`
+	TeamSlug   string   `json:"team_slug,omitempty" jsonschema:"The team this session is on, by slug: the team_slug start_session returned. Optional on one team; pass team_slug when you are on more than one team, because session keys are per team."`
 	Paths      []string `json:"paths" jsonschema:"The specific files, or the narrowest folder, you are thinking about touching: 'app/rest.go', 'app/mcp/*.go'. Relative to the git root ('git rev-parse --show-toplevel'), NOT to your working directory: send 'app/rest.go', never 'myrepo/app/rest.go' or 'rest.go'. An absolute path is refused. '*' does not cross '/', so '*.go' means files at the repo root only. A repo-wide pattern ('**', '**/*.go') comes back scored low against everyone, which tells you little. Nothing is claimed and nobody is told you asked."`
 	Mode       string   `json:"mode,omitempty" jsonschema:"What you would be doing to them - read, write (the default) or structural. It changes the answer: two readers are never a conflict, and a structural change collides with everything."`
 }
@@ -90,7 +91,7 @@ type CheckPathsResult struct {
 // CheckPaths answers "who else is in these files" and commits the caller to
 // nothing.
 func (h *Handler) CheckPaths(ctx context.Context, _ *mcp.CallToolRequest, args CheckPathsParams) (*mcp.CallToolResult, any, error) {
-	who, err := h.RequireSession(ctx, args.SessionKey)
+	who, err := h.RequireSessionOnTeam(ctx, args.SessionKey, args.TeamSlug)
 	if err != nil {
 		return nil, nil, err
 	}
