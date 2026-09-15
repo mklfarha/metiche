@@ -181,6 +181,9 @@ func queryConflicts(ctx context.Context, tx *sql.Tx, q string, args []any, limit
 			c.DismissReason = enums.DismissReason(dismissReason.Int64).String()
 		}
 		c.Paths = conflictPaths(overlapPath, aPattern, bPattern)
+		if strings.HasPrefix(c.Kind, "contract_") {
+			c.ContractKey = strings.TrimSpace(overlapPath.String)
+		}
 		c.Participants = []participantWire{}
 		out = append(out, c)
 		ids = append(ids, id)

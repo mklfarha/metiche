@@ -7,10 +7,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/mklfarha/metiche/backend/app/coordination"
 	"github.com/mklfarha/metiche/backend/enums"
 )
 
 const maxContracts = 300
+
+// maxContractIssues bounds the issues returned per contract.
+const maxContractIssues = 20
 
 type contractsResponse struct {
 	cursors
@@ -54,24 +58,24 @@ const contractsQuery = "SELECT ct.`id`, ct.`key`, ct.`kind`, ct.`status`, ct.`ti
 	"JOIN `project` p ON p.`id` = ct.`project_uuid` " +
 	"WHERE ct.`team_uuid` = ? ORDER BY ct.`key` LIMIT ?"
 
-// assertionsQuery counts each assertion's fields in the same pass.
+// assertionsQuery reads every assertion that still counts: active, on a
+// session that is live or stale. An ended or abandoned session's assertions
+// stop counting the way its claims do, and the matrix must not show a column
+// for somebody who has gone home.
 //
-// field_count is what tells a reader whether an assertion is a real shape or a
-// placeholder, and fetching it separately would be a third query for one
-// integer. Grouping by the assertion's own primary key keeps it a plain
-// aggregate over the index that already backs the join.
+// field_count is a correlated count over contract_field's unique
+// (assertion_uuid, path) index; the shape is the canonical field list the
+// server stored, which is what the fields and issues below are built from.
 const assertionsQuery = "SELECT ca.`contract_uuid`, ca.`role`, ca.`shape_hash`, ca.`revision`, ca.`asserted_at`, " +
-	"s.`key`, m.`display_name`, a.`label`, COUNT(f.`id`) " +
+	"s.`key`, m.`display_name`, a.`label`, " +
+	"(SELECT COUNT(*) FROM `contract_field` f WHERE f.`assertion_uuid` = ca.`id`), ca.`shape` " +
 	"FROM `contract_assertion` ca " +
 	"JOIN `contract` ct ON ct.`id` = ca.`contract_uuid` " +
-	"LEFT JOIN `session` s ON s.`id` = ca.`session_uuid` " +
+	"JOIN `session` s ON s.`id` = ca.`session_uuid` " +
 	"LEFT JOIN `member` m ON m.`id` = ca.`member_uuid` " +
 	"LEFT JOIN `agent` a ON a.`id` = s.`agent_uuid` " +
-	"LEFT JOIN `contract_field` f ON f.`assertion_uuid` = ca.`id` " +
-	"WHERE ca.`team_uuid` = ? AND ca.`status` = ? " +
-	"GROUP BY ca.`id`, ca.`contract_uuid`, ca.`role`, ca.`shape_hash`, ca.`revision`, ca.`asserted_at`, " +
-	"s.`key`, m.`display_name`, a.`label` " +
-	"ORDER BY ca.`asserted_at`"
+	"WHERE ca.`team_uuid` = ? AND ca.`status` = ? AND s.`status` IN (?, ?) " +
+	"ORDER BY ca.`asserted_at`, ca.`id`"
 
 func loadContracts(ctx context.Context, tx *sql.Tx, teamUUID string, limit int) ([]contractWire, error) {
 	rows, err := tx.QueryContext(ctx, contractsQuery, teamUUID, limit)
@@ -109,11 +113,13 @@ func loadContracts(ctx context.Context, tx *sql.Tx, teamUUID string, limit int) 
 	}
 
 	index := make(map[string]*contractWire, len(out))
+	shapes := make(map[string][]assertionShape, len(out))
 	for i := range out {
 		index[ids[i]] = &out[i]
 	}
 
-	arows, err := tx.QueryContext(ctx, assertionsQuery, teamUUID, enums.ASSERTION_STATUS_ACTIVE)
+	arows, err := tx.QueryContext(ctx, assertionsQuery, teamUUID, enums.ASSERTION_STATUS_ACTIVE,
+		enums.SESSION_STATUS_LIVE, enums.SESSION_STATUS_STALE)
 	if err != nil {
 		return nil, err
 	}
@@ -128,9 +134,10 @@ func loadContracts(ctx context.Context, tx *sql.Tx, teamUUID string, limit int) 
 			asserted                sql.NullTime
 			sessionKey, name, label sql.NullString
 			fieldCount              int64
+			shape                   sql.NullString
 		)
 		if err := arows.Scan(&contractUUID, &role, &shapeHash, &revision, &asserted,
-			&sessionKey, &name, &label, &fieldCount); err != nil {
+			&sessionKey, &name, &label, &fieldCount, &shape); err != nil {
 			return nil, err
 		}
 		c, ok := index[contractUUID]
@@ -146,6 +153,13 @@ func loadContracts(ctx context.Context, tx *sql.Tx, teamUUID string, limit int) 
 			AssertedAt: rfc3339(asserted),
 			FieldCount: fieldCount,
 		}
+		as := assertionShape{session: sessionKey.String, hash: shapeHash.String, role: enums.AssertionRole(role.Int64)}
+		if shape.Valid {
+			if parsed, err := coordination.ShapeFromCanonical([]byte(shape.String)); err == nil {
+				as.shape, as.ok = parsed, true
+				aw.Fields = fieldsWire(parsed)
+			}
+		}
 		switch enums.AssertionRole(role.Int64) {
 		case enums.ASSERTION_ROLE_PRODUCES:
 			aw.Role = enums.AssertionRole(enums.ASSERTION_ROLE_PRODUCES).String()
@@ -153,43 +167,100 @@ func loadContracts(ctx context.Context, tx *sql.Tx, teamUUID string, limit int) 
 		case enums.ASSERTION_ROLE_CONSUMES:
 			aw.Role = enums.AssertionRole(enums.ASSERTION_ROLE_CONSUMES).String()
 			c.Consumes = append(c.Consumes, aw)
+		default:
+			continue
 		}
+		shapes[contractUUID] = append(shapes[contractUUID], as)
 	}
 	if err := arows.Err(); err != nil {
 		return nil, err
 	}
 
 	for i := range out {
-		out[i].Agreement = agreementOf(&out[i])
+		out[i].Agreement, out[i].Issues = agreementOf(&out[i], shapes[ids[i]])
 	}
 	return out, nil
 }
 
-// agreementOf reduces one contract's active assertions to a single word.
+// assertionShape is what the comparison needs from one assertion.
+type assertionShape struct {
+	session string
+	hash    string
+	role    enums.AssertionRole
+	shape   coordination.Shape
+	ok      bool
+}
+
+func fieldsWire(s coordination.Shape) []contractFieldWire {
+	out := make([]contractFieldWire, 0, len(s.Fields))
+	for _, f := range s.Fields {
+		out = append(out, contractFieldWire{
+			Path: f.Path, Type: string(f.Type), Direction: string(f.Direction),
+			Required: f.Required, Nullable: f.Nullable,
+		})
+	}
+	return out
+}
+
+// agreementOf reduces one contract's live assertions to a single word, and
+// returns the field-level issues behind it.
 //
-// The shape hash is the whole comparison: the server canonicalizes every
-// submitted shape and hashes it, precisely so that two agents describing the
-// same thing in different word order produce the same bytes. One distinct hash
-// across every active assertion means they agree; more than one means they do
-// not, and nothing further needs to be compared to know that.
-func agreementOf(c *contractWire) string {
+// Equal shape hashes are the fast path: the server canonicalizes every shape,
+// so one distinct hash means the sides agree. Different hashes are NOT a
+// mismatch by themselves — a producer may return more than any consumer reads,
+// or mark a field optional that a consumer does not need — so every producer
+// is compared with every consumer through coordination.CompareShapes, the same
+// function publish_contract detects with. That is what keeps the board from
+// calling "mismatch" what the server did not raise. A contract whose stored
+// shapes cannot be read falls back to the hash comparison alone.
+func agreementOf(c *contractWire, shapes []assertionShape) (string, []contractIssueWire) {
 	switch {
 	case len(c.Produces) == 0 && len(c.Consumes) == 0:
-		return "empty"
+		return "empty", nil
 	case len(c.Produces) == 0:
-		return "unclaimed"
+		return "unclaimed", nil
 	case len(c.Consumes) == 0:
-		return "unconsumed"
+		return "unconsumed", nil
 	}
 	seen := map[string]struct{}{}
-	for _, a := range c.Produces {
-		seen[a.ShapeHash] = struct{}{}
-	}
-	for _, a := range c.Consumes {
-		seen[a.ShapeHash] = struct{}{}
+	readable := true
+	for _, s := range shapes {
+		seen[s.hash] = struct{}{}
+		readable = readable && s.ok
 	}
 	if len(seen) == 1 {
-		return "agreed"
+		return "agreed", nil
 	}
-	return "mismatch"
+	if !readable {
+		return "mismatch", nil
+	}
+
+	var issues []contractIssueWire
+	breaking := false
+	for _, p := range shapes {
+		if p.role != enums.ASSERTION_ROLE_PRODUCES {
+			continue
+		}
+		for _, q := range shapes {
+			if q.role != enums.ASSERTION_ROLE_CONSUMES || q.session == p.session || q.hash == p.hash {
+				continue
+			}
+			for _, is := range coordination.CompareShapes(p.shape, q.shape) {
+				if is.Kind != coordination.IssueNamingVariant {
+					breaking = true
+				}
+				if len(issues) < maxContractIssues {
+					issues = append(issues, contractIssueWire{
+						Kind: string(is.Kind), Path: is.Path, Expected: is.Expected, Actual: is.Actual,
+						Direction: string(is.Direction), Severity: is.Severity.String(), Note: is.Note,
+						Producer: p.session, Consumer: q.session,
+					})
+				}
+			}
+		}
+	}
+	if breaking {
+		return "mismatch", issues
+	}
+	return "agreed", issues
 }

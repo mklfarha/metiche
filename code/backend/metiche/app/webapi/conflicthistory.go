@@ -164,16 +164,24 @@ func pastConflictStatusNames() []string {
 	return out
 }
 
-// conflictKindNames lists every conflict kind by name, in the enum's order.
+// liveConflictKinds are the kinds something actually detects today, in the
+// enum's order. The enum also names decision_contradiction, duplicate_work
+// and stale_base, which nothing raises yet; offering them as filters would
+// advertise detections that do not exist.
+var liveConflictKinds = []enums.ConflictKind{
+	enums.CONFLICT_KIND_PATH_OVERLAP,
+	enums.CONFLICT_KIND_CONTRACT_MISMATCH,
+	enums.CONFLICT_KIND_CONTRACT_UNCLAIMED,
+	enums.CONFLICT_KIND_CONTRACT_NAMING_VARIANT,
+}
+
+// conflictKindNames lists the live conflict kinds by name.
 func conflictKindNames() []string {
-	out := []string{}
-	for i := int64(1); ; i++ {
-		name := enums.ConflictKind(i).String()
-		if name == enums.ConflictKind(enums.CONFLICT_KIND_INVALID).String() {
-			return out
-		}
-		out = append(out, name)
+	out := make([]string, 0, len(liveConflictKinds))
+	for _, k := range liveConflictKinds {
+		out = append(out, k.String())
 	}
+	return out
 }
 
 // ---------------------------------------------------------------- cursor

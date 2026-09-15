@@ -317,7 +317,7 @@ func TestConflictHistoryPagesEveryPastConflictWithoutGapsOrDuplicates(t *testing
 	if len(capped.Conflicts) != maxConflictHistoryPage || capped.NextCursor == "" {
 		t.Fatalf("limit=1000 served %d rows (next %q), want %d and a cursor", len(capped.Conflicts), capped.NextCursor, maxConflictHistoryPage)
 	}
-	if strings.Join(capped.Statuses, ",") != "resolved,dismissed,expired" || len(capped.Kinds) < 7 || capped.Kinds[0] != "path_overlap" {
+	if strings.Join(capped.Statuses, ",") != "resolved,dismissed,expired" || strings.Join(capped.Kinds, ",") != "path_overlap,contract_mismatch,contract_unclaimed,contract_naming_variant" {
 		t.Fatalf("filter vocabulary = %v %v", capped.Statuses, capped.Kinds)
 	}
 }

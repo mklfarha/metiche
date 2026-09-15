@@ -50,6 +50,7 @@ import (
 type inviteWorld struct {
 	t    *testing.T
 	db   *sql.DB
+	core *core.Implementation
 	srv  *httptest.Server
 	logs *observer.ObservedLogs
 	reqs *lockedBuffer // the chi request logger's output
@@ -151,7 +152,7 @@ func newInviteWorld(t *testing.T) *inviteWorld {
 		Logger:       logger,
 		CustomRoutes: ProvideCustomRoutes(impl, logger),
 	})
-	w := &inviteWorld{t: t, db: impl.DB(), logs: logs, reqs: reqs}
+	w := &inviteWorld{t: t, db: impl.DB(), core: impl, logs: logs, reqs: reqs}
 	w.srv = httptest.NewServer(srv.Handler)
 	t.Cleanup(w.srv.Close)
 
@@ -219,6 +220,8 @@ func (w *inviteWorld) cleanup() {
 		return
 	}
 	marks, teamArgs := in(w.teams)
+	// contract_field has no team_uuid; it goes with its team's contracts.
+	_, _ = conn.ExecContext(ctx, "DELETE FROM `contract_field` WHERE `contract_uuid` IN (SELECT `id` FROM `contract` WHERE `team_uuid` IN ("+marks+"))", teamArgs...)
 	var accounts []string
 	if rows, err := conn.QueryContext(ctx, "SELECT DISTINCT `account_uuid` FROM `member` WHERE `team_uuid` IN ("+marks+")", teamArgs...); err == nil {
 		for rows.Next() {

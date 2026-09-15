@@ -148,6 +148,9 @@ type conflictWire struct {
 	// not about paths.
 	Paths []string `json:"paths"`
 
+	// ContractKey is the contract a contract_* conflict is about.
+	ContractKey string `json:"contract_key,omitempty"`
+
 	Participants []participantWire `json:"participants"`
 }
 
@@ -160,6 +163,8 @@ type assertionWire struct {
 	Revision   int64   `json:"revision"`
 	AssertedAt *string `json:"asserted_at,omitempty"`
 	FieldCount int64   `json:"field_count"`
+	// Fields is the canonical shape the server stored, when it has one.
+	Fields []contractFieldWire `json:"fields,omitempty"`
 }
 
 type contractWire struct {
@@ -183,8 +188,35 @@ type contractWire struct {
 	//	empty     — no active assertions at all.
 	Agreement string `json:"agreement"`
 
+	// Issues are the field-level disagreements behind a mismatch (and any
+	// naming variants), computed by the server from the stored shapes.
+	Issues []contractIssueWire `json:"issues,omitempty"`
+
 	Produces []assertionWire `json:"produces"`
 	Consumes []assertionWire `json:"consumes"`
+}
+
+// contractFieldWire is one canonical field of an assertion's shape.
+type contractFieldWire struct {
+	Path      string `json:"path"`
+	Type      string `json:"type"`
+	Direction string `json:"direction"`
+	Required  bool   `json:"required"`
+	Nullable  bool   `json:"nullable"`
+}
+
+// contractIssueWire is one field-level disagreement between a producing and a
+// consuming session, as coordination.CompareShapes found it.
+type contractIssueWire struct {
+	Kind      string `json:"kind"`
+	Path      string `json:"path"`
+	Expected  string `json:"expected,omitempty"`
+	Actual    string `json:"actual,omitempty"`
+	Direction string `json:"direction"`
+	Severity  string `json:"severity"`
+	Note      string `json:"note,omitempty"`
+	Producer  string `json:"producer"`
+	Consumer  string `json:"consumer"`
 }
 
 type decisionWire struct {
