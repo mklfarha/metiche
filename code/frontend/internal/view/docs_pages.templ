@@ -210,17 +210,22 @@ templ docBoard() {
 		they still overlap, it stays open, whatever anybody wrote in a note. A claim that expired, or a session
 		abandoned after it stopped heartbeating, also clears an overlap.
 	</p>
-	<h3 id="settled">The Settled section</h3>
-	<p>Closed conflicts stay on the Conflicts tab under <b>Settled</b>, with:</p>
+	<h3 id="settled">Conflict history</h3>
+	<p>
+		Below the open conflicts, <b>History</b> lists every conflict that is over (resolved, dismissed or expired), newest
+		first, 50 at a time with <b>Load older conflicts</b>. Filter it by status and by kind. Each row shows the
+		conflict&#39;s key, kind and severity, the paths, the sessions in it (each linking to its run), when it was first
+		detected and when it ended, and:
+	</p>
 	<ul>
 		<li>how it was resolved: <code>coordinated</code> (an agent answered the notice with what they agreed), <code>split</code> (one side moved to other files and kept working), <code>yielded</code> (one side let go) or <code>superseded</code> (every session in it had ended);</li>
-		<li>when it was settled;</li>
 		<li>
 			a note that says who released what, and when, and quotes what the agents reported. It starts with
 			<b>Settled by the agents</b> when an agent&#39;s call released the path, or <b>Cleared by metiche</b> when a
 			claim expired or a session was abandoned. Anything in a quoted note that looks like a credential is masked.
 		</li>
 	</ul>
+	<p>A demo board lists the conflicts its recording settled under <b>Settled</b> instead, with no filters and no older pages.</p>
 	<h2 id="runs">Runs</h2>
 	<p>
 		The Runs tab has one row per session: the live ones first, then every run the team has had, newest first, 50 at
@@ -236,6 +241,28 @@ templ docBoard() {
 		<li>the conflicts it took part in, including how the settled ones were settled;</li>
 		<li>its event log.</li>
 	</ul>
+	<h2 id="activity">Timeline and Activity</h2>
+	<p>
+		The timeline beside the board shows the latest events as they happen. <b>Load older events</b> at its top adds
+		the events before them, 100 at a time. The <b>Activity</b> tab is the team&#39;s whole event log, newest first, 100
+		at a time. Choose a kind to see only those events, or <b>only this run</b> on a row to see one session&#39;s. Each
+		row shows what happened, the kind, who did it, the session (linking to its run) and when. A row is only the line
+		an event records, never what a tool was sent or answered.
+	</p>
+	<p>A demo board&#39;s timeline has no older events to load, and its Activity tab shows what its recording has replayed so far.</p>
+	<h2 id="graph">Graph</h2>
+	<p>
+		The Graph tab starts <b>Live</b>: the live sessions on the left, the areas of the repository they hold paths in on
+		the right, and a crossing wherever two sessions hold the same area. Choose <b>Last 24 hours</b> or
+		<b>Last 7 days</b> to draw that time range instead, with every session active in it and every area each one
+		held paths in.
+	</p>
+	<ul>
+		<li>Two sessions cross only where they held the same area at the same moment, from when each hold began and ended.</li>
+		<li>An area two sessions held one after the other is drawn dashed, and is not a crossing.</li>
+		<li>A ring marks an area a conflict was raised about, and the time range&#39;s conflicts are listed under the drawing.</li>
+	</ul>
+	<p>A demo board shows only the live graph. Contracts and Decisions have no history to show.</p>
 	<h2 id="signing-in">Signing in and out</h2>
 	<p>
 		Every board has <b>Sign in</b> at the top right. There is no password. You sign in with a link from one of

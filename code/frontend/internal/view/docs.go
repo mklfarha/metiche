@@ -41,7 +41,7 @@ var docPages = []DocPage{
 		Summary: "Make a join code from the board or through your assistant, what the limits are, revoking, and how a teammate joins.",
 		body:    docInviting},
 	{Slug: "the-board", Title: "The board", Nav: "The board",
-		Summary: "Lanes and subagents, conflicts and how they get settled, run history, signing in and out, and your account page.",
+		Summary: "Lanes and subagents, conflicts and their history, runs, the timeline and Activity, the graph's time ranges, signing in and out, and your account page.",
 		body:    docBoard},
 	{Slug: "repos-and-teams", Title: "Repos and teams", Nav: "Repos and teams",
 		Summary: "The one-time question about putting a repository on a team, the .metiche file, and working on several teams.",
