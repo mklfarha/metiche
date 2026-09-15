@@ -117,7 +117,7 @@ func TestPendingNote(t *testing.T) {
 		{"instructions", Pending{Instructions: 2}, true, "2 instruction(s) waiting — call get_instructions"},
 		{"conflicts", Pending{Conflicts: 1}, true, "1 open conflict(s) involve you — call get_instructions"},
 		{"both", Pending{Instructions: 1, Conflicts: 3}, true, "1 instruction(s) and 3 open conflict(s) involve you — call get_instructions"},
-		{"reviews only", Pending{Reviews: 1}, true, "1 pair(s) assigned to you to judge — judging is not available yet, so there is nothing to call; carry on"},
+		{"reviews only", Pending{Reviews: 1}, true, "1 pair(s) to judge against your plan — call get_review_context, then report_judgement"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

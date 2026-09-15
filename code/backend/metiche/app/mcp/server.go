@@ -176,6 +176,14 @@ the other agent gets a notice. Fix your side and publish_contract again; the con
 the shapes agree, when a producer appears, or when a side's session ends. A consumer nobody produces is
 flagged to the team if it stays that way.
 
+When the team settles something the code must obey (how auth works, an error format, a library, who owns a
+module), record it with record_decision: a short key, a statement another agent can check a plan against, and the
+paths it governs. When pending.reviews is above zero, or a response carries review, metiche is asking your own
+model whether your plan breaks a recorded decision: read the pair with get_review_context and answer with
+report_judgement. no_conflict is the usual answer; conflict only when doing the plan as written would break the
+statement. On a conflict, change the plan and update_intent; if the decision is wrong, settle it with its author's
+agent, and ask your person only if you can't.
+
 If the person asks to see the board, call open_board.
 
 Retries are safe: pass the same idempotency_key and you get the same answer back, applied once.
@@ -387,6 +395,11 @@ func newServer(h *Handler, logger *zap.Logger) *mcp.Server {
 	// Tool 8: publish_contract. Its detection is its own per-call hook
 	// (contractdetect.go), run inside the same lock as the insert.
 	RegisterContractTools(server, h, logger)
+
+	// Tools 9-11: record_decision, get_review_context, report_judgement. The
+	// inline review block on declare_intent and update_intent is not here: it
+	// is NewDecisionReviewer, chained after the path detector in app/rest.go.
+	RegisterDecisionTools(server, h, logger)
 
 	return server
 }

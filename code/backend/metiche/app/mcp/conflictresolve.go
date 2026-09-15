@@ -721,6 +721,8 @@ func ConflictResolvedSummary(s SettledConflict) string {
 	case enums.CONFLICT_KIND_CONTRACT_MISMATCH, enums.CONFLICT_KIND_CONTRACT_UNCLAIMED, enums.CONFLICT_KIND_CONTRACT_NAMING_VARIANT:
 		what := strings.ReplaceAll(s.Kind.String(), "_", " ")
 		return truncate(fmt.Sprintf("%s settled (%s): the %s on %s", s.Key, s.Resolution.String(), what, firstNonEmpty(s.OverlapPath, "the contract")), 240)
+	case enums.CONFLICT_KIND_DECISION_CONTRADICTION:
+		return truncate(fmt.Sprintf("%s settled (%s): the plan no longer contradicts %s", s.Key, s.Resolution.String(), firstNonEmpty(s.OverlapPath, "the decision")), 240)
 	}
 	where := s.OverlapPath
 	if where == "" {

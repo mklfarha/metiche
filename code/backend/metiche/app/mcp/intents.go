@@ -410,6 +410,8 @@ func (h *Handler) UpdateIntent(ctx context.Context, _ *mcp.CallToolRequest, args
 		IntentSummary:   firstNonEmpty(summary, intent.Summary),
 	}
 	ctx = withPathDetection(ctx, req)
+	// The decision reviewer looks again only at a new revision of the plan.
+	ctx = withMaterialUpdate(ctx, material && !terminal)
 
 	eventKind := enums.EventKind(enums.EVENT_KIND_INTENT_UPDATED)
 	if terminal {
@@ -556,6 +558,26 @@ func (h *Handler) UpdateIntent(ctx context.Context, _ *mcp.CallToolRequest, args
 					rel.IntentStatus = intentStatusName(hasStatus, status, intent.Status)
 				}
 				if err := h.settleAfterRelease(ctx, tc, rel, eventActor{
+					ProjectUUID: sess.ProjectUUID, SessionUUID: sess.ID, AgentUUID: ag.ID, MemberUUID: who.Member.ID,
+				}); err != nil {
+					return err
+				}
+			}
+
+			// A finished plan has nothing left to judge, and a decision it
+			// contradicted no longer has a plan breaking it
+			// (docs/DECISIONS.md §3.4, §4.5).
+			if terminal {
+				if err := expireIntentJudgements(ctx, tc.Tx, sess.ID, intent.ID, 0, tc.Now); err != nil {
+					return err
+				}
+				ids, err := OpenDecisionConflictsOfSession(ctx, tc.Tx, who.Team.ID, sess.ID)
+				if err != nil {
+					return err
+				}
+				if _, err := h.settleDecisionConflicts(ctx, tc, DecisionRelease{
+					TeamUUID: who.Team.ID, SessionUUID: sess.ID, Kind: DecisionReleaseIntentEnded, At: tc.Now,
+				}, ids, eventActor{
 					ProjectUUID: sess.ProjectUUID, SessionUUID: sess.ID, AgentUUID: ag.ID, MemberUUID: who.Member.ID,
 				}); err != nil {
 					return err

@@ -106,9 +106,9 @@ func (p Pending) NoteForPending() string {
 	case p.Conflicts > 0:
 		return fmt.Sprintf("%d open conflict(s) involve you — call get_instructions", p.Conflicts)
 	case p.Reviews > 0:
-		// Judging pairs is not built: no tool serves a review yet. The count
-		// stays in the envelope so the shape does not change when it is.
-		return fmt.Sprintf("%d pair(s) assigned to you to judge — judging is not available yet, so there is nothing to call; carry on", p.Reviews)
+		// Pairs of a recorded decision and this session's own plan, for its
+		// own model to judge (docs/DECISIONS.md §3.2).
+		return fmt.Sprintf("%d pair(s) to judge against your plan — call get_review_context, then report_judgement", p.Reviews)
 	}
 	return ""
 }
@@ -128,7 +128,10 @@ type ConflictNotice struct {
 	// Contract, AtFault and Fields are set only on a contract conflict, so a
 	// path overlap notice renders byte for byte as it always did. AtFault is
 	// which side has to change on a mismatch: producer, consumer or both.
-	Contract        string   `json:"contract,omitempty"`
+	Contract string `json:"contract,omitempty"`
+	// Decision is set only on a decision_contradiction: the decision's key.
+	// AtFault is then always "plan".
+	Decision        string   `json:"decision,omitempty"`
 	AtFault         string   `json:"at_fault,omitempty"`
 	Fields          []string `json:"fields,omitempty"`
 	SuggestedAction string   `json:"suggested_action"`

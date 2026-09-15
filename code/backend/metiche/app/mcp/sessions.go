@@ -486,12 +486,32 @@ func (h *Handler) EndSession(ctx context.Context, _ *mcp.CallToolRequest, args E
 			if _, err := WithdrawSessionAssertions(ctx, tc.Tx, sess.ProjectUUID, sess.ID, tc.Now); err != nil {
 				return err
 			}
-			return h.settleContractConflicts(ctx, tc, ContractRelease{
+			if err := h.settleContractConflicts(ctx, tc, ContractRelease{
 				TeamUUID:    who.Team.ID,
 				SessionUUID: sess.ID,
 				Kind:        ContractReleaseSessionEnded,
 				At:          tc.Now,
-			}, uuid.Nil, sess.ID, actor)
+			}, uuid.Nil, sess.ID, actor); err != nil {
+				return err
+			}
+
+			// Its pairs to judge expire, and the decision conflicts its plans
+			// were in close as superseded. The decisions it recorded stand:
+			// they are the team's agreements, not the session's.
+			if _, err := ExpireJudgementsOfSession(ctx, tc.Tx, sess.ID, tc.Now); err != nil {
+				return err
+			}
+			ids, err := OpenDecisionConflictsOfSession(ctx, tc.Tx, who.Team.ID, sess.ID)
+			if err != nil {
+				return err
+			}
+			_, err = h.settleDecisionConflicts(ctx, tc, DecisionRelease{
+				TeamUUID:    who.Team.ID,
+				SessionUUID: sess.ID,
+				Kind:        DecisionReleaseSessionEnded,
+				At:          tc.Now,
+			}, ids, actor)
+			return err
 		},
 	})
 	if err != nil {

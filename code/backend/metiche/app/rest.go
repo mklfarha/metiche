@@ -131,7 +131,12 @@ func ProvideCustomRoutes(coreImpl *core.Implementation, logger *zap.Logger) rest
 		// because the thing it would assert is "the wiring is wired"; what
 		// proves it is the two-session integration test in app/mcp, which
 		// fails outright if detection is absent.
-		handler.SetDetector(metichemcp.NewPathDetector(coreImpl, logger))
+		// The decision reviewer runs second, on the same transaction: it
+		// pairs a declared or updated plan with the recorded decisions it
+		// touches and writes the inline review block (docs/DECISIONS.md §3.2).
+		handler.SetDetector(metichemcp.ChainDetectors(
+			metichemcp.NewPathDetector(coreImpl, logger),
+			metichemcp.NewDecisionReviewer(coreImpl, logger)))
 
 		// The board's half of the surface. Same role gate as the MCP
 		// endpoint above: these are what the frontend reads, so they belong

@@ -684,9 +684,9 @@ func fallbackAction(kind enums.InstructionKind, key, with string) string {
 	case enums.INSTRUCTION_KIND_CONFLICT_NOTICE:
 		return fmt.Sprintf("settle it with %s: split the file or sequence the work, drop what you give up with update_intent(drop_paths=[...]), then report_back('%s', ...) with a one-line note of what you agreed", who, key)
 	case enums.INSTRUCTION_KIND_JUDGE_REQUEST:
-		// No tool can serve a judge request yet, so the honest answer is
-		// blocked, which also closes the loop for whoever raised it.
-		return fmt.Sprintf("judging pairs is not available yet: report_back('%s', 'blocked', note='judging is not available yet')", key)
+		// Judge requests travel as pending.reviews, never as instructions
+		// (docs/DECISIONS.md §1.3); this is for a stray row.
+		return fmt.Sprintf("judge it with get_review_context, then report_judgement; then report_back('%s', 'done')", key)
 	case enums.INSTRUCTION_KIND_QUESTION:
 		return fmt.Sprintf("answer it in the note: report_back('%s', 'done', note='<your answer>')", key)
 	default:

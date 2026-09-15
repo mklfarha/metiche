@@ -108,6 +108,15 @@ func TestToolSurface(t *testing.T) {
 		// shape published twice changes nothing more than once.
 		"publish_contract": {false, true},
 
+		// Tools 9-11, registered by RegisterDecisionTools (docs/DECISIONS.md
+		// §3). record_decision is idempotent: recording the same wording again
+		// changes nothing, and a revoke is undone by recording the key again.
+		// get_review_context writes nothing at all. report_judgement's key is
+		// (judgement, verdict), so the same verdict twice replays.
+		"record_decision":    {false, true},
+		"get_review_context": {true, false},
+		"report_judgement":   {false, true},
+
 		// Tools 13-14, registered by RegisterInstructionTools.
 		// get_instructions is NOT readOnly however much it looks like it:
 		// reading an instruction is what marks it delivered, and a client
@@ -228,7 +237,8 @@ func TestAddToolRefusesUnannotatedTools(t *testing.T) {
 // model reads before it picks its first tool. They have to name the loop.
 func TestServerInstructionsSayTheLoop(t *testing.T) {
 	got := serverInstructions()
-	for _, must := range []string{"join_team", "start_session", "heartbeat", "end_session", "pending", "sequence", "idempotency_key"} {
+	for _, must := range []string{"join_team", "start_session", "heartbeat", "end_session", "pending", "sequence", "idempotency_key",
+		"record_decision", "pending.reviews", "get_review_context", "report_judgement", "no_conflict"} {
 		if !strings.Contains(got, must) {
 			t.Errorf("server instructions never mention %q", must)
 		}
