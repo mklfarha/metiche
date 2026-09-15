@@ -528,17 +528,24 @@ table.matrix thead th {
   font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
   border-bottom: 1px solid var(--line);
 }
-table.matrix thead th.who { text-align: center; min-width: 96px; }
-/* the two leading columns; narrowed on a phone, see the 760px block */
+/* One header per session column. Not .who: that is the topbar's flex box. */
+table.matrix thead th.col-session { text-align: center; min-width: 96px; }
+/* the two leading columns; on a phone the table stacks, see "contracts: stacked" */
 table.matrix thead th.col-contract { min-width: 230px; }
 table.matrix thead th.col-verdict  { min-width: 240px; }
-table.matrix thead th.who .m { display: block; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 11.5px; font-weight: 600; }
-table.matrix thead th.who .a { display: block; font-family: var(--mono); font-size: 9.5px; text-transform: none; color: var(--ink-3); }
+table.matrix thead th.col-session .m { display: block; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 11.5px; font-weight: 600; }
+table.matrix thead th.col-session .a { display: block; font-family: var(--mono); font-size: 9.5px; text-transform: none; color: var(--ink-3); }
 table.matrix td { padding: 7px 10px; vertical-align: top; }
 table.matrix td.cell { text-align: center; vertical-align: middle; padding: 6px 4px; }
+/* the chip labels are for the stacked layout; in the grid the headers say it */
+table.matrix td.cell .cell-who, table.matrix td.cell .cell-role, table.matrix td.cell .fc-long { display: none; }
+table.matrix td.cell .fc-short { display: block; font-size: 9px; color: var(--ink-3); font-family: var(--mono); margin-top: 2px; }
 table.matrix tbody tr:hover td { background: var(--hover); }
 
-.rowkey { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink); }
+/* a path like GET /api/legs/{origin}/{destination}/availability has no break
+ * opportunity; without anywhere it sets the column's minimum width */
+.rowkey { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.diffs .f, .diffs .arrow { overflow-wrap: anywhere; min-width: 0; }
 .rowkind { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); text-transform: uppercase; }
 
 tr.r-unclaimed  td { background: var(--wash-medium); }
@@ -786,16 +793,57 @@ svg.graph { display: block; min-width: 720px; }
 
   .runrow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 
-  /* The two leading columns are sized for a desktop table; on a phone they
-   * would leave no room for the session columns. The table still scrolls
-   * inside .matrix-wrap. */
-  table.matrix thead th.col-contract, table.matrix thead th.col-verdict { min-width: 150px; }
   /* badge above its sentence, so the sentence gets the column's full width */
   .verdict { flex-wrap: wrap; row-gap: 4px; }
 
   /* At 720px a 1060-wide drawing put its labels near 7px. Wider, and the
    * graph scrolls sideways inside .gwrap as it already did. */
   svg.graph { min-width: 900px; }
+}
+
+/* The contracts matrix on a phone. A grid would put the verdict and the
+ * session columns off to the right, reachable only by swiping inside
+ * .matrix-wrap. So each row becomes a card that reads in source order: the
+ * contract, the verdict with its diffs, then one chip per session that asserts
+ * on it, labelled with the session and the role in words. Sessions that do not
+ * touch the contract get no chip. Nothing here is wider than the page. */
+@media (max-width: 760px) { /* contracts: stacked */
+  .matrix-wrap { overflow-x: visible; }
+  table.matrix, table.matrix tbody { display: block; width: 100%; }
+  table.matrix thead { display: none; }
+  table.matrix tbody tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 10px 12px 12px; border-bottom: 1px solid var(--line-soft);
+  }
+  table.matrix tbody tr:last-child { border-bottom: 0; }
+  table.matrix tbody tr > td, table.matrix tbody tr:hover > td, table.matrix tbody tr > td:first-child {
+    display: block; padding: 0; border-bottom: 0; background: transparent; box-shadow: none;
+  }
+  table.matrix tbody tr > td.c-contract, table.matrix tbody tr > td.c-verdict { flex: 1 0 100%; min-width: 0; }
+  table.matrix tbody tr > td.c-verdict { margin-bottom: 2px; }
+  .rowkey, .diffs .f, .diffs .arrow { overflow-wrap: anywhere; min-width: 0; }
+  .diffs .note { flex: 1 0 100%; }
+
+  /* the row's status wash and edge move from the first cell to the card */
+  tr.r-unclaimed  { background: var(--wash-medium);   box-shadow: inset 3px 0 0 var(--cyan); }
+  tr.r-mismatch   { background: var(--wash-critical); box-shadow: inset 3px 0 0 var(--violet); }
+  tr.r-contested  { background: var(--wash-high);     box-shadow: inset 3px 0 0 var(--coral); }
+  tr.r-converged  { box-shadow: inset 3px 0 0 var(--indigo-ink); }
+  tr.r-unconsumed { box-shadow: inset 3px 0 0 var(--idle); }
+
+  table.matrix tbody tr > td.cell, table.matrix tbody tr:hover > td.cell {
+    display: inline-flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; flex: 0 1 auto; max-width: 100%; min-width: 0;
+    padding: 3px 9px 3px 4px; text-align: left; font-size: 11.5px; color: var(--ink-2);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  }
+  table.matrix tbody tr > td.cell.cell-none { display: none; }
+  table.matrix td.cell .mk { flex: none; width: 22px; height: 22px; font-size: 10.5px; }
+  table.matrix td.cell .cell-who { display: inline; overflow-wrap: anywhere; }
+  table.matrix td.cell .cell-who b { font-weight: 600; color: var(--ink); }
+  table.matrix td.cell .cell-who .a { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+  table.matrix td.cell .cell-role { display: inline; color: var(--ink-2); }
+  table.matrix td.cell .fc-long { display: inline; font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+  table.matrix td.cell .fc-short { display: none; }
 }
 
 @media (max-width: 600px) {

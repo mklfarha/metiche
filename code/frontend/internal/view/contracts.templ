@@ -20,6 +20,12 @@ import (
 //
 // So the row verdict column is the primary content and the grid is the
 // evidence, not the other way round.
+//
+// On a wide screen it is a grid. On a phone (the 760px block in app.css) each
+// row stacks in source order: the contract, the verdict, then one labelled
+// chip per session that asserts on it. That is why every marker cell carries
+// its session's name and a role in words, hidden while the column headers are
+// there to say it.
 templ ContractsPage(s state.Snapshot) {
 	<div class="main full">
 		<div class="stage">
@@ -40,15 +46,18 @@ templ ContractsPage(s state.Snapshot) {
 						</div>
 					</div>
 				} else {
-					@matrixSummary(s.ContractMatrix())
+					{{ m := s.ContractMatrix() }}
+					@matrixSummary(m)
 					<div class="matrix-wrap">
 						<table class="matrix">
 							<thead>
 								<tr>
-									<th class="col-contract">Contract</th>
-									<th class="col-verdict">Verdict</th>
-									for _, col := range s.ContractMatrix().Columns {
-										<th class="who">
+									<th class="col-contract" scope="col">Contract</th>
+									<th class="col-verdict" scope="col">Verdict</th>
+									// Not class="who": that is the topbar's signed-in indicator, a
+									// flex box, and on a <th> it pulls the header out of the table.
+									for _, col := range m.Columns {
+										<th class="col-session" scope="col">
 											<span class="m">{ col.Member }</span>
 											<span class="a">{ col.Agent }</span>
 										</th>
@@ -56,8 +65,8 @@ templ ContractsPage(s state.Snapshot) {
 								</tr>
 							</thead>
 							<tbody>
-								for _, row := range s.ContractMatrix().Rows {
-									@matrixRow(row)
+								for _, row := range m.Rows {
+									@matrixRow(row, m.Columns)
 								}
 							</tbody>
 						</table>
@@ -98,13 +107,13 @@ templ matrixSummary(m state.Matrix) {
 	</div>
 }
 
-templ matrixRow(row state.ContractRow) {
+templ matrixRow(row state.ContractRow, cols []state.MatrixColumn) {
 	<tr class={ "r-" + row.Status }>
-		<td>
+		<td class="c-contract">
 			<div class="rowkey">{ row.Contract.Key }</div>
 			<div class="rowkind">{ row.Contract.Kind }</div>
 		</td>
-		<td>
+		<td class="c-verdict">
 			<div class="verdict">
 				if row.Severity != "" {
 					<span class={ "badge", row.Severity }>
@@ -133,20 +142,50 @@ templ matrixRow(row state.ContractRow) {
 				</ul>
 			}
 		</td>
-		for _, cell := range row.Cells {
-			@matrixCell(cell, row.Status == "unclaimed")
+		for i, cell := range row.Cells {
+			if i < len(cols) {
+				@matrixCell(cols[i], cell, row.Status == "unclaimed")
+			}
 		}
 	</tr>
 }
 
-templ matrixCell(cell state.MatrixCell, unclaimed bool) {
-	<td class="cell">
+templ matrixCell(col state.MatrixColumn, cell state.MatrixCell, unclaimed bool) {
+	// cell-none, not empty: .empty is the board's empty-state block.
+	<td class={ "cell", templ.KV("cell-none", cell.State == state.CellEmpty) }>
 		{{ class, glyph, title := cellMark(cell, unclaimed) }}
+		<span class="cell-who"><b>{ col.Member }</b> <span class="a">{ col.Agent }</span></span>
 		<span class={ class } title={ title }>{ glyph }</span>
+		if role := cellRole(cell, unclaimed); role != "" {
+			<span class="cell-role">{ role }</span>
+		}
 		if cell.FieldCount > 0 {
-			<div style="font-size:9px;color:var(--ink-3);font-family:var(--mono);margin-top:2px">
-				{ fmt.Sprint(cell.FieldCount) }f
-			</div>
+			<span class="fc-short" title={ plural(cell.FieldCount, "field", "fields") }>{ fmt.Sprint(cell.FieldCount) }f</span>
+			<span class="fc-long">{ plural(cell.FieldCount, "field", "fields") }</span>
 		}
 	</td>
+}
+
+// cellRole is the marker in words, for the stacked phone layout where no
+// column header or legend sits next to the chip. It says what cellMark's
+// classes say with shape and colour.
+func cellRole(c state.MatrixCell, unclaimed bool) string {
+	var role string
+	switch c.State {
+	case state.CellProduces:
+		role = "produces"
+	case state.CellConsumes:
+		role = "consumes"
+		if unclaimed {
+			return role + " · no producer"
+		}
+	case state.CellBoth:
+		role = "produces + consumes"
+	default:
+		return ""
+	}
+	if c.Mismatched && !unclaimed {
+		role += " · shape differs"
+	}
+	return role
 }
