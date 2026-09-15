@@ -1090,3 +1090,45 @@ func ContractKeyDistance(a, b string) int {
 	}
 	return far
 }
+
+// ShapeFromCanonical reads back what CanonicalBytes wrote.
+//
+// It is how a stored assertion is compared again later: contract_assertion.shape
+// holds the canonical field list, and a detector or a settle check that runs
+// minutes after the publish rebuilds the Shape from it rather than from the
+// agent's original submission, which is never stored. The round trip is exact
+// in the only sense that matters: ShapeHash(ShapeFromCanonical(CanonicalBytes(s)))
+// equals ShapeHash(s). MySQL re-serializes a JSON column (key order, spacing),
+// which is why this parses rather than hashing the stored bytes.
+func ShapeFromCanonical(raw []byte) (Shape, error) {
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return Shape{}, errors.New("stored contract shape is empty")
+	}
+	var rows []contractCanonField
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return Shape{}, fmt.Errorf("stored contract shape is not a canonical field list: %w", err)
+	}
+	s := Shape{Fields: make([]ContractField, 0, len(rows))}
+	seen := map[string]bool{}
+	for _, r := range rows {
+		dir := ContractDirection(r.D)
+		if (dir != DirectionIn && dir != DirectionOut) || r.P == "" {
+			return Shape{}, fmt.Errorf("stored contract shape has a malformed field (direction %q, path %q)", r.D, r.P)
+		}
+		k := r.D + "\x00" + r.P
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		s.Fields = append(s.Fields, ContractField{
+			Path:      r.P,
+			PathSnake: contractSnakePath(r.P),
+			Type:      ContractType(r.T),
+			Required:  r.R,
+			Nullable:  r.N,
+			Direction: dir,
+		})
+	}
+	contractSortFields(s.Fields)
+	return s, nil
+}

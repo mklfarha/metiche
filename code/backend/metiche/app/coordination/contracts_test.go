@@ -2,6 +2,7 @@ package coordination
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -604,6 +605,43 @@ func TestContractKeyDistance(t *testing.T) {
 		}
 		if got := ContractKeyDistance(c.b, c.a); got != c.want {
 			t.Errorf("ContractKeyDistance(%q, %q) = %d, want %d (must be symmetric)", c.b, c.a, got, c.want)
+		}
+	}
+}
+
+// TestShapeFromCanonicalRoundTrips: a stored shape compares exactly like the
+// submission it came from — same hash, same issues against a counterpart.
+func TestShapeFromCanonicalRoundTrips(t *testing.T) {
+	prod, err := ParseShape(json.RawMessage(`{"in":{"email!":"string"},"out":{"userId!":"uuid","items":[{"sku!":"string","qty":"int"}],"tags":"string[]"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := ShapeFromCanonical(CanonicalBytes(prod))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ShapeHash(back) != ShapeHash(prod) {
+		t.Fatalf("hash changed across the round trip:\n%s\n%s", CanonicalBytes(prod), CanonicalBytes(back))
+	}
+	// MySQL hands a JSON column back with its own spacing; parse must not care.
+	spaced := strings.ReplaceAll(string(CanonicalBytes(prod)), ",", ", ")
+	again, err := ShapeFromCanonical([]byte(spaced))
+	if err != nil || ShapeHash(again) != ShapeHash(prod) {
+		t.Fatalf("re-spaced canonical bytes did not round trip: %v", err)
+	}
+	cons, _ := ParseShape(json.RawMessage(`{"out":{"user_id!":"uuid","total!":"float"}}`))
+	a, b := CompareShapes(prod, cons), CompareShapes(back, cons)
+	if len(a) == 0 || len(a) != len(b) {
+		t.Fatalf("issues differ after the round trip: %v vs %v", a, b)
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			t.Fatalf("issue %d differs: %+v vs %+v", i, a[i], b[i])
+		}
+	}
+	for _, bad := range []string{``, `{}`, `[{"d":"sideways","p":"x","t":"string"}]`, `[{"d":"out","p":"","t":"string"}]`} {
+		if _, err := ShapeFromCanonical([]byte(bad)); err == nil {
+			t.Errorf("ShapeFromCanonical(%q) accepted a malformed shape", bad)
 		}
 	}
 }
