@@ -194,10 +194,16 @@ templ docBoard() {
 		supervisor&#39;s and reads <b>↳ subagent of S-12</b>. The supervisor&#39;s card counts its subagents.
 	</p>
 	<h2 id="conflicts">Conflicts</h2>
+	<p>Today metiche detects these kinds of conflict:</p>
+	<ul>
+		<li><b>path overlap</b>: two sessions holding overlapping paths, where at least one of them is writing. Two reads never conflict.</li>
+		<li><b>contract mismatch</b>: a session that builds an interface and a session that calls it disagree about a field one of them needs. The conflict says which side has to change.</li>
+		<li><b>nobody is building this</b>: a session consumes an interface nobody produces, for longer than the project&#39;s cadence allows (five minutes on a hackathon project, two hours on a sprint, a day on a steady one).</li>
+		<li><b>naming variant</b>: the same field under another spelling, or a consumed key one or two characters from a produced one (<code>/api/session</code> and <code>/api/sessions</code>). Recorded at low severity, so nobody is interrupted.</li>
+	</ul>
 	<p>
-		Today metiche detects one kind of conflict: two sessions holding overlapping paths, where at least one of them
-		is writing. Two reads never conflict. The Conflicts tab lists each open one with its severity, the paths,
-		who is involved, how long it has been open and a suggested action.
+		The Conflicts tab lists each open one with its severity, the paths or the contract, who is involved, how long it
+		has been open and a suggested action.
 	</p>
 	<h3 id="settling">How agents settle a conflict</h3>
 	<p>
@@ -210,6 +216,11 @@ templ docBoard() {
 		they still overlap, it stays open, whatever anybody wrote in a note. A claim that expired, or a session
 		abandoned after it stopped heartbeating, also clears an overlap.
 	</p>
+	<p>
+		A contract conflict closes by itself as <code>converged</code> once the two shapes agree or a producer appears,
+		and as <code>superseded</code> once a session in it ends or is abandoned, because that session&#39;s contracts stop
+		counting.
+	</p>
 	<h3 id="settled">Conflict history</h3>
 	<p>
 		Below the open conflicts, <b>History</b> lists every conflict that is over (resolved, dismissed or expired), newest
@@ -218,7 +229,7 @@ templ docBoard() {
 		detected and when it ended, and:
 	</p>
 	<ul>
-		<li>how it was resolved: <code>coordinated</code> (an agent answered the notice with what they agreed), <code>split</code> (one side moved to other files and kept working), <code>yielded</code> (one side let go) or <code>superseded</code> (every session in it had ended);</li>
+		<li>how it was resolved: <code>coordinated</code> (an agent answered the notice with what they agreed), <code>split</code> (one side moved to other files and kept working), <code>yielded</code> (one side let go), <code>converged</code> (a contract&#39;s two sides now agree, or it has a producer) or <code>superseded</code> (a session in it ended);</li>
 		<li>
 			a note that says who released what, and when, and quotes what the agents reported. It starts with
 			<b>Settled by the agents</b> when an agent&#39;s call released the path, or <b>Cleared by metiche</b> when a
@@ -287,11 +298,24 @@ templ docBoard() {
 		calls <code>sign_out_browsers</code>, which only lists your browsers unless you ask it to sign one, or all,
 		of them out. Opened without signing in, <code>/account</code> sends you to the sign-in page.
 	</p>
+	<h2 id="contracts">Contracts</h2>
+	<p>
+		The Contracts tab has one row per interface the team&#39;s agents have published with
+		<code>publish_contract</code>, and one column per live session that produces or consumes one. Read the verdict
+		column first:
+	</p>
+	<ul>
+		<li><b>unclaimed</b>: somebody consumes it and nobody produces it;</li>
+		<li><b>mismatch</b>: a producer and a consumer disagree, with each field listed (a missing response field, a missing request field, a type, or a spelling);</li>
+		<li><b>contested</b>: more than one session produces it;</li>
+		<li><b>unconsumed</b>: produced, and nobody consumes it yet;</li>
+		<li><b>converged</b>: the two sides agree.</li>
+	</ul>
+	<p>In the grid, P marks a producer, C a consumer, and a small number how many fields each one published. A session that ended drops out.</p>
 	<h2 id="coming-next">Other tabs</h2>
 	<p>
 		@soon()
-		The <b>Contracts</b> and <b>Decisions</b> tabs are there for features that are not built yet. They stay
-		empty until then.
+		The <b>Decisions</b> tab is there for a feature that is not built yet. It stays empty until then.
 	</p>
 }
 
@@ -379,6 +403,17 @@ templ docAgents() {
 		<li>Mode <code>read</code> is for files it only reads, and two reads never conflict. Mode <code>structural</code> is for renames, moves and deletes.</li>
 		<li>Vendored, built and generated paths are dropped from claims by the project&#39;s ignore patterns.</li>
 		<li><code>check_paths</code> asks who else is in some files without claiming anything.</li>
+	</ul>
+	<h2 id="contracts">Publishing contracts</h2>
+	<p>
+		When an agent is about to build or call an interface between parts of the system, such as an endpoint, an event,
+		a shared type, a table or an env var, it calls <b><code>publish_contract</code></b> before writing the code: role
+		<code>produces</code> when it builds it and <code>consumes</code> when it calls it, with the request and response fields.
+	</p>
+	<ul>
+		<li>If the other side disagrees, the agent that published second is told in the same response which side lacks what, and the other agent is told on its next call. The side that has to change fixes its shape and publishes again.</li>
+		<li>If nobody produces what it consumes, the team is told once the project&#39;s cadence allows: five minutes on a hackathon project.</li>
+		<li>The conflict closes by itself when the shapes agree, a producer appears or a session ends. There is nothing to retract: a session&#39;s contracts stop counting when it ends.</li>
 	</ul>
 	<h2 id="subagents">Delegating to subagents</h2>
 	<p>
@@ -593,6 +628,10 @@ templ docTools() {
 			@toolRow("update_intent", "", "Change the status line, add or drop paths, or mark the intent done.")
 			@toolRow("check_paths", "read-only", "Ask who else is in some files without claiming anything.")
 		</dl>
+		<h2 id="contracts">Contracts</h2>
+		<dl class="tool-list">
+			@toolRow("publish_contract", "", "Say which interface between parts of the system you build (produces) or call (consumes), with the request and response fields, before writing the code. A disagreement with the other side, or a caller nobody builds for, comes back as a conflict.")
+		</dl>
 		<h2 id="instructions">Instructions</h2>
 		<dl class="tool-list">
 			@toolRow("get_instructions", "", "Collect what is waiting, such as conflict notices. Reading marks each one delivered, so it is handed over once.")
@@ -620,7 +659,6 @@ templ docTools() {
 			asks for one.
 		</p>
 		<ul class="soon-list">
-			<li><b>Contracts</b>Agents publish the endpoints they produce and consume, and metiche flags a consumer with no producer, or two sides that disagree on a shape.</li>
 			<li><b>Decisions</b>The team records decisions, and metiche hands an agent the ones its paths touch, so its own model can judge whether its plan breaks one.</li>
 			<li><b>Duplicate work</b>metiche notices two intents aimed at the same issue and tells both agents before either finishes.</li>
 			<li><b>Dismissals</b>An agent dismisses a finding as a false positive, and a rule dismissed too often demotes itself to record-only.</li>

@@ -151,12 +151,10 @@ func TestLandingLinksToTheDocs(t *testing.T) {
 // comingNext is the marker every not-yet-built feature carries.
 const comingNext = "Coming next"
 
-// unbuiltKinds are the collision kinds whose tools (publish_contract,
-// record_decision, report_judgement, resolve_conflict) do not exist yet. Path
-// overlap is the only detection that runs today.
+// unbuiltKinds are the collision kinds whose tools (record_decision,
+// report_judgement, resolve_conflict) do not exist yet. Path overlap and
+// contract mismatch, "nobody is building this" included, run today.
 var unbuiltKinds = []string{
-	"contract mismatch",
-	"nobody is building this",
 	"decision contradiction",
 	"duplicate work",
 }
@@ -200,17 +198,20 @@ func TestUnbuiltCollisionsAreMarkedComingNext(t *testing.T) {
 	for _, c := range cards {
 		class, inner := c[1], stripTags(c[2])
 		switch {
-		case strings.Contains(class, "k-path"):
+		case strings.Contains(class, "k-path") || strings.Contains(class, "k-contract"):
 			live++
-			if strings.Contains(inner, comingNext) || strings.Contains(class, "soon") {
-				t.Errorf("path overlap works today but is marked coming next")
+			if strings.Contains(inner, comingNext) || strings.Contains(class, "soon") || !strings.Contains(inner, "works today") {
+				t.Errorf("%q works today but is not marked live: %s", class, strings.Join(strings.Fields(inner), " "))
+			}
+			if strings.Contains(class, "k-contract") && (!strings.Contains(strings.ToLower(inner), "nobody is building this") || !strings.Contains(inner, "is told")) {
+				t.Errorf("the contract card does not say, in the present tense, that nobody is building this is caught: %s", strings.Join(strings.Fields(inner), " "))
 			}
 		case !strings.Contains(class, "soon") || !strings.Contains(inner, comingNext):
 			t.Errorf("unbuilt card %q lacks the soon class or its %q badge", class, comingNext)
 		}
 	}
-	if live != 1 {
-		t.Errorf("%d live collision cards, want exactly path overlap", live)
+	if live != 2 {
+		t.Errorf("%d live collision cards, want path overlap and contract mismatch", live)
 	}
 
 	// The section must not claim four live detections.
@@ -240,7 +241,10 @@ func TestLandingHasNoToolCount(t *testing.T) {
 		t.Errorf("landing hard-codes a tool count: %q", m)
 	}
 	// Unbuilt tools must not be listed as if they were available.
-	for _, tool := range []string{"publish_contract", "record_decision", "report_judgement", "resolve_conflict"} {
+	if !strings.Contains(text, "publish_contract") {
+		t.Errorf("landing does not list publish_contract, which is built")
+	}
+	for _, tool := range []string{"record_decision", "report_judgement", "resolve_conflict"} {
 		if strings.Contains(text, tool) {
 			t.Errorf("landing lists %s, which does not exist yet", tool)
 		}

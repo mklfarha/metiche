@@ -169,7 +169,7 @@ func TestDocsShowNoSecretsOrUnbuiltThings(t *testing.T) {
 	codeShape := regexp.MustCompile(`\b[0-9A-HJKMNP-TV-Z]{10}\b`)
 	hasDigit, hasLetter := regexp.MustCompile(`[0-9]`), regexp.MustCompile(`[A-Z]`)
 
-	unbuilt := []string{"publish_contract", "record_decision", "get_review_context", "report_judgement", "resolve_conflict",
+	unbuilt := []string{"record_decision", "get_review_context", "report_judgement", "resolve_conflict",
 		"metiche open", "metiche init", "metiche login", "metiche status", "metiche whoami"}
 
 	for path := range docsRoutes() {
@@ -207,10 +207,13 @@ func TestDocsShowNoSecretsOrUnbuiltThings(t *testing.T) {
 	if next < 0 || !strings.Contains(docText(tools[next:]), "Coming next") {
 		t.Fatalf("the tool reference has no section labelled Coming next")
 	}
-	for _, want := range []string{"Contracts", "Decisions", "Duplicate work", "Dismissals"} {
+	for _, want := range []string{"Decisions", "Duplicate work", "Dismissals"} {
 		if !strings.Contains(docText(tools[next:]), want) {
 			t.Errorf("Coming next does not list %s", want)
 		}
+	}
+	if strings.Contains(docText(tools[next:]), "Contracts") {
+		t.Errorf("Coming next still lists Contracts, which is built")
 	}
 	if strings.Contains(tools[next:], `id="tool-`) {
 		t.Errorf("a tool is listed as registered inside Coming next")

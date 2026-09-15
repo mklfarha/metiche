@@ -19,11 +19,12 @@ import templruntime "github.com/a-h/templ/runtime"
 // web.Server.landing); pass "" and the link is left out rather than pointing
 // somewhere that does not exist.
 //
-// It says only what is deployed. Path overlap is the one detection that runs
-// today (app/mcp/detector.go); contract, decision and duplicate-work
-// detection need tools that do not exist yet (publish_contract,
-// record_decision, report_judgement, resolve_conflict), so those cards carry
-// a "Coming next" badge and are written in the future tense. landing_test.go
+// It says only what is deployed. Path overlap (app/mcp/detector.go) and
+// contract mismatch, including "nobody is building this" (publish_contract,
+// app/mcp/contractdetect.go and the sweeper), run today; decision and
+// duplicate-work detection need tools that do not exist yet (record_decision,
+// report_judgement, resolve_conflict), so those cards carry a "Coming next"
+// badge and are written in the future tense. landing_test.go
 // fails if one of them is rendered without it. The tool list is described by
 // group, never by count, because the count moves.
 //
@@ -133,7 +134,7 @@ func landingNav(boardURL string) templ.Component {
 			var templ_7745c5c3_Var3 templ.SafeURL
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 69, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 70, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -186,7 +187,7 @@ func landingHero(boardURL string) templ.Component {
 			var templ_7745c5c3_Var5 templ.SafeURL
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 101, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 102, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -324,7 +325,7 @@ func landingHow() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</pre></div><p class=\"tools-lead\">The tools come in five groups. The three highlighted are the ones you will notice your agent calling:</p><dl class=\"toolgroups\"><div><dt>session</dt><dd><code>start_session</code><code class=\"hot\">heartbeat</code><code>end_session</code></dd></div><div><dt>claims</dt><dd><code class=\"hot\">declare_intent</code><code class=\"hot\">update_intent</code><code>check_paths</code></dd></div><div><dt>team</dt><dd><code>create_team</code><code>join_team</code><code>list_teams</code><code>create_invite</code><code>list_invites</code><code>revoke_invite</code></dd></div><div><dt>board</dt><dd><code>open_board</code><code>sign_out_browsers</code></dd></div><div><dt>instructions</dt><dd><code>get_instructions</code><code>report_back</code></dd></div></dl><p class=\"tools-next\"><span class=\"soon-badge\">Coming next</span> Tools to publish contracts and record decisions.</p></div></div></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</pre></div><p class=\"tools-lead\">The tools come in six groups. The three highlighted are the ones you will notice your agent calling:</p><dl class=\"toolgroups\"><div><dt>session</dt><dd><code>start_session</code><code class=\"hot\">heartbeat</code><code>end_session</code></dd></div><div><dt>claims</dt><dd><code class=\"hot\">declare_intent</code><code class=\"hot\">update_intent</code><code>check_paths</code></dd></div><div><dt>team</dt><dd><code>create_team</code><code>join_team</code><code>list_teams</code><code>create_invite</code><code>list_invites</code><code>revoke_invite</code></dd></div><div><dt>contracts</dt><dd><code>publish_contract</code></dd></div><div><dt>board</dt><dd><code>open_board</code><code>sign_out_browsers</code></dd></div><div><dt>instructions</dt><dd><code>get_instructions</code><code>report_back</code></dd></div></dl><p class=\"tools-next\"><span class=\"soon-badge\">Coming next</span> Tools to record decisions and dismiss a finding.</p></div></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -334,7 +335,7 @@ func landingHow() templ.Component {
 
 // ---------------------------------------------------------------- collisions
 
-// landingCollisions shows the one detection that is live, then the three that
+// landingCollisions shows the two detections that are live, then the two that
 // are not built yet. Every card for an unbuilt kind is .cc.soon and carries a
 // "Coming next" badge; nothing in those cards shows a tool response, because
 // a response that cannot happen today would read as one that does.
@@ -359,7 +360,7 @@ func landingCollisions() templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<section class=\"section\" id=\"what\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">What it catches</div><h2>What it actually catches today</h2><p class=\"sub\">Today it catches one thing: two agents about to write the same file. Three more kinds of collision are coming next, and they are labelled that way below.</p></div><div class=\"collide\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<section class=\"section\" id=\"what\"><div class=\"wrap\"><div class=\"sec-head\"><div class=\"sec-eyebrow\">What it catches</div><h2>What it actually catches today</h2><p class=\"sub\">Today it catches two things: two agents about to write the same file, and two sides of an interface that disagree, including a side nobody is building. Two more kinds of collision are coming next, and they are labelled that way below.</p></div><div class=\"collide\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -367,11 +368,11 @@ func landingCollisions() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><h3 class=\"soon-head\"><span class=\"soon-badge\">Coming next</span> Not built yet</h3><div class=\"collide-soon\">")
+		templ_7745c5c3_Err = collideContract().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = collideContract().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><h3 class=\"soon-head\"><span class=\"soon-badge\">Coming next</span> Not built yet</h3><div class=\"collide-soon\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -441,7 +442,7 @@ func collideContract() templ.Component {
 			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<article class=\"cc soon k-contract\"><div class=\"kind\">contract mismatch <span class=\"soon-badge\">Coming next</span></div><h3>Nobody is building this: the endpoint a frontend is coding against</h3><p class=\"scene\">Once agents can publish the endpoints they produce and consume, metiche will flag a consumer with no producer, and two sides that disagree on a shape, before the demo does.</p></article>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<article class=\"cc k-contract wide\"><div class=\"kind\">contract mismatch <span class=\"live-badge\">works today</span></div><h3>Nobody is building this, or the two sides disagree</h3><div class=\"two-up\"><div><p class=\"scene\">Mara&#39;s agent publishes the <span class=\"inline-code\">POST /api/bookings</span> it is building. Devesh&#39;s agent publishes the same endpoint as something it calls, and it reads an <span class=\"inline-code\">eta</span> the handler does not return. Devesh is told before the form is written, and Mara is told what to add. When nobody publishes the endpoint a frontend is coding against, the team is told that nobody is building this.</p><details class=\"why\"><summary>How it is decided</summary><p>metiche reads both shapes itself. A response field the caller requires and the builder does not return is high, and the builder is the side to change; a request field the builder requires and the caller does not send is high, and the caller changes. Two types that cannot convert are critical. The same field under another spelling is low and interrupts nobody. A caller with no builder is raised after the project&#39;s cadence allows: five minutes in a hackathon. It all closes by itself once the shapes agree, a builder appears or a session ends.</p></details></div><div class=\"resp\"><div class=\"rh\">in Devesh&#39;s agent&#39;s tool response</div><div class=\"rb\"><div class=\"row\"><span class=\"sev high\">▲ high</span> <span class=\"dim\">CF-21 · contract mismatch</span></div><div class=\"row\"><span class=\"you\">POST /api/bookings</span> <span class=\"dim\">— built by</span> <span class=\"them\">Mara/api</span></div><div class=\"row\"><span class=\"dim\">missing response field</span> <span class=\"you\">eta</span> <span class=\"dim\">(timestamp)</span></div><div class=\"row\"><span class=\"act\">→ Don&#39;t build on it yet: Mara was told to add it.</span></div></div></div></div></article>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -571,7 +572,7 @@ func landingBoard(boardURL string) templ.Component {
 			var templ_7745c5c3_Var16 templ.SafeURL
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 517, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 550, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -631,7 +632,7 @@ func landingJoin(boardURL string) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs("join code: <paste the code you were sent>")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 572, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 605, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -649,7 +650,7 @@ func landingJoin(boardURL string) templ.Component {
 			var templ_7745c5c3_Var19 templ.SafeURL
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(boardURL))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 604, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/view/landing.templ`, Line: 637, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {

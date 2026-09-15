@@ -497,7 +497,7 @@ body.lp {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   margin: 34px 0 12px; font-size: 14px; font-weight: 600; color: var(--ink-3);
 }
-.collide-soon { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.collide-soon { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .collide-soon > * { min-width: 0; }
 @media (max-width: 900px) { .collide-soon { grid-template-columns: 1fr; } }
 
