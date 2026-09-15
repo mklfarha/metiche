@@ -1997,7 +1997,7 @@ func (q *Queries) FetchClaimPathBySessionUUIDAndStatus(ctx context.Context, arg 
 }
 
 const fetchConflictByID = `-- name: FetchConflictByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `escalated_at` + "`" + `
 FROM ` + "`" + `conflict` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -2041,6 +2041,7 @@ func (q *Queries) FetchConflictByID(ctx context.Context, id string) ([]Conflict,
 			&i.MaxSeverityNotified,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EscalatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2056,7 +2057,7 @@ func (q *Queries) FetchConflictByID(ctx context.Context, id string) ([]Conflict,
 }
 
 const fetchConflictByIDForUpdate = `-- name: FetchConflictByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `escalated_at` + "`" + `
 FROM ` + "`" + `conflict` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -2100,6 +2101,7 @@ func (q *Queries) FetchConflictByIDForUpdate(ctx context.Context, id string) ([]
 			&i.MaxSeverityNotified,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EscalatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2115,7 +2117,7 @@ func (q *Queries) FetchConflictByIDForUpdate(ctx context.Context, id string) ([]
 }
 
 const fetchConflictByTeamUUIDAndDedupeKey = `-- name: FetchConflictByTeamUUIDAndDedupeKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `escalated_at` + "`" + `
 FROM ` + "`" + `conflict` + "`" + `
 WHERE 
     ` + "`" + `dedupe_key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -2171,6 +2173,7 @@ func (q *Queries) FetchConflictByTeamUUIDAndDedupeKey(ctx context.Context, arg F
 			&i.MaxSeverityNotified,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EscalatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2186,7 +2189,7 @@ func (q *Queries) FetchConflictByTeamUUIDAndDedupeKey(ctx context.Context, arg F
 }
 
 const fetchConflictByTeamUUIDAndKey = `-- name: FetchConflictByTeamUUIDAndKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `escalated_at` + "`" + `
 FROM ` + "`" + `conflict` + "`" + `
 WHERE 
     ` + "`" + `key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -2242,6 +2245,7 @@ func (q *Queries) FetchConflictByTeamUUIDAndKey(ctx context.Context, arg FetchCo
 			&i.MaxSeverityNotified,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EscalatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2257,7 +2261,7 @@ func (q *Queries) FetchConflictByTeamUUIDAndKey(ctx context.Context, arg FetchCo
 }
 
 const fetchConflictByTeamUUIDAndStatusAndSeverity = `-- name: FetchConflictByTeamUUIDAndStatusAndSeverity :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `escalated_at` + "`" + `
 FROM ` + "`" + `conflict` + "`" + `
 WHERE 
     ` + "`" + `severity` + "`" + ` = ? AND ` + "`" + `status` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -2315,6 +2319,7 @@ func (q *Queries) FetchConflictByTeamUUIDAndStatusAndSeverity(ctx context.Contex
 			&i.MaxSeverityNotified,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EscalatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2846,24 +2851,26 @@ func (q *Queries) FetchContractByProjectUUIDAndKeyNorm(ctx context.Context, arg 
 	return items, nil
 }
 
-const fetchContractFieldByAssertionUUIDAndPath = `-- name: FetchContractFieldByAssertionUUIDAndPath :many
+const fetchContractFieldByAssertionUUIDAndDirectionAndPath = `-- name: FetchContractFieldByAssertionUUIDAndDirectionAndPath :many
 SELECT ` + "`" + `id` + "`" + `,` + "`" + `assertion_uuid` + "`" + `,` + "`" + `contract_uuid` + "`" + `,` + "`" + `path` + "`" + `,` + "`" + `path_snake` + "`" + `,` + "`" + `type` + "`" + `,` + "`" + `required` + "`" + `,` + "`" + `nullable` + "`" + `,` + "`" + `direction` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
 FROM ` + "`" + `contract_field` + "`" + `
 WHERE 
-    ` + "`" + `assertion_uuid` + "`" + ` = ? AND ` + "`" + `path` + "`" + ` = ? 
+    ` + "`" + `assertion_uuid` + "`" + ` = ? AND ` + "`" + `direction` + "`" + ` = ? AND ` + "`" + `path` + "`" + ` = ? 
 LIMIT ?, ?
 `
 
-type FetchContractFieldByAssertionUUIDAndPathParams struct {
+type FetchContractFieldByAssertionUUIDAndDirectionAndPathParams struct {
 	AssertionUUID string `json:"assertion_uuid"`
+	Direction     int64  `json:"direction"`
 	Path          string `json:"path"`
 	Offset        int32  `json:"offset"`
 	Limit         int32  `json:"limit"`
 }
 
-func (q *Queries) FetchContractFieldByAssertionUUIDAndPath(ctx context.Context, arg FetchContractFieldByAssertionUUIDAndPathParams) ([]ContractField, error) {
-	rows, err := q.db.QueryContext(ctx, fetchContractFieldByAssertionUUIDAndPath,
+func (q *Queries) FetchContractFieldByAssertionUUIDAndDirectionAndPath(ctx context.Context, arg FetchContractFieldByAssertionUUIDAndDirectionAndPathParams) ([]ContractField, error) {
+	rows, err := q.db.QueryContext(ctx, fetchContractFieldByAssertionUUIDAndDirectionAndPath,
 		arg.AssertionUUID,
+		arg.Direction,
 		arg.Path,
 		arg.Offset,
 		arg.Limit,
@@ -3100,7 +3107,7 @@ func (q *Queries) FetchContractFieldByIDForUpdate(ctx context.Context, id string
 }
 
 const fetchDecisionByID = `-- name: FetchDecisionByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `recorded_by_session_uuid` + "`" + `
 FROM ` + "`" + `decision` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -3133,6 +3140,7 @@ func (q *Queries) FetchDecisionByID(ctx context.Context, id string) ([]Decision,
 			&i.Revision,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RecordedBySessionUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -3148,7 +3156,7 @@ func (q *Queries) FetchDecisionByID(ctx context.Context, id string) ([]Decision,
 }
 
 const fetchDecisionByIDForUpdate = `-- name: FetchDecisionByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `recorded_by_session_uuid` + "`" + `
 FROM ` + "`" + `decision` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -3181,6 +3189,7 @@ func (q *Queries) FetchDecisionByIDForUpdate(ctx context.Context, id string) ([]
 			&i.Revision,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RecordedBySessionUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -3196,7 +3205,7 @@ func (q *Queries) FetchDecisionByIDForUpdate(ctx context.Context, id string) ([]
 }
 
 const fetchDecisionByTeamUUIDAndKey = `-- name: FetchDecisionByTeamUUIDAndKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `recorded_by_session_uuid` + "`" + `
 FROM ` + "`" + `decision` + "`" + `
 WHERE 
     ` + "`" + `key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -3241,6 +3250,7 @@ func (q *Queries) FetchDecisionByTeamUUIDAndKey(ctx context.Context, arg FetchDe
 			&i.Revision,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RecordedBySessionUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -3256,7 +3266,7 @@ func (q *Queries) FetchDecisionByTeamUUIDAndKey(ctx context.Context, arg FetchDe
 }
 
 const fetchDecisionByTeamUUIDAndStatusAndAlwaysShow = `-- name: FetchDecisionByTeamUUIDAndStatusAndAlwaysShow :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `recorded_by_session_uuid` + "`" + `
 FROM ` + "`" + `decision` + "`" + `
 WHERE 
     ` + "`" + `always_show` + "`" + ` = ? AND ` + "`" + `status` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -3303,6 +3313,7 @@ func (q *Queries) FetchDecisionByTeamUUIDAndStatusAndAlwaysShow(ctx context.Cont
 			&i.Revision,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RecordedBySessionUUID,
 		); err != nil {
 			return nil, err
 		}
@@ -4512,7 +4523,7 @@ func (q *Queries) FetchInviteByTeamUUIDAndStatus(ctx context.Context, arg FetchI
 }
 
 const fetchJudgementByID = `-- name: FetchJudgementByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `judged_at` + "`" + `,` + "`" + `assignment_count` + "`" + `
 FROM ` + "`" + `judgement` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -4550,6 +4561,8 @@ func (q *Queries) FetchJudgementByID(ctx context.Context, id string) ([]Judgemen
 			&i.Pinned,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.JudgedAt,
+			&i.AssignmentCount,
 		); err != nil {
 			return nil, err
 		}
@@ -4565,7 +4578,7 @@ func (q *Queries) FetchJudgementByID(ctx context.Context, id string) ([]Judgemen
 }
 
 const fetchJudgementByIDForUpdate = `-- name: FetchJudgementByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `judged_at` + "`" + `,` + "`" + `assignment_count` + "`" + `
 FROM ` + "`" + `judgement` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -4603,6 +4616,8 @@ func (q *Queries) FetchJudgementByIDForUpdate(ctx context.Context, id string) ([
 			&i.Pinned,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.JudgedAt,
+			&i.AssignmentCount,
 		); err != nil {
 			return nil, err
 		}
@@ -4618,7 +4633,7 @@ func (q *Queries) FetchJudgementByIDForUpdate(ctx context.Context, id string) ([
 }
 
 const fetchJudgementByJudgeSessionUUIDAndStatus = `-- name: FetchJudgementByJudgeSessionUUIDAndStatus :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `judged_at` + "`" + `,` + "`" + `assignment_count` + "`" + `
 FROM ` + "`" + `judgement` + "`" + `
 WHERE 
     ` + "`" + `judge_session_uuid` + "`" + ` = ? AND ` + "`" + `status` + "`" + ` = ? 
@@ -4668,6 +4683,8 @@ func (q *Queries) FetchJudgementByJudgeSessionUUIDAndStatus(ctx context.Context,
 			&i.Pinned,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.JudgedAt,
+			&i.AssignmentCount,
 		); err != nil {
 			return nil, err
 		}
@@ -4683,7 +4700,7 @@ func (q *Queries) FetchJudgementByJudgeSessionUUIDAndStatus(ctx context.Context,
 }
 
 const fetchJudgementByTeamUUIDAndPairKey = `-- name: FetchJudgementByTeamUUIDAndPairKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `judged_at` + "`" + `,` + "`" + `assignment_count` + "`" + `
 FROM ` + "`" + `judgement` + "`" + `
 WHERE 
     ` + "`" + `pair_key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -4733,6 +4750,144 @@ func (q *Queries) FetchJudgementByTeamUUIDAndPairKey(ctx context.Context, arg Fe
 			&i.Pinned,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.JudgedAt,
+			&i.AssignmentCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchJudgementByTeamUUIDAndStatus = `-- name: FetchJudgementByTeamUUIDAndStatus :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `judged_at` + "`" + `,` + "`" + `assignment_count` + "`" + `
+FROM ` + "`" + `judgement` + "`" + `
+WHERE 
+    ` + "`" + `status` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchJudgementByTeamUUIDAndStatusParams struct {
+	Status   int64  `json:"status"`
+	TeamUUID string `json:"team_uuid"`
+	Offset   int32  `json:"offset"`
+	Limit    int32  `json:"limit"`
+}
+
+func (q *Queries) FetchJudgementByTeamUUIDAndStatus(ctx context.Context, arg FetchJudgementByTeamUUIDAndStatusParams) ([]Judgement, error) {
+	rows, err := q.db.QueryContext(ctx, fetchJudgementByTeamUUIDAndStatus,
+		arg.Status,
+		arg.TeamUUID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Judgement
+	for rows.Next() {
+		var i Judgement
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.PairKey,
+			&i.Kind,
+			&i.SubjectAKind,
+			&i.SubjectAUUID,
+			&i.SubjectARevision,
+			&i.SubjectBKind,
+			&i.SubjectBUUID,
+			&i.SubjectBRevision,
+			&i.Status,
+			&i.Verdict,
+			&i.Severity,
+			&i.Confidence,
+			&i.Rationale,
+			&i.JudgeSessionUUID,
+			&i.JudgingExpiresAt,
+			&i.ConflictUUID,
+			&i.Pinned,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.JudgedAt,
+			&i.AssignmentCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const fetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUID = `-- name: FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUID :many
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `judged_at` + "`" + `,` + "`" + `assignment_count` + "`" + `
+FROM ` + "`" + `judgement` + "`" + `
+WHERE 
+    ` + "`" + `subject_a_uuid` + "`" + ` = ? AND ` + "`" + `subject_b_uuid` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
+LIMIT ?, ?
+`
+
+type FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUIDParams struct {
+	SubjectAUUID string `json:"subject_a_uuid"`
+	SubjectBUUID string `json:"subject_b_uuid"`
+	TeamUUID     string `json:"team_uuid"`
+	Offset       int32  `json:"offset"`
+	Limit        int32  `json:"limit"`
+}
+
+func (q *Queries) FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUID(ctx context.Context, arg FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUIDParams) ([]Judgement, error) {
+	rows, err := q.db.QueryContext(ctx, fetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUID,
+		arg.SubjectAUUID,
+		arg.SubjectBUUID,
+		arg.TeamUUID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Judgement
+	for rows.Next() {
+		var i Judgement
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamUUID,
+			&i.PairKey,
+			&i.Kind,
+			&i.SubjectAKind,
+			&i.SubjectAUUID,
+			&i.SubjectARevision,
+			&i.SubjectBKind,
+			&i.SubjectBUUID,
+			&i.SubjectBRevision,
+			&i.Status,
+			&i.Verdict,
+			&i.Severity,
+			&i.Confidence,
+			&i.Rationale,
+			&i.JudgeSessionUUID,
+			&i.JudgingExpiresAt,
+			&i.ConflictUUID,
+			&i.Pinned,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.JudgedAt,
+			&i.AssignmentCount,
 		); err != nil {
 			return nil, err
 		}

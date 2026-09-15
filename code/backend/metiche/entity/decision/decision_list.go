@@ -8,22 +8,23 @@ import (
 
 func (e Decision) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 	return map[string]entitytypes.FieldType{
-		"id":                     entitytypes.StringFieldType,
-		"team_uuid":              entitytypes.StringFieldType,
-		"project_uuid":           entitytypes.StringFieldType,
-		"key":                    entitytypes.StringFieldType,
-		"title":                  entitytypes.StringFieldType,
-		"statement":              entitytypes.StringFieldType,
-		"rationale":              entitytypes.StringFieldType,
-		"status":                 entitytypes.SingleEnumFieldType,
-		"always_show":            entitytypes.BooleanFieldType,
-		"supersedes_uuid":        entitytypes.StringFieldType,
-		"superseded_by_uuid":     entitytypes.StringFieldType,
-		"decided_by_member_uuid": entitytypes.StringFieldType,
-		"decided_at":             entitytypes.TimestampFieldType,
-		"revision":               entitytypes.IntFieldType,
-		"created_at":             entitytypes.TimestampFieldType,
-		"updated_at":             entitytypes.TimestampFieldType,
+		"id":                       entitytypes.StringFieldType,
+		"team_uuid":                entitytypes.StringFieldType,
+		"project_uuid":             entitytypes.StringFieldType,
+		"key":                      entitytypes.StringFieldType,
+		"title":                    entitytypes.StringFieldType,
+		"statement":                entitytypes.StringFieldType,
+		"rationale":                entitytypes.StringFieldType,
+		"status":                   entitytypes.SingleEnumFieldType,
+		"always_show":              entitytypes.BooleanFieldType,
+		"supersedes_uuid":          entitytypes.StringFieldType,
+		"superseded_by_uuid":       entitytypes.StringFieldType,
+		"decided_by_member_uuid":   entitytypes.StringFieldType,
+		"decided_at":               entitytypes.TimestampFieldType,
+		"revision":                 entitytypes.IntFieldType,
+		"created_at":               entitytypes.TimestampFieldType,
+		"updated_at":               entitytypes.TimestampFieldType,
+		"recorded_by_session_uuid": entitytypes.StringFieldType,
 	}
 }
 
@@ -45,6 +46,7 @@ func (e Decision) OrderedFieldIdentifiers() []string {
 	res = append(res, "revision")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "recorded_by_session_uuid")
 
 	return res
 }

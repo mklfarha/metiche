@@ -15,22 +15,23 @@ import (
 )
 
 type Decision struct {
-	ID                  uuid.UUID            `json:"id"`
-	TeamUUID            uuid.UUID            `json:"team_uuid"`
-	ProjectUUID         *uuid.UUID           `json:"project_uuid"`
-	Key                 string               `json:"key"`
-	Title               string               `json:"title"`
-	Statement           string               `json:"statement"`
-	Rationale           null.String          `json:"rationale"`
-	Status              enums.DecisionStatus `json:"status"`
-	AlwaysShow          bool                 `json:"always_show"`
-	SupersedesUUID      *uuid.UUID           `json:"supersedes_uuid"`
-	SupersededByUUID    *uuid.UUID           `json:"superseded_by_uuid"`
-	DecidedByMemberUUID *uuid.UUID           `json:"decided_by_member_uuid"`
-	DecidedAt           null.Time            `json:"decided_at"`
-	Revision            int64                `json:"revision"`
-	CreatedAt           time.Time            `json:"created_at"`
-	UpdatedAt           time.Time            `json:"updated_at"`
+	ID                    uuid.UUID            `json:"id"`
+	TeamUUID              uuid.UUID            `json:"team_uuid"`
+	ProjectUUID           *uuid.UUID           `json:"project_uuid"`
+	Key                   string               `json:"key"`
+	Title                 string               `json:"title"`
+	Statement             string               `json:"statement"`
+	Rationale             null.String          `json:"rationale"`
+	Status                enums.DecisionStatus `json:"status"`
+	AlwaysShow            bool                 `json:"always_show"`
+	SupersedesUUID        *uuid.UUID           `json:"supersedes_uuid"`
+	SupersededByUUID      *uuid.UUID           `json:"superseded_by_uuid"`
+	DecidedByMemberUUID   *uuid.UUID           `json:"decided_by_member_uuid"`
+	DecidedAt             null.Time            `json:"decided_at"`
+	Revision              int64                `json:"revision"`
+	CreatedAt             time.Time            `json:"created_at"`
+	UpdatedAt             time.Time            `json:"updated_at"`
+	RecordedBySessionUUID *uuid.UUID           `json:"recorded_by_session_uuid"`
 }
 
 func (e Decision) String() string {

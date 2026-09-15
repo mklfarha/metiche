@@ -50,5 +50,6 @@ func mapModelToEntity(m metichedb.Conflict) main_entity.Conflict {
 		MaxSeverityNotified:       enums.ConflictSeverity(m.MaxSeverityNotified.Int64),
 		CreatedAt:                 m.CreatedAt,
 		UpdatedAt:                 m.UpdatedAt,
+		EscalatedAt:               null.NewTime(m.EscalatedAt.Time, m.EscalatedAt.Valid),
 	}
 }

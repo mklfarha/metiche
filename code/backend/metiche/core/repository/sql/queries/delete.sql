@@ -49,23 +49,8 @@ DELETE FROM `contract`
 WHERE
 `id` = ?;
 
--- name: DeleteDecision :execresult
-DELETE FROM `decision`
-WHERE
-`id` = ?;
-
 -- name: DeleteNotificationChannel :execresult
 DELETE FROM `notification_channel`
-WHERE
-`id` = ?;
-
--- name: DeleteDecisionPath :execresult
-DELETE FROM `decision_path`
-WHERE
-`id` = ?;
-
--- name: DeleteDecisionToken :execresult
-DELETE FROM `decision_token`
 WHERE
 `id` = ?;
 
@@ -101,6 +86,21 @@ WHERE
 
 -- name: DeleteContractField :execresult
 DELETE FROM `contract_field`
+WHERE
+`id` = ?;
+
+-- name: DeleteDecision :execresult
+DELETE FROM `decision`
+WHERE
+`id` = ?;
+
+-- name: DeleteDecisionPath :execresult
+DELETE FROM `decision_path`
+WHERE
+`id` = ?;
+
+-- name: DeleteDecisionToken :execresult
+DELETE FROM `decision_token`
 WHERE
 `id` = ?;
 

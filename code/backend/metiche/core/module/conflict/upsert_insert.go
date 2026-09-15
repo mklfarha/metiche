@@ -144,5 +144,7 @@ func mapUpsertRequestToInsertParams(req types.UpsertRequest) metichedb.InsertCon
 		CreatedAt: req.Conflict.CreatedAt,
 
 		UpdatedAt: req.Conflict.UpdatedAt,
+
+		EscalatedAt: req.Conflict.EscalatedAt,
 	}
 }

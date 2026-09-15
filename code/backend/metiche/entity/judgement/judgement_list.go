@@ -29,6 +29,8 @@ func (e Judgement) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 		"pinned":             entitytypes.BooleanFieldType,
 		"created_at":         entitytypes.TimestampFieldType,
 		"updated_at":         entitytypes.TimestampFieldType,
+		"judged_at":          entitytypes.TimestampFieldType,
+		"assignment_count":   entitytypes.IntFieldType,
 	}
 }
 
@@ -55,6 +57,8 @@ func (e Judgement) OrderedFieldIdentifiers() []string {
 	res = append(res, "pinned")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "judged_at")
+	res = append(res, "assignment_count")
 
 	return res
 }

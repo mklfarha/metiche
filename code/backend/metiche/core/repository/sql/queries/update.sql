@@ -69,31 +69,10 @@ SET
 WHERE
 `id` = ?;
 
--- name: UpdateDecision :exec
-UPDATE `decision`
-SET
-`team_uuid` = ?, `project_uuid` = ?, `key` = ?, `title` = ?, `statement` = ?, `rationale` = ?, `status` = ?, `always_show` = ?, `supersedes_uuid` = ?, `superseded_by_uuid` = ?, `decided_by_member_uuid` = ?, `decided_at` = ?, `revision` = ?, `created_at` = ?, `updated_at` = ?
-WHERE
-`id` = ?;
-
 -- name: UpdateNotificationChannel :exec
 UPDATE `notification_channel`
 SET
 `team_uuid` = ?, `project_uuid` = ?, `key` = ?, `kind` = ?, `label` = ?, `target_url` = ?, `min_severity` = ?, `notify_human_requests` = ?, `status` = ?, `delivery_status` = ?, `consecutive_failures` = ?, `last_attempt_at` = ?, `last_success_at` = ?, `last_error` = ?, `created_by_member_uuid` = ?, `created_at` = ?, `updated_at` = ?
-WHERE
-`id` = ?;
-
--- name: UpdateDecisionPath :exec
-UPDATE `decision_path`
-SET
-`decision_uuid` = ?, `team_uuid` = ?, `project_uuid` = ?, `pattern` = ?, `pattern_norm` = ?, `kind` = ?, `prefix` = ?, `depth` = ?, `created_at` = ?, `updated_at` = ?
-WHERE
-`id` = ?;
-
--- name: UpdateDecisionToken :exec
-UPDATE `decision_token`
-SET
-`decision_uuid` = ?, `team_uuid` = ?, `project_uuid` = ?, `token` = ?, `weight` = ?, `created_at` = ?, `updated_at` = ?
 WHERE
 `id` = ?;
 
@@ -146,10 +125,31 @@ SET
 WHERE
 `id` = ?;
 
+-- name: UpdateDecision :exec
+UPDATE `decision`
+SET
+`team_uuid` = ?, `project_uuid` = ?, `key` = ?, `title` = ?, `statement` = ?, `rationale` = ?, `status` = ?, `always_show` = ?, `supersedes_uuid` = ?, `superseded_by_uuid` = ?, `decided_by_member_uuid` = ?, `decided_at` = ?, `revision` = ?, `created_at` = ?, `updated_at` = ?, `recorded_by_session_uuid` = ?
+WHERE
+`id` = ?;
+
+-- name: UpdateDecisionPath :exec
+UPDATE `decision_path`
+SET
+`decision_uuid` = ?, `team_uuid` = ?, `project_uuid` = ?, `pattern` = ?, `pattern_norm` = ?, `kind` = ?, `prefix` = ?, `depth` = ?, `created_at` = ?, `updated_at` = ?
+WHERE
+`id` = ?;
+
+-- name: UpdateDecisionToken :exec
+UPDATE `decision_token`
+SET
+`decision_uuid` = ?, `team_uuid` = ?, `project_uuid` = ?, `token` = ?, `weight` = ?, `created_at` = ?, `updated_at` = ?
+WHERE
+`id` = ?;
+
 -- name: UpdateConflict :exec
 UPDATE `conflict`
 SET
-`team_uuid` = ?, `project_uuid` = ?, `key` = ?, `kind` = ?, `dedupe_key` = ?, `severity` = ?, `status` = ?, `detected_by` = ?, `detector_rule` = ?, `confidence` = ?, `evidence` = ?, `suggested_action` = ?, `suggested_yield_session_uuid` = ?, `suggested_yield_reason` = ?, `resolution` = ?, `resolution_note` = ?, `dismiss_reason` = ?, `resolved_by_member_uuid` = ?, `resolved_at` = ?, `occurrence_count` = ?, `first_detected_at` = ?, `last_detected_at` = ?, `notified_at` = ?, `max_severity_notified` = ?, `created_at` = ?, `updated_at` = ?
+`team_uuid` = ?, `project_uuid` = ?, `key` = ?, `kind` = ?, `dedupe_key` = ?, `severity` = ?, `status` = ?, `detected_by` = ?, `detector_rule` = ?, `confidence` = ?, `evidence` = ?, `suggested_action` = ?, `suggested_yield_session_uuid` = ?, `suggested_yield_reason` = ?, `resolution` = ?, `resolution_note` = ?, `dismiss_reason` = ?, `resolved_by_member_uuid` = ?, `resolved_at` = ?, `occurrence_count` = ?, `first_detected_at` = ?, `last_detected_at` = ?, `notified_at` = ?, `max_severity_notified` = ?, `created_at` = ?, `updated_at` = ?, `escalated_at` = ?
 WHERE
 `id` = ?;
 
@@ -163,7 +163,7 @@ WHERE
 -- name: UpdateJudgement :exec
 UPDATE `judgement`
 SET
-`team_uuid` = ?, `pair_key` = ?, `kind` = ?, `subject_a_kind` = ?, `subject_a_uuid` = ?, `subject_a_revision` = ?, `subject_b_kind` = ?, `subject_b_uuid` = ?, `subject_b_revision` = ?, `status` = ?, `verdict` = ?, `severity` = ?, `confidence` = ?, `rationale` = ?, `judge_session_uuid` = ?, `judging_expires_at` = ?, `conflict_uuid` = ?, `pinned` = ?, `created_at` = ?, `updated_at` = ?
+`team_uuid` = ?, `pair_key` = ?, `kind` = ?, `subject_a_kind` = ?, `subject_a_uuid` = ?, `subject_a_revision` = ?, `subject_b_kind` = ?, `subject_b_uuid` = ?, `subject_b_revision` = ?, `status` = ?, `verdict` = ?, `severity` = ?, `confidence` = ?, `rationale` = ?, `judge_session_uuid` = ?, `judging_expires_at` = ?, `conflict_uuid` = ?, `pinned` = ?, `created_at` = ?, `updated_at` = ?, `judged_at` = ?, `assignment_count` = ?
 WHERE
 `id` = ?;
 

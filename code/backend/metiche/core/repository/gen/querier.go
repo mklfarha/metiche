@@ -113,7 +113,7 @@ type Querier interface {
 	FetchContractByIDForUpdate(ctx context.Context, id string) ([]Contract, error)
 	FetchContractByProjectUUIDAndKeyNorm(ctx context.Context, arg FetchContractByProjectUUIDAndKeyNormParams) ([]Contract, error)
 	FetchContractField(ctx context.Context) ([]ContractField, error)
-	FetchContractFieldByAssertionUUIDAndPath(ctx context.Context, arg FetchContractFieldByAssertionUUIDAndPathParams) ([]ContractField, error)
+	FetchContractFieldByAssertionUUIDAndDirectionAndPath(ctx context.Context, arg FetchContractFieldByAssertionUUIDAndDirectionAndPathParams) ([]ContractField, error)
 	FetchContractFieldByContractUUIDAndPathAndDirection(ctx context.Context, arg FetchContractFieldByContractUUIDAndPathAndDirectionParams) ([]ContractField, error)
 	FetchContractFieldByContractUUIDAndPathSnake(ctx context.Context, arg FetchContractFieldByContractUUIDAndPathSnakeParams) ([]ContractField, error)
 	// contract_field selects:
@@ -166,6 +166,8 @@ type Querier interface {
 	FetchJudgementByIDForUpdate(ctx context.Context, id string) ([]Judgement, error)
 	FetchJudgementByJudgeSessionUUIDAndStatus(ctx context.Context, arg FetchJudgementByJudgeSessionUUIDAndStatusParams) ([]Judgement, error)
 	FetchJudgementByTeamUUIDAndPairKey(ctx context.Context, arg FetchJudgementByTeamUUIDAndPairKeyParams) ([]Judgement, error)
+	FetchJudgementByTeamUUIDAndStatus(ctx context.Context, arg FetchJudgementByTeamUUIDAndStatusParams) ([]Judgement, error)
+	FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUID(ctx context.Context, arg FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUIDParams) ([]Judgement, error)
 	FetchLimitEvent(ctx context.Context) ([]LimitEvent, error)
 	// limit_event selects:
 	FetchLimitEventByID(ctx context.Context, id string) ([]LimitEvent, error)

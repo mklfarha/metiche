@@ -182,6 +182,8 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"recorded_by_session_uuid",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Decision) any{
@@ -217,4 +219,6 @@ var listFieldRegistry = map[string]func(*repogen.Decision) any{
 	"created_at": func(i *repogen.Decision) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Decision) any { return &i.UpdatedAt },
+
+	"recorded_by_session_uuid": func(i *repogen.Decision) any { return &i.RecordedBySessionUUID },
 }

@@ -270,9 +270,9 @@ func (q *Queries) InsertClaimPath(ctx context.Context, arg InsertClaimPathParams
 
 const insertConflict = `-- name: InsertConflict :execresult
 INSERT INTO ` + "`" + `conflict` + "`" + `
-(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `)
+(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `dedupe_key` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `detected_by` + "`" + `,` + "`" + `detector_rule` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `evidence` + "`" + `,` + "`" + `suggested_action` + "`" + `,` + "`" + `suggested_yield_session_uuid` + "`" + `,` + "`" + `suggested_yield_reason` + "`" + `,` + "`" + `resolution` + "`" + `,` + "`" + `resolution_note` + "`" + `,` + "`" + `dismiss_reason` + "`" + `,` + "`" + `resolved_by_member_uuid` + "`" + `,` + "`" + `resolved_at` + "`" + `,` + "`" + `occurrence_count` + "`" + `,` + "`" + `first_detected_at` + "`" + `,` + "`" + `last_detected_at` + "`" + `,` + "`" + `notified_at` + "`" + `,` + "`" + `max_severity_notified` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `escalated_at` + "`" + `)
 VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type InsertConflictParams struct {
@@ -303,6 +303,7 @@ type InsertConflictParams struct {
 	MaxSeverityNotified       null.Int    `json:"max_severity_notified"`
 	CreatedAt                 time.Time   `json:"created_at"`
 	UpdatedAt                 time.Time   `json:"updated_at"`
+	EscalatedAt               null.Time   `json:"escalated_at"`
 }
 
 func (q *Queries) InsertConflict(ctx context.Context, arg InsertConflictParams) (sql.Result, error) {
@@ -334,6 +335,7 @@ func (q *Queries) InsertConflict(ctx context.Context, arg InsertConflictParams) 
 		arg.MaxSeverityNotified,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.EscalatedAt,
 	)
 }
 
@@ -505,28 +507,29 @@ func (q *Queries) InsertContractField(ctx context.Context, arg InsertContractFie
 
 const insertDecision = `-- name: InsertDecision :execresult
 INSERT INTO ` + "`" + `decision` + "`" + `
-(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `)
+(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `title` + "`" + `,` + "`" + `statement` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `always_show` + "`" + `,` + "`" + `supersedes_uuid` + "`" + `,` + "`" + `superseded_by_uuid` + "`" + `,` + "`" + `decided_by_member_uuid` + "`" + `,` + "`" + `decided_at` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `recorded_by_session_uuid` + "`" + `)
 VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type InsertDecisionParams struct {
-	ID                  string      `json:"id"`
-	TeamUUID            string      `json:"team_uuid"`
-	ProjectUUID         null.String `json:"project_uuid"`
-	Key                 string      `json:"key"`
-	Title               string      `json:"title"`
-	Statement           string      `json:"statement"`
-	Rationale           null.String `json:"rationale"`
-	Status              int64       `json:"status"`
-	AlwaysShow          bool        `json:"always_show"`
-	SupersedesUUID      null.String `json:"supersedes_uuid"`
-	SupersededByUUID    null.String `json:"superseded_by_uuid"`
-	DecidedByMemberUUID null.String `json:"decided_by_member_uuid"`
-	DecidedAt           null.Time   `json:"decided_at"`
-	Revision            int64       `json:"revision"`
-	CreatedAt           time.Time   `json:"created_at"`
-	UpdatedAt           time.Time   `json:"updated_at"`
+	ID                    string      `json:"id"`
+	TeamUUID              string      `json:"team_uuid"`
+	ProjectUUID           null.String `json:"project_uuid"`
+	Key                   string      `json:"key"`
+	Title                 string      `json:"title"`
+	Statement             string      `json:"statement"`
+	Rationale             null.String `json:"rationale"`
+	Status                int64       `json:"status"`
+	AlwaysShow            bool        `json:"always_show"`
+	SupersedesUUID        null.String `json:"supersedes_uuid"`
+	SupersededByUUID      null.String `json:"superseded_by_uuid"`
+	DecidedByMemberUUID   null.String `json:"decided_by_member_uuid"`
+	DecidedAt             null.Time   `json:"decided_at"`
+	Revision              int64       `json:"revision"`
+	CreatedAt             time.Time   `json:"created_at"`
+	UpdatedAt             time.Time   `json:"updated_at"`
+	RecordedBySessionUUID null.String `json:"recorded_by_session_uuid"`
 }
 
 func (q *Queries) InsertDecision(ctx context.Context, arg InsertDecisionParams) (sql.Result, error) {
@@ -547,6 +550,7 @@ func (q *Queries) InsertDecision(ctx context.Context, arg InsertDecisionParams) 
 		arg.Revision,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.RecordedBySessionUUID,
 	)
 }
 
@@ -802,9 +806,9 @@ func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) (sql
 
 const insertJudgement = `-- name: InsertJudgement :execresult
 INSERT INTO ` + "`" + `judgement` + "`" + `
-(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `)
+(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `pair_key` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `subject_a_kind` + "`" + `,` + "`" + `subject_a_uuid` + "`" + `,` + "`" + `subject_a_revision` + "`" + `,` + "`" + `subject_b_kind` + "`" + `,` + "`" + `subject_b_uuid` + "`" + `,` + "`" + `subject_b_revision` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `verdict` + "`" + `,` + "`" + `severity` + "`" + `,` + "`" + `confidence` + "`" + `,` + "`" + `rationale` + "`" + `,` + "`" + `judge_session_uuid` + "`" + `,` + "`" + `judging_expires_at` + "`" + `,` + "`" + `conflict_uuid` + "`" + `,` + "`" + `pinned` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `judged_at` + "`" + `,` + "`" + `assignment_count` + "`" + `)
 VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type InsertJudgementParams struct {
@@ -829,6 +833,8 @@ type InsertJudgementParams struct {
 	Pinned           bool        `json:"pinned"`
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
+	JudgedAt         null.Time   `json:"judged_at"`
+	AssignmentCount  int64       `json:"assignment_count"`
 }
 
 func (q *Queries) InsertJudgement(ctx context.Context, arg InsertJudgementParams) (sql.Result, error) {
@@ -854,6 +860,8 @@ func (q *Queries) InsertJudgement(ctx context.Context, arg InsertJudgementParams
 		arg.Pinned,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.JudgedAt,
+		arg.AssignmentCount,
 	)
 }
 

@@ -202,6 +202,10 @@ func judgementDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("judged_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("assignment_count", filtering.TypeInt),
 	)
 	if err != nil {
 		log.Printf("error creating declarations for judgement: %v", err)

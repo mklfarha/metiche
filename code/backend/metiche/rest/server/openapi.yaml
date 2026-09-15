@@ -6079,6 +6079,10 @@ components:
                 dismiss_reason:
                     $ref: '#/components/schemas/DismissReason'
                     nullable: true
+                escalated_at:
+                    format: date-time
+                    nullable: true
+                    type: string
                 evidence:
                     $ref: '#/components/schemas/ConflictEvidence'
                     nullable: true
@@ -6511,6 +6515,10 @@ components:
                     nullable: true
                     type: string
                 rationale:
+                    nullable: true
+                    type: string
+                recorded_by_session_uuid:
+                    format: uuid
                     nullable: true
                     type: string
                 revision:
@@ -7065,6 +7073,9 @@ components:
             type: string
         Judgement:
             properties:
+                assignment_count:
+                    format: int64
+                    type: integer
                 confidence:
                     format: double
                     nullable: true
@@ -7081,6 +7092,10 @@ components:
                     type: string
                 judge_session_uuid:
                     format: uuid
+                    nullable: true
+                    type: string
+                judged_at:
+                    format: date-time
                     nullable: true
                     type: string
                 judging_expires_at:
@@ -7141,6 +7156,7 @@ components:
                 - pinned
                 - created_at
                 - updated_at
+                - assignment_count
             type: object
         JudgementList:
             properties:

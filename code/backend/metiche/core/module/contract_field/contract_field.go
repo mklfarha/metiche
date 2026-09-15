@@ -16,9 +16,9 @@ import (
 
 type Module interface {
 	FetchContractFieldByID(ctx context.Context, req types.FetchContractFieldByIDRequest, opts ...Option) (types.FetchContractFieldByIDResponse, error)
-	FetchContractFieldByAssertionUUIDAndPath(ctx context.Context, req types.FetchContractFieldByAssertionUUIDAndPathRequest, opts ...Option) (types.FetchContractFieldByAssertionUUIDAndPathResponse, error)
 	FetchContractFieldByContractUUIDAndPathAndDirection(ctx context.Context, req types.FetchContractFieldByContractUUIDAndPathAndDirectionRequest, opts ...Option) (types.FetchContractFieldByContractUUIDAndPathAndDirectionResponse, error)
 	FetchContractFieldByContractUUIDAndPathSnake(ctx context.Context, req types.FetchContractFieldByContractUUIDAndPathSnakeRequest, opts ...Option) (types.FetchContractFieldByContractUUIDAndPathSnakeResponse, error)
+	FetchContractFieldByAssertionUUIDAndDirectionAndPath(ctx context.Context, req types.FetchContractFieldByAssertionUUIDAndDirectionAndPathRequest, opts ...Option) (types.FetchContractFieldByAssertionUUIDAndDirectionAndPathResponse, error)
 
 	List(ctx context.Context, req types.ListRequest, opts ...Option) (types.ListResponse, error)
 

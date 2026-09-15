@@ -37,6 +37,7 @@ func (e Conflict) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 		"max_severity_notified":        entitytypes.SingleEnumFieldType,
 		"created_at":                   entitytypes.TimestampFieldType,
 		"updated_at":                   entitytypes.TimestampFieldType,
+		"escalated_at":                 entitytypes.TimestampFieldType,
 	}
 }
 
@@ -69,6 +70,7 @@ func (e Conflict) OrderedFieldIdentifiers() []string {
 	res = append(res, "max_severity_notified")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "escalated_at")
 
 	return res
 }

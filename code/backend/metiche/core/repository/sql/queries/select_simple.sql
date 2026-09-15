@@ -39,21 +39,9 @@ FROM `invite`;
 SELECT `id`,`team_uuid`,`project_uuid`,`key`,`key_norm`,`kind`,`status`,`title`,`notes`,`created_at`,`updated_at`
 FROM `contract`;
 
--- name: FetchDecision :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`
-FROM `decision`;
-
 -- name: FetchNotificationChannel :many
 SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`label`,`target_url`,`min_severity`,`notify_human_requests`,`status`,`delivery_status`,`consecutive_failures`,`last_attempt_at`,`last_success_at`,`last_error`,`created_by_member_uuid`,`created_at`,`updated_at`
 FROM `notification_channel`;
-
--- name: FetchDecisionPath :many
-SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`
-FROM `decision_path`;
-
--- name: FetchDecisionToken :many
-SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`
-FROM `decision_token`;
 
 -- name: FetchSession :many
 SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`,`base_commit`,`head_commit`,`goal`,`status`,`status_line`,`current_intent_uuid`,`started_at`,`last_heartbeat_at`,`ended_at`,`outcome`,`outcome_note`,`created_at`,`updated_at`,`parent_session_uuid`
@@ -83,8 +71,20 @@ FROM `contract_assertion`;
 SELECT `id`,`assertion_uuid`,`contract_uuid`,`path`,`path_snake`,`type`,`required`,`nullable`,`direction`,`created_at`,`updated_at`
 FROM `contract_field`;
 
+-- name: FetchDecision :many
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`,`recorded_by_session_uuid`
+FROM `decision`;
+
+-- name: FetchDecisionPath :many
+SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`
+FROM `decision_path`;
+
+-- name: FetchDecisionToken :many
+SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`
+FROM `decision_token`;
+
 -- name: FetchConflict :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`,`escalated_at`
 FROM `conflict`;
 
 -- name: FetchConflictParticipant :many
@@ -92,7 +92,7 @@ SELECT `id`,`conflict_uuid`,`team_uuid`,`session_uuid`,`agent_uuid`,`member_uuid
 FROM `conflict_participant`;
 
 -- name: FetchJudgement :many
-SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`,`judged_at`,`assignment_count`
 FROM `judgement`;
 
 -- name: FetchInstruction :many

@@ -43,6 +43,7 @@ type Conflict struct {
 	MaxSeverityNotified       enums.ConflictSeverity             `json:"max_severity_notified"`
 	CreatedAt                 time.Time                          `json:"created_at"`
 	UpdatedAt                 time.Time                          `json:"updated_at"`
+	EscalatedAt               null.Time                          `json:"escalated_at"`
 }
 
 func (e Conflict) String() string {

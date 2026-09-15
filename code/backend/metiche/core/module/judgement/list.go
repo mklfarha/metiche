@@ -192,6 +192,10 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"judged_at",
+
+	"assignment_count",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Judgement) any{
@@ -237,4 +241,8 @@ var listFieldRegistry = map[string]func(*repogen.Judgement) any{
 	"created_at": func(i *repogen.Judgement) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Judgement) any { return &i.UpdatedAt },
+
+	"judged_at": func(i *repogen.Judgement) any { return &i.JudgedAt },
+
+	"assignment_count": func(i *repogen.Judgement) any { return &i.AssignmentCount },
 }

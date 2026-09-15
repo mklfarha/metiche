@@ -18,6 +18,8 @@ type Module interface {
 	FetchJudgementByID(ctx context.Context, req types.FetchJudgementByIDRequest, opts ...Option) (types.FetchJudgementByIDResponse, error)
 	FetchJudgementByTeamUUIDAndPairKey(ctx context.Context, req types.FetchJudgementByTeamUUIDAndPairKeyRequest, opts ...Option) (types.FetchJudgementByTeamUUIDAndPairKeyResponse, error)
 	FetchJudgementByJudgeSessionUUIDAndStatus(ctx context.Context, req types.FetchJudgementByJudgeSessionUUIDAndStatusRequest, opts ...Option) (types.FetchJudgementByJudgeSessionUUIDAndStatusResponse, error)
+	FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUID(ctx context.Context, req types.FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUIDRequest, opts ...Option) (types.FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUIDResponse, error)
+	FetchJudgementByTeamUUIDAndStatus(ctx context.Context, req types.FetchJudgementByTeamUUIDAndStatusRequest, opts ...Option) (types.FetchJudgementByTeamUUIDAndStatusResponse, error)
 
 	List(ctx context.Context, req types.ListRequest, opts ...Option) (types.ListResponse, error)
 

@@ -135,5 +135,9 @@ func mapUpsertRequestToUpdateParams(req types.UpsertRequest) metichedb.UpdateJud
 		CreatedAt: req.Judgement.CreatedAt,
 
 		UpdatedAt: req.Judgement.UpdatedAt,
+
+		JudgedAt: req.Judgement.JudgedAt,
+
+		AssignmentCount: req.Judgement.AssignmentCount,
 	}
 }

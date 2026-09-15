@@ -282,7 +282,7 @@ func (q *Queries) UpdateClaimPath(ctx context.Context, arg UpdateClaimPathParams
 const updateConflict = `-- name: UpdateConflict :exec
 UPDATE ` + "`" + `conflict` + "`" + `
 SET
-` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `project_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `kind` + "`" + ` = ?, ` + "`" + `dedupe_key` + "`" + ` = ?, ` + "`" + `severity` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `detected_by` + "`" + ` = ?, ` + "`" + `detector_rule` + "`" + ` = ?, ` + "`" + `confidence` + "`" + ` = ?, ` + "`" + `evidence` + "`" + ` = ?, ` + "`" + `suggested_action` + "`" + ` = ?, ` + "`" + `suggested_yield_session_uuid` + "`" + ` = ?, ` + "`" + `suggested_yield_reason` + "`" + ` = ?, ` + "`" + `resolution` + "`" + ` = ?, ` + "`" + `resolution_note` + "`" + ` = ?, ` + "`" + `dismiss_reason` + "`" + ` = ?, ` + "`" + `resolved_by_member_uuid` + "`" + ` = ?, ` + "`" + `resolved_at` + "`" + ` = ?, ` + "`" + `occurrence_count` + "`" + ` = ?, ` + "`" + `first_detected_at` + "`" + ` = ?, ` + "`" + `last_detected_at` + "`" + ` = ?, ` + "`" + `notified_at` + "`" + ` = ?, ` + "`" + `max_severity_notified` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `project_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `kind` + "`" + ` = ?, ` + "`" + `dedupe_key` + "`" + ` = ?, ` + "`" + `severity` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `detected_by` + "`" + ` = ?, ` + "`" + `detector_rule` + "`" + ` = ?, ` + "`" + `confidence` + "`" + ` = ?, ` + "`" + `evidence` + "`" + ` = ?, ` + "`" + `suggested_action` + "`" + ` = ?, ` + "`" + `suggested_yield_session_uuid` + "`" + ` = ?, ` + "`" + `suggested_yield_reason` + "`" + ` = ?, ` + "`" + `resolution` + "`" + ` = ?, ` + "`" + `resolution_note` + "`" + ` = ?, ` + "`" + `dismiss_reason` + "`" + ` = ?, ` + "`" + `resolved_by_member_uuid` + "`" + ` = ?, ` + "`" + `resolved_at` + "`" + ` = ?, ` + "`" + `occurrence_count` + "`" + ` = ?, ` + "`" + `first_detected_at` + "`" + ` = ?, ` + "`" + `last_detected_at` + "`" + ` = ?, ` + "`" + `notified_at` + "`" + ` = ?, ` + "`" + `max_severity_notified` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `escalated_at` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
@@ -314,6 +314,7 @@ type UpdateConflictParams struct {
 	MaxSeverityNotified       null.Int    `json:"max_severity_notified"`
 	CreatedAt                 time.Time   `json:"created_at"`
 	UpdatedAt                 time.Time   `json:"updated_at"`
+	EscalatedAt               null.Time   `json:"escalated_at"`
 	ID                        string      `json:"id"`
 }
 
@@ -345,6 +346,7 @@ func (q *Queries) UpdateConflict(ctx context.Context, arg UpdateConflictParams) 
 		arg.MaxSeverityNotified,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.EscalatedAt,
 		arg.ID,
 	)
 	return err
@@ -527,28 +529,29 @@ func (q *Queries) UpdateContractField(ctx context.Context, arg UpdateContractFie
 const updateDecision = `-- name: UpdateDecision :exec
 UPDATE ` + "`" + `decision` + "`" + `
 SET
-` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `project_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `title` + "`" + ` = ?, ` + "`" + `statement` + "`" + ` = ?, ` + "`" + `rationale` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `always_show` + "`" + ` = ?, ` + "`" + `supersedes_uuid` + "`" + ` = ?, ` + "`" + `superseded_by_uuid` + "`" + ` = ?, ` + "`" + `decided_by_member_uuid` + "`" + ` = ?, ` + "`" + `decided_at` + "`" + ` = ?, ` + "`" + `revision` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `project_uuid` + "`" + ` = ?, ` + "`" + `key` + "`" + ` = ?, ` + "`" + `title` + "`" + ` = ?, ` + "`" + `statement` + "`" + ` = ?, ` + "`" + `rationale` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `always_show` + "`" + ` = ?, ` + "`" + `supersedes_uuid` + "`" + ` = ?, ` + "`" + `superseded_by_uuid` + "`" + ` = ?, ` + "`" + `decided_by_member_uuid` + "`" + ` = ?, ` + "`" + `decided_at` + "`" + ` = ?, ` + "`" + `revision` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `recorded_by_session_uuid` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
 
 type UpdateDecisionParams struct {
-	TeamUUID            string      `json:"team_uuid"`
-	ProjectUUID         null.String `json:"project_uuid"`
-	Key                 string      `json:"key"`
-	Title               string      `json:"title"`
-	Statement           string      `json:"statement"`
-	Rationale           null.String `json:"rationale"`
-	Status              int64       `json:"status"`
-	AlwaysShow          bool        `json:"always_show"`
-	SupersedesUUID      null.String `json:"supersedes_uuid"`
-	SupersededByUUID    null.String `json:"superseded_by_uuid"`
-	DecidedByMemberUUID null.String `json:"decided_by_member_uuid"`
-	DecidedAt           null.Time   `json:"decided_at"`
-	Revision            int64       `json:"revision"`
-	CreatedAt           time.Time   `json:"created_at"`
-	UpdatedAt           time.Time   `json:"updated_at"`
-	ID                  string      `json:"id"`
+	TeamUUID              string      `json:"team_uuid"`
+	ProjectUUID           null.String `json:"project_uuid"`
+	Key                   string      `json:"key"`
+	Title                 string      `json:"title"`
+	Statement             string      `json:"statement"`
+	Rationale             null.String `json:"rationale"`
+	Status                int64       `json:"status"`
+	AlwaysShow            bool        `json:"always_show"`
+	SupersedesUUID        null.String `json:"supersedes_uuid"`
+	SupersededByUUID      null.String `json:"superseded_by_uuid"`
+	DecidedByMemberUUID   null.String `json:"decided_by_member_uuid"`
+	DecidedAt             null.Time   `json:"decided_at"`
+	Revision              int64       `json:"revision"`
+	CreatedAt             time.Time   `json:"created_at"`
+	UpdatedAt             time.Time   `json:"updated_at"`
+	RecordedBySessionUUID null.String `json:"recorded_by_session_uuid"`
+	ID                    string      `json:"id"`
 }
 
 func (q *Queries) UpdateDecision(ctx context.Context, arg UpdateDecisionParams) error {
@@ -568,6 +571,7 @@ func (q *Queries) UpdateDecision(ctx context.Context, arg UpdateDecisionParams) 
 		arg.Revision,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.RecordedBySessionUUID,
 		arg.ID,
 	)
 	return err
@@ -838,7 +842,7 @@ func (q *Queries) UpdateInvite(ctx context.Context, arg UpdateInviteParams) erro
 const updateJudgement = `-- name: UpdateJudgement :exec
 UPDATE ` + "`" + `judgement` + "`" + `
 SET
-` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `pair_key` + "`" + ` = ?, ` + "`" + `kind` + "`" + ` = ?, ` + "`" + `subject_a_kind` + "`" + ` = ?, ` + "`" + `subject_a_uuid` + "`" + ` = ?, ` + "`" + `subject_a_revision` + "`" + ` = ?, ` + "`" + `subject_b_kind` + "`" + ` = ?, ` + "`" + `subject_b_uuid` + "`" + ` = ?, ` + "`" + `subject_b_revision` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `verdict` + "`" + ` = ?, ` + "`" + `severity` + "`" + ` = ?, ` + "`" + `confidence` + "`" + ` = ?, ` + "`" + `rationale` + "`" + ` = ?, ` + "`" + `judge_session_uuid` + "`" + ` = ?, ` + "`" + `judging_expires_at` + "`" + ` = ?, ` + "`" + `conflict_uuid` + "`" + ` = ?, ` + "`" + `pinned` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?
+` + "`" + `team_uuid` + "`" + ` = ?, ` + "`" + `pair_key` + "`" + ` = ?, ` + "`" + `kind` + "`" + ` = ?, ` + "`" + `subject_a_kind` + "`" + ` = ?, ` + "`" + `subject_a_uuid` + "`" + ` = ?, ` + "`" + `subject_a_revision` + "`" + ` = ?, ` + "`" + `subject_b_kind` + "`" + ` = ?, ` + "`" + `subject_b_uuid` + "`" + ` = ?, ` + "`" + `subject_b_revision` + "`" + ` = ?, ` + "`" + `status` + "`" + ` = ?, ` + "`" + `verdict` + "`" + ` = ?, ` + "`" + `severity` + "`" + ` = ?, ` + "`" + `confidence` + "`" + ` = ?, ` + "`" + `rationale` + "`" + ` = ?, ` + "`" + `judge_session_uuid` + "`" + ` = ?, ` + "`" + `judging_expires_at` + "`" + ` = ?, ` + "`" + `conflict_uuid` + "`" + ` = ?, ` + "`" + `pinned` + "`" + ` = ?, ` + "`" + `created_at` + "`" + ` = ?, ` + "`" + `updated_at` + "`" + ` = ?, ` + "`" + `judged_at` + "`" + ` = ?, ` + "`" + `assignment_count` + "`" + ` = ?
 WHERE
 ` + "`" + `id` + "`" + ` = ?
 `
@@ -864,6 +868,8 @@ type UpdateJudgementParams struct {
 	Pinned           bool        `json:"pinned"`
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
+	JudgedAt         null.Time   `json:"judged_at"`
+	AssignmentCount  int64       `json:"assignment_count"`
 	ID               string      `json:"id"`
 }
 
@@ -889,6 +895,8 @@ func (q *Queries) UpdateJudgement(ctx context.Context, arg UpdateJudgementParams
 		arg.Pinned,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.JudgedAt,
+		arg.AssignmentCount,
 		arg.ID,
 	)
 	return err

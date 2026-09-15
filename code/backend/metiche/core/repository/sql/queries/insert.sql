@@ -59,29 +59,11 @@ INSERT INTO `contract`
 VALUES
 (?,?,?,?,?,?,?,?,?,?,?);
 
--- name: InsertDecision :execresult
-INSERT INTO `decision`
-(`id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`)
-VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
-
 -- name: InsertNotificationChannel :execresult
 INSERT INTO `notification_channel`
 (`id`,`team_uuid`,`project_uuid`,`key`,`kind`,`label`,`target_url`,`min_severity`,`notify_human_requests`,`status`,`delivery_status`,`consecutive_failures`,`last_attempt_at`,`last_success_at`,`last_error`,`created_by_member_uuid`,`created_at`,`updated_at`)
 VALUES
 (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
-
--- name: InsertDecisionPath :execresult
-INSERT INTO `decision_path`
-(`id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`)
-VALUES
-(?,?,?,?,?,?,?,?,?,?,?);
-
--- name: InsertDecisionToken :execresult
-INSERT INTO `decision_token`
-(`id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`)
-VALUES
-(?,?,?,?,?,?,?,?);
 
 -- name: InsertSession :execresult
 INSERT INTO `session`
@@ -125,11 +107,29 @@ INSERT INTO `contract_field`
 VALUES
 (?,?,?,?,?,?,?,?,?,?,?);
 
+-- name: InsertDecision :execresult
+INSERT INTO `decision`
+(`id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`,`recorded_by_session_uuid`)
+VALUES
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+
+-- name: InsertDecisionPath :execresult
+INSERT INTO `decision_path`
+(`id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`)
+VALUES
+(?,?,?,?,?,?,?,?,?,?,?);
+
+-- name: InsertDecisionToken :execresult
+INSERT INTO `decision_token`
+(`id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`)
+VALUES
+(?,?,?,?,?,?,?,?);
+
 -- name: InsertConflict :execresult
 INSERT INTO `conflict`
-(`id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`)
+(`id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`,`escalated_at`)
 VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 
 -- name: InsertConflictParticipant :execresult
 INSERT INTO `conflict_participant`
@@ -139,9 +139,9 @@ VALUES
 
 -- name: InsertJudgement :execresult
 INSERT INTO `judgement`
-(`id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`)
+(`id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`,`judged_at`,`assignment_count`)
 VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 
 -- name: InsertInstruction :execresult
 INSERT INTO `instruction`

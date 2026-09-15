@@ -426,39 +426,6 @@ FOR UPDATE;
 
 
 
--- decision selects:
--- name: FetchDecisionByID :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`
-FROM `decision`
-WHERE 
-    `id` = ? ;
-
-        
--- name: FetchDecisionByTeamUUIDAndKey :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`
-FROM `decision`
-WHERE 
-    `key` = ? AND `team_uuid` = ? 
-LIMIT ?, ?;
-        
--- name: FetchDecisionByTeamUUIDAndStatusAndAlwaysShow :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`
-FROM `decision`
-WHERE 
-    `always_show` = ? AND `status` = ? AND `team_uuid` = ? 
-LIMIT ?, ?;
-        
--- name: FetchDecisionByIDForUpdate :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`
-FROM `decision`
-WHERE 
-    `id` = ? 
-FOR UPDATE;
-        
-
-
-
-
 -- notification_channel selects:
 -- name: FetchNotificationChannelByID :many
 SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`label`,`target_url`,`min_severity`,`notify_human_requests`,`status`,`delivery_status`,`consecutive_failures`,`last_attempt_at`,`last_success_at`,`last_error`,`created_by_member_uuid`,`created_at`,`updated_at`
@@ -484,58 +451,6 @@ LIMIT ?, ?;
 -- name: FetchNotificationChannelByIDForUpdate :many
 SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`label`,`target_url`,`min_severity`,`notify_human_requests`,`status`,`delivery_status`,`consecutive_failures`,`last_attempt_at`,`last_success_at`,`last_error`,`created_by_member_uuid`,`created_at`,`updated_at`
 FROM `notification_channel`
-WHERE 
-    `id` = ? 
-FOR UPDATE;
-        
-
-
-
-
--- decision_path selects:
--- name: FetchDecisionPathByID :many
-SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`
-FROM `decision_path`
-WHERE 
-    `id` = ? ;
-
-        
--- name: FetchDecisionPathByTeamUUIDAndPrefix :many
-SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`
-FROM `decision_path`
-WHERE 
-    `prefix` = ? AND `team_uuid` = ? 
-LIMIT ?, ?;
-        
--- name: FetchDecisionPathByIDForUpdate :many
-SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`
-FROM `decision_path`
-WHERE 
-    `id` = ? 
-FOR UPDATE;
-        
-
-
-
-
--- decision_token selects:
--- name: FetchDecisionTokenByID :many
-SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`
-FROM `decision_token`
-WHERE 
-    `id` = ? ;
-
-        
--- name: FetchDecisionTokenByTeamUUIDAndToken :many
-SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`
-FROM `decision_token`
-WHERE 
-    `team_uuid` = ? AND `token` = ? 
-LIMIT ?, ?;
-        
--- name: FetchDecisionTokenByIDForUpdate :many
-SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`
-FROM `decision_token`
 WHERE 
     `id` = ? 
 FOR UPDATE;
@@ -778,13 +693,6 @@ WHERE
     `id` = ? ;
 
         
--- name: FetchContractFieldByAssertionUUIDAndPath :many
-SELECT `id`,`assertion_uuid`,`contract_uuid`,`path`,`path_snake`,`type`,`required`,`nullable`,`direction`,`created_at`,`updated_at`
-FROM `contract_field`
-WHERE 
-    `assertion_uuid` = ? AND `path` = ? 
-LIMIT ?, ?;
-        
 -- name: FetchContractFieldByContractUUIDAndPathAndDirection :many
 SELECT `id`,`assertion_uuid`,`contract_uuid`,`path`,`path_snake`,`type`,`required`,`nullable`,`direction`,`created_at`,`updated_at`
 FROM `contract_field`
@@ -799,6 +707,13 @@ WHERE
     `contract_uuid` = ? AND `path_snake` = ? 
 LIMIT ?, ?;
         
+-- name: FetchContractFieldByAssertionUUIDAndDirectionAndPath :many
+SELECT `id`,`assertion_uuid`,`contract_uuid`,`path`,`path_snake`,`type`,`required`,`nullable`,`direction`,`created_at`,`updated_at`
+FROM `contract_field`
+WHERE 
+    `assertion_uuid` = ? AND `direction` = ? AND `path` = ? 
+LIMIT ?, ?;
+        
 -- name: FetchContractFieldByIDForUpdate :many
 SELECT `id`,`assertion_uuid`,`contract_uuid`,`path`,`path_snake`,`type`,`required`,`nullable`,`direction`,`created_at`,`updated_at`
 FROM `contract_field`
@@ -810,37 +725,122 @@ FOR UPDATE;
 
 
 
+-- decision selects:
+-- name: FetchDecisionByID :many
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`,`recorded_by_session_uuid`
+FROM `decision`
+WHERE 
+    `id` = ? ;
+
+        
+-- name: FetchDecisionByTeamUUIDAndKey :many
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`,`recorded_by_session_uuid`
+FROM `decision`
+WHERE 
+    `key` = ? AND `team_uuid` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchDecisionByTeamUUIDAndStatusAndAlwaysShow :many
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`,`recorded_by_session_uuid`
+FROM `decision`
+WHERE 
+    `always_show` = ? AND `status` = ? AND `team_uuid` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchDecisionByIDForUpdate :many
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`rationale`,`status`,`always_show`,`supersedes_uuid`,`superseded_by_uuid`,`decided_by_member_uuid`,`decided_at`,`revision`,`created_at`,`updated_at`,`recorded_by_session_uuid`
+FROM `decision`
+WHERE 
+    `id` = ? 
+FOR UPDATE;
+        
+
+
+
+
+-- decision_path selects:
+-- name: FetchDecisionPathByID :many
+SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`
+FROM `decision_path`
+WHERE 
+    `id` = ? ;
+
+        
+-- name: FetchDecisionPathByTeamUUIDAndPrefix :many
+SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`
+FROM `decision_path`
+WHERE 
+    `prefix` = ? AND `team_uuid` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchDecisionPathByIDForUpdate :many
+SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`pattern`,`pattern_norm`,`kind`,`prefix`,`depth`,`created_at`,`updated_at`
+FROM `decision_path`
+WHERE 
+    `id` = ? 
+FOR UPDATE;
+        
+
+
+
+
+-- decision_token selects:
+-- name: FetchDecisionTokenByID :many
+SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`
+FROM `decision_token`
+WHERE 
+    `id` = ? ;
+
+        
+-- name: FetchDecisionTokenByTeamUUIDAndToken :many
+SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`
+FROM `decision_token`
+WHERE 
+    `team_uuid` = ? AND `token` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchDecisionTokenByIDForUpdate :many
+SELECT `id`,`decision_uuid`,`team_uuid`,`project_uuid`,`token`,`weight`,`created_at`,`updated_at`
+FROM `decision_token`
+WHERE 
+    `id` = ? 
+FOR UPDATE;
+        
+
+
+
+
 -- conflict selects:
 -- name: FetchConflictByID :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`,`escalated_at`
 FROM `conflict`
 WHERE 
     `id` = ? ;
 
         
 -- name: FetchConflictByTeamUUIDAndDedupeKey :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`,`escalated_at`
 FROM `conflict`
 WHERE 
     `dedupe_key` = ? AND `team_uuid` = ? 
 LIMIT ?, ?;
         
 -- name: FetchConflictByTeamUUIDAndStatusAndSeverity :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`,`escalated_at`
 FROM `conflict`
 WHERE 
     `severity` = ? AND `status` = ? AND `team_uuid` = ? 
 LIMIT ?, ?;
         
 -- name: FetchConflictByTeamUUIDAndKey :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`,`escalated_at`
 FROM `conflict`
 WHERE 
     `key` = ? AND `team_uuid` = ? 
 LIMIT ?, ?;
         
 -- name: FetchConflictByIDForUpdate :many
-SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`key`,`kind`,`dedupe_key`,`severity`,`status`,`detected_by`,`detector_rule`,`confidence`,`evidence`,`suggested_action`,`suggested_yield_session_uuid`,`suggested_yield_reason`,`resolution`,`resolution_note`,`dismiss_reason`,`resolved_by_member_uuid`,`resolved_at`,`occurrence_count`,`first_detected_at`,`last_detected_at`,`notified_at`,`max_severity_notified`,`created_at`,`updated_at`,`escalated_at`
 FROM `conflict`
 WHERE 
     `id` = ? 
@@ -878,28 +878,42 @@ FOR UPDATE;
 
 -- judgement selects:
 -- name: FetchJudgementByID :many
-SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`,`judged_at`,`assignment_count`
 FROM `judgement`
 WHERE 
     `id` = ? ;
 
         
 -- name: FetchJudgementByTeamUUIDAndPairKey :many
-SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`,`judged_at`,`assignment_count`
 FROM `judgement`
 WHERE 
     `pair_key` = ? AND `team_uuid` = ? 
 LIMIT ?, ?;
         
 -- name: FetchJudgementByJudgeSessionUUIDAndStatus :many
-SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`,`judged_at`,`assignment_count`
 FROM `judgement`
 WHERE 
     `judge_session_uuid` = ? AND `status` = ? 
 LIMIT ?, ?;
         
+-- name: FetchJudgementByTeamUUIDAndSubjectAUUIDAndSubjectBUUID :many
+SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`,`judged_at`,`assignment_count`
+FROM `judgement`
+WHERE 
+    `subject_a_uuid` = ? AND `subject_b_uuid` = ? AND `team_uuid` = ? 
+LIMIT ?, ?;
+        
+-- name: FetchJudgementByTeamUUIDAndStatus :many
+SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`,`judged_at`,`assignment_count`
+FROM `judgement`
+WHERE 
+    `status` = ? AND `team_uuid` = ? 
+LIMIT ?, ?;
+        
 -- name: FetchJudgementByIDForUpdate :many
-SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`,`severity`,`confidence`,`rationale`,`judge_session_uuid`,`judging_expires_at`,`conflict_uuid`,`pinned`,`created_at`,`updated_at`,`judged_at`,`assignment_count`
 FROM `judgement`
 WHERE 
     `id` = ? 

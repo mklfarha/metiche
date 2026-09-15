@@ -125,5 +125,7 @@ func mapUpsertRequestToUpdateParams(req types.UpsertRequest) metichedb.UpdateDec
 		CreatedAt: req.Decision.CreatedAt,
 
 		UpdatedAt: req.Decision.UpdatedAt,
+
+		RecordedBySessionUUID: mapper.UUIDPtrToNullString(req.Decision.RecordedBySessionUUID),
 	}
 }

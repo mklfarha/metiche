@@ -27,6 +27,7 @@ sql:
           always_show: AlwaysShow
           asserted_at: AssertedAt
           assertion_uuid: AssertionUUID
+          assignment_count: AssignmentCount
           auth_method: AuthMethod
           b_label: BLabel
           b_pattern: BPattern
@@ -74,6 +75,7 @@ sql:
           email: Email
           end_reason: EndReason
           ended_at: EndedAt
+          escalated_at: EscalatedAt
           evidence: Evidence
           expires_at: ExpiresAt
           ext: Ext
@@ -97,6 +99,7 @@ sql:
           is_instance_default: IsInstanceDefault
           judge_session_uuid: JudgeSessionUUID
           judge_window_seconds: JudgeWindowSeconds
+          judged_at: JudgedAt
           judging_expires_at: JudgingExpiresAt
           key: Key
           key_norm: KeyNorm
@@ -152,6 +155,7 @@ sql:
           project_uuid: ProjectUUID
           raised_by_member_uuid: RaisedByMemberUUID
           rationale: Rationale
+          recorded_by_session_uuid: RecordedBySessionUUID
           redirect_path: RedirectPath
           ref_kind: RefKind
           ref_uuid: RefUUID

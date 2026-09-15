@@ -139,6 +139,7 @@ type Conflict struct {
 	MaxSeverityNotified       null.Int    `json:"max_severity_notified"`
 	CreatedAt                 time.Time   `json:"created_at"`
 	UpdatedAt                 time.Time   `json:"updated_at"`
+	EscalatedAt               null.Time   `json:"escalated_at"`
 }
 
 type ConflictParticipant struct {
@@ -207,22 +208,23 @@ type ContractField struct {
 }
 
 type Decision struct {
-	ID                  string      `json:"id"`
-	TeamUUID            string      `json:"team_uuid"`
-	ProjectUUID         null.String `json:"project_uuid"`
-	Key                 string      `json:"key"`
-	Title               string      `json:"title"`
-	Statement           string      `json:"statement"`
-	Rationale           null.String `json:"rationale"`
-	Status              int64       `json:"status"`
-	AlwaysShow          bool        `json:"always_show"`
-	SupersedesUUID      null.String `json:"supersedes_uuid"`
-	SupersededByUUID    null.String `json:"superseded_by_uuid"`
-	DecidedByMemberUUID null.String `json:"decided_by_member_uuid"`
-	DecidedAt           null.Time   `json:"decided_at"`
-	Revision            int64       `json:"revision"`
-	CreatedAt           time.Time   `json:"created_at"`
-	UpdatedAt           time.Time   `json:"updated_at"`
+	ID                    string      `json:"id"`
+	TeamUUID              string      `json:"team_uuid"`
+	ProjectUUID           null.String `json:"project_uuid"`
+	Key                   string      `json:"key"`
+	Title                 string      `json:"title"`
+	Statement             string      `json:"statement"`
+	Rationale             null.String `json:"rationale"`
+	Status                int64       `json:"status"`
+	AlwaysShow            bool        `json:"always_show"`
+	SupersedesUUID        null.String `json:"supersedes_uuid"`
+	SupersededByUUID      null.String `json:"superseded_by_uuid"`
+	DecidedByMemberUUID   null.String `json:"decided_by_member_uuid"`
+	DecidedAt             null.Time   `json:"decided_at"`
+	Revision              int64       `json:"revision"`
+	CreatedAt             time.Time   `json:"created_at"`
+	UpdatedAt             time.Time   `json:"updated_at"`
+	RecordedBySessionUUID null.String `json:"recorded_by_session_uuid"`
 }
 
 type DecisionPath struct {
@@ -345,6 +347,8 @@ type Judgement struct {
 	Pinned           bool        `json:"pinned"`
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
+	JudgedAt         null.Time   `json:"judged_at"`
+	AssignmentCount  int64       `json:"assignment_count"`
 }
 
 type LimitEvent struct {

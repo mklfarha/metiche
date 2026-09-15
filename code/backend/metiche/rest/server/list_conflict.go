@@ -243,6 +243,8 @@ func conflictDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("escalated_at", filtering.TypeTimestamp),
 	)
 	if err != nil {
 		log.Printf("error creating declarations for conflict: %v", err)

@@ -231,32 +231,6 @@ CREATE TABLE IF NOT EXISTS `contract` (
         ON DELETE CASCADE
 ) ENGINE = InnoDB;
 
-CREATE TABLE IF NOT EXISTS `decision` (
-    `id` CHAR(36) NOT NULL,
-    `team_uuid` CHAR(36) NOT NULL,
-    `project_uuid` CHAR(36),
-    `key` VARCHAR(80) NOT NULL,
-    `title` VARCHAR(140) NOT NULL,
-    `statement` VARCHAR(400) NOT NULL,
-    `rationale` TEXT,
-    `status` INT NOT NULL,
-    `always_show` TINYINT(1) NOT NULL DEFAULT 0,
-    `supersedes_uuid` CHAR(36),
-    `superseded_by_uuid` CHAR(36),
-    `decided_by_member_uuid` CHAR(36),
-    `decided_at` DATETIME,
-    `revision` INT NOT NULL DEFAULT 1,
-    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    INDEX `idx_decision_always_show` (`team_uuid`, `status`, `always_show`),
-    UNIQUE INDEX `uq_decision_team_key` (`team_uuid`, `key`),
-    CONSTRAINT `team_has_decisions`
-        FOREIGN KEY (`team_uuid`)
-        REFERENCES `team` (`id`)
-        ON DELETE CASCADE
-) ENGINE = InnoDB;
-
 CREATE TABLE IF NOT EXISTS `notification_channel` (
     `id` CHAR(36) NOT NULL,
     `team_uuid` CHAR(36) NOT NULL,
@@ -282,43 +256,6 @@ CREATE TABLE IF NOT EXISTS `notification_channel` (
     CONSTRAINT `team_has_notification_channels`
         FOREIGN KEY (`team_uuid`)
         REFERENCES `team` (`id`)
-        ON DELETE CASCADE
-) ENGINE = InnoDB;
-
-CREATE TABLE IF NOT EXISTS `decision_path` (
-    `id` CHAR(36) NOT NULL,
-    `decision_uuid` CHAR(36) NOT NULL,
-    `team_uuid` CHAR(36) NOT NULL,
-    `project_uuid` CHAR(36),
-    `pattern` VARCHAR(400) NOT NULL,
-    `pattern_norm` VARCHAR(400) NOT NULL,
-    `kind` INT NOT NULL,
-    `prefix` VARCHAR(400) NOT NULL,
-    `depth` SMALLINT NOT NULL DEFAULT 0,
-    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    INDEX `idx_decision_path_scan` (`team_uuid`, `prefix`),
-    CONSTRAINT `decision_has_paths`
-        FOREIGN KEY (`decision_uuid`)
-        REFERENCES `decision` (`id`)
-        ON DELETE CASCADE
-) ENGINE = InnoDB;
-
-CREATE TABLE IF NOT EXISTS `decision_token` (
-    `id` CHAR(36) NOT NULL,
-    `decision_uuid` CHAR(36) NOT NULL,
-    `team_uuid` CHAR(36) NOT NULL,
-    `project_uuid` CHAR(36),
-    `token` VARCHAR(32) NOT NULL,
-    `weight` SMALLINT NOT NULL DEFAULT 1,
-    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    INDEX `idx_decision_token_lookup` (`team_uuid`, `token`),
-    CONSTRAINT `decision_has_tokens`
-        FOREIGN KEY (`decision_uuid`)
-        REFERENCES `decision` (`id`)
         ON DELETE CASCADE
 ) ENGINE = InnoDB;
 
@@ -511,10 +448,78 @@ CREATE TABLE IF NOT EXISTS `contract_field` (
     PRIMARY KEY (`id`),
     INDEX `idx_contract_field_antijoin` (`contract_uuid`, `path`, `direction`),
     INDEX `idx_contract_field_snake` (`contract_uuid`, `path_snake`),
-    UNIQUE INDEX `uq_contract_field_path` (`assertion_uuid`, `path`),
+    UNIQUE INDEX `uq_contract_field_path` (`assertion_uuid`, `direction`, `path`),
     CONSTRAINT `assertion_has_fields`
         FOREIGN KEY (`assertion_uuid`)
         REFERENCES `contract_assertion` (`id`)
+        ON DELETE CASCADE
+) ENGINE = InnoDB;
+
+CREATE TABLE IF NOT EXISTS `decision` (
+    `id` CHAR(36) NOT NULL,
+    `team_uuid` CHAR(36) NOT NULL,
+    `project_uuid` CHAR(36),
+    `key` VARCHAR(80) NOT NULL,
+    `title` VARCHAR(140) NOT NULL,
+    `statement` VARCHAR(400) NOT NULL,
+    `rationale` TEXT,
+    `status` INT NOT NULL,
+    `always_show` TINYINT(1) NOT NULL DEFAULT 0,
+    `supersedes_uuid` CHAR(36),
+    `superseded_by_uuid` CHAR(36),
+    `decided_by_member_uuid` CHAR(36),
+    `decided_at` DATETIME,
+    `revision` INT NOT NULL DEFAULT 1,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `recorded_by_session_uuid` CHAR(36),
+    PRIMARY KEY (`id`),
+    INDEX `idx_decision_always_show` (`team_uuid`, `status`, `always_show`),
+    UNIQUE INDEX `uq_decision_team_key` (`team_uuid`, `key`),
+    CONSTRAINT `team_has_decisions`
+        FOREIGN KEY (`team_uuid`)
+        REFERENCES `team` (`id`)
+        ON DELETE CASCADE,
+    CONSTRAINT `session_has_recorded_decisions`
+        FOREIGN KEY (`recorded_by_session_uuid`)
+        REFERENCES `session` (`id`)
+        ON DELETE SET NULL
+) ENGINE = InnoDB;
+
+CREATE TABLE IF NOT EXISTS `decision_path` (
+    `id` CHAR(36) NOT NULL,
+    `decision_uuid` CHAR(36) NOT NULL,
+    `team_uuid` CHAR(36) NOT NULL,
+    `project_uuid` CHAR(36),
+    `pattern` VARCHAR(400) NOT NULL,
+    `pattern_norm` VARCHAR(400) NOT NULL,
+    `kind` INT NOT NULL,
+    `prefix` VARCHAR(400) NOT NULL,
+    `depth` SMALLINT NOT NULL DEFAULT 0,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_decision_path_scan` (`team_uuid`, `prefix`),
+    CONSTRAINT `decision_has_paths`
+        FOREIGN KEY (`decision_uuid`)
+        REFERENCES `decision` (`id`)
+        ON DELETE CASCADE
+) ENGINE = InnoDB;
+
+CREATE TABLE IF NOT EXISTS `decision_token` (
+    `id` CHAR(36) NOT NULL,
+    `decision_uuid` CHAR(36) NOT NULL,
+    `team_uuid` CHAR(36) NOT NULL,
+    `project_uuid` CHAR(36),
+    `token` VARCHAR(32) NOT NULL,
+    `weight` SMALLINT NOT NULL DEFAULT 1,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_decision_token_lookup` (`team_uuid`, `token`),
+    CONSTRAINT `decision_has_tokens`
+        FOREIGN KEY (`decision_uuid`)
+        REFERENCES `decision` (`id`)
         ON DELETE CASCADE
 ) ENGINE = InnoDB;
 
@@ -546,6 +551,7 @@ CREATE TABLE IF NOT EXISTS `conflict` (
     `max_severity_notified` INT,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `escalated_at` DATETIME,
     PRIMARY KEY (`id`),
     INDEX `idx_conflict_open` (`team_uuid`, `status`, `severity`),
     UNIQUE INDEX `uq_conflict_dedupe` (`team_uuid`, `dedupe_key`),
@@ -601,8 +607,12 @@ CREATE TABLE IF NOT EXISTS `judgement` (
     `pinned` TINYINT(1) NOT NULL DEFAULT 0,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `judged_at` DATETIME,
+    `assignment_count` SMALLINT NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
     INDEX `idx_judgement_assignment` (`judge_session_uuid`, `status`, `judging_expires_at`),
+    INDEX `idx_judgement_subject` (`team_uuid`, `subject_a_uuid`, `subject_b_uuid`),
+    INDEX `idx_judgement_team_open` (`team_uuid`, `status`, `judging_expires_at`),
     UNIQUE INDEX `uq_judgement_pair` (`team_uuid`, `pair_key`),
     CONSTRAINT `team_has_judgements`
         FOREIGN KEY (`team_uuid`)

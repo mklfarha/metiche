@@ -36,6 +36,8 @@ type Judgement struct {
 	Pinned           bool                   `json:"pinned"`
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
+	JudgedAt         null.Time              `json:"judged_at"`
+	AssignmentCount  int64                  `json:"assignment_count"`
 }
 
 func (e Judgement) String() string {

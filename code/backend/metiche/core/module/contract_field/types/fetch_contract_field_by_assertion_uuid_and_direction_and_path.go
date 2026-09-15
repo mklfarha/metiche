@@ -6,11 +6,13 @@ import (
 	main_entity "github.com/mklfarha/metiche/backend/entity/contract_field"
 
 	"github.com/gofrs/uuid"
+	"github.com/mklfarha/metiche/backend/enums"
 	"go.uber.org/zap/zapcore"
 )
 
-type FetchContractFieldByAssertionUUIDAndPathRequest struct {
+type FetchContractFieldByAssertionUUIDAndDirectionAndPathRequest struct {
 	AssertionUUID uuid.UUID
+	Direction     enums.FieldDirection
 	Path          string
 
 	Offset  int32
@@ -19,13 +21,13 @@ type FetchContractFieldByAssertionUUIDAndPathRequest struct {
 	Sort    string
 }
 
-func (r FetchContractFieldByAssertionUUIDAndPathRequest) MarshalLogObject(e zapcore.ObjectEncoder) error {
+func (r FetchContractFieldByAssertionUUIDAndDirectionAndPathRequest) MarshalLogObject(e zapcore.ObjectEncoder) error {
 
 	e.AddString("assertion_uuid", r.AssertionUUID.String())
 
 	return nil
 }
 
-type FetchContractFieldByAssertionUUIDAndPathResponse struct {
+type FetchContractFieldByAssertionUUIDAndDirectionAndPathResponse struct {
 	Results []main_entity.ContractField
 }

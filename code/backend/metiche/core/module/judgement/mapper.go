@@ -43,5 +43,7 @@ func mapModelToEntity(m metichedb.Judgement) main_entity.Judgement {
 		Pinned:           m.Pinned,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
+		JudgedAt:         null.NewTime(m.JudgedAt.Time, m.JudgedAt.Valid),
+		AssignmentCount:  int64(m.AssignmentCount),
 	}
 }

@@ -204,6 +204,8 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"escalated_at",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Conflict) any{
@@ -261,4 +263,6 @@ var listFieldRegistry = map[string]func(*repogen.Conflict) any{
 	"created_at": func(i *repogen.Conflict) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Conflict) any { return &i.UpdatedAt },
+
+	"escalated_at": func(i *repogen.Conflict) any { return &i.EscalatedAt },
 }

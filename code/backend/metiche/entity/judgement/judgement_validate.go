@@ -73,6 +73,7 @@ func (e Judgement) Validate() error {
 		c.Field("judgement.rationale", validation.String(e.Rationale.String, 0, 400, ""))
 
 	}
+	c.Field("judgement.assignment_count", validation.Integer(e.AssignmentCount, false, 0, 0, false, false, false, true, -32768, 32767))
 
 	return c.Result()
 }
