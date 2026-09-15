@@ -611,8 +611,17 @@ func (s Snapshot) ContractMatrix() Matrix {
 			cell.FieldCount += len(a.Fields)
 		}
 
-		// Diff every consumer against every producer.
+		// On the live path the backend already compared every producer with
+		// every consumer, with the same function that raised the conflicts;
+		// its issues are shown as they are. Folded fixtures carry fields and
+		// are compared here.
+		if c.ServerVerdict {
+			row.Diffs = serverDiffs(c.Issues, bySession)
+		}
 		for _, cons := range row.Consumers {
+			if c.ServerVerdict {
+				break
+			}
 			diffs := []FieldDiff{}
 			for _, prod := range row.Producers {
 				diffs = append(diffs, diffShapes(prod, cons)...)
@@ -704,6 +713,35 @@ func snake(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// serverDiffs turns the backend's issues into the matrix's diffs, marking the
+// consuming session's cell.
+func serverDiffs(issues []model.ContractIssue, bySession map[string]*MatrixCell) []FieldDiff {
+	out := make([]FieldDiff, 0, len(issues))
+	for _, is := range issues {
+		d := FieldDiff{Field: is.Path, Expected: is.Expected, Actual: is.Actual, Severity: is.Severity, Note: is.Note}
+		switch is.Kind {
+		case "type_mismatch":
+			d.Kind = "type"
+		case "naming_variant":
+			d.Kind = "naming"
+		default:
+			d.Kind = is.Kind
+			if d.Actual == "" {
+				d.Actual = "absent"
+			}
+		}
+		if cell := bySession[is.Consumer]; cell != nil {
+			cell.Mismatched = true
+			cell.Diffs = append(cell.Diffs, d)
+		}
+		out = append(out, d)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return model.SeverityRank(out[i].Severity) > model.SeverityRank(out[j].Severity)
+	})
+	return out
 }
 
 // diffShapes runs the four directional branches over one producer/consumer pair.

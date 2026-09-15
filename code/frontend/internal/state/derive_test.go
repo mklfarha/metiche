@@ -111,3 +111,44 @@ func TestIdleAgentKeepsItsLastFinishedSession(t *testing.T) {
 		t.Fatalf("Active() = %d, want 0", lane.Active())
 	}
 }
+
+// TestContractMatrixShowsTheBackendsIssues: on a live board the backend
+// compares the shapes and sends its issues; the matrix shows those, on the
+// consumer's cell, rather than comparing the fields a second time.
+func TestContractMatrixShowsTheBackendsIssues(t *testing.T) {
+	c := &model.Contract{Key: "POST /api/login", Kind: "http_endpoint", Agreement: "mismatch", ServerVerdict: true,
+		Assertions: []*model.Assertion{
+			{Key: "a", Role: "produces", SessionKey: "S-1", Status: "active", ShapeHash: "h1",
+				Fields: []model.Field{{Name: "token", Type: "string", Direction: "out", Required: true}}},
+			{Key: "b", Role: "consumes", SessionKey: "S-2", Status: "active", ShapeHash: "h2",
+				Fields: []model.Field{{Name: "token", Type: "string", Direction: "out", Required: true}, {Name: "expires_at", Type: "timestamp", Direction: "out", Required: true}}},
+		},
+		Issues: []model.ContractIssue{{Kind: "missing_out", Path: "expires_at", Expected: "timestamp", Direction: "out",
+			Severity: "high", Note: "consumer requires out field", Producer: "S-1", Consumer: "S-2"}},
+	}
+	m := Snapshot{Contracts: []*model.Contract{c}}.ContractMatrix()
+	if len(m.Rows) != 1 || len(m.Columns) != 2 {
+		t.Fatalf("matrix = %+v", m)
+	}
+	row := m.Rows[0]
+	if row.Status != "mismatch" || row.Severity != "high" || len(row.Diffs) != 1 ||
+		row.Diffs[0].Kind != "missing_out" || row.Diffs[0].Field != "expires_at" || row.Diffs[0].Actual != "absent" {
+		t.Fatalf("row = %+v", row)
+	}
+	var consumer MatrixCell
+	for i, col := range m.Columns {
+		if col.SessionKey == "S-2" {
+			consumer = row.Cells[i]
+		}
+	}
+	if !consumer.Mismatched || consumer.FieldCount != 2 || len(consumer.Diffs) != 1 {
+		t.Fatalf("consumer cell = %+v", consumer)
+	}
+
+	// Agreed by the backend with different hashes (the producer returns more):
+	// no diff is invented on the board.
+	c.Agreement, c.Issues = "agreed", nil
+	if row := (Snapshot{Contracts: []*model.Contract{c}}).ContractMatrix().Rows[0]; row.Status != "converged" || len(row.Diffs) != 0 {
+		t.Fatalf("agreed contract rendered as %+v", row)
+	}
+}

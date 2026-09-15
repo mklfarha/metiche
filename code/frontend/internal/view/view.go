@@ -212,6 +212,8 @@ func conflictLabel(kind string) string {
 		return "contract mismatch"
 	case model.KindContractUnclaimed:
 		return "nobody is building this"
+	case model.KindContractNamingVariant:
+		return "naming variant"
 	case model.KindDecisionContradiction:
 		return "contradicts a decision"
 	case model.KindDuplicateWork:

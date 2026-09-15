@@ -204,6 +204,26 @@ type Contract struct {
 	// inputs. Without this the matrix would call a known mismatch "converged",
 	// which is the board lying about the one view it exists for.
 	Agreement string `json:"agreement,omitempty"`
+
+	// Issues are the field-level disagreements the backend computed from the
+	// stored shapes, and ServerVerdict says this contract came from the live
+	// API, where those issues — not a second comparison here — are the truth.
+	Issues        []ContractIssue `json:"issues,omitempty"`
+	ServerVerdict bool            `json:"-"`
+}
+
+// ContractIssue is one disagreement between a producing and a consuming
+// session, as the backend's comparison reported it.
+type ContractIssue struct {
+	Kind      string `json:"kind"` // missing_out | missing_in | type_mismatch | naming_variant
+	Path      string `json:"path"`
+	Expected  string `json:"expected"`
+	Actual    string `json:"actual"`
+	Direction string `json:"direction"`
+	Severity  string `json:"severity"`
+	Note      string `json:"note"`
+	Producer  string `json:"producer"`
+	Consumer  string `json:"consumer"`
 }
 
 // Producers returns the active produces-side assertions.
@@ -244,6 +264,7 @@ const (
 	KindPathOverlap           = "path_overlap"
 	KindContractMismatch      = "contract_mismatch"
 	KindContractUnclaimed     = "contract_unclaimed"
+	KindContractNamingVariant = "contract_naming_variant"
 	KindDecisionContradiction = "decision_contradiction"
 	KindDuplicateWork         = "duplicate_work"
 	KindStaleBase             = "stale_base"

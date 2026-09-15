@@ -139,6 +139,9 @@ type conflictJSON struct {
 	// detector's evidence. Absent from a backend that predates them.
 	Paths []string `json:"paths"`
 
+	// ContractKey is the contract a contract_* conflict is about.
+	ContractKey string `json:"contract_key"`
+
 	Participants []participantJSON `json:"participants"`
 }
 
@@ -264,6 +267,7 @@ func (c conflictJSON) conflict(memberBySession map[string]string) *model.Conflic
 		ResolutionNote:  c.ResolutionNote,
 		Occurrences:     int(c.OccurrenceCount),
 		Paths:           c.Paths,
+		ContractKey:     c.ContractKey,
 	}
 	if out.RaisedAt.IsZero() {
 		out.RaisedAt = parseTime(c.LastDetectedAt)
@@ -287,25 +291,34 @@ func (c conflictJSON) conflict(memberBySession map[string]string) *model.Conflic
 // ---------------------------------------------------------------- contracts
 
 type assertionJSON struct {
-	Role       string  `json:"role"`
-	SessionKey string  `json:"session_key"`
-	MemberName string  `json:"member_name"`
-	AgentLabel string  `json:"agent_label"`
-	ShapeHash  string  `json:"shape_hash"`
-	Revision   int64   `json:"revision"`
-	AssertedAt *string `json:"asserted_at"`
-	FieldCount int64   `json:"field_count"`
+	Role       string              `json:"role"`
+	SessionKey string              `json:"session_key"`
+	MemberName string              `json:"member_name"`
+	AgentLabel string              `json:"agent_label"`
+	ShapeHash  string              `json:"shape_hash"`
+	Revision   int64               `json:"revision"`
+	AssertedAt *string             `json:"asserted_at"`
+	FieldCount int64               `json:"field_count"`
+	Fields     []contractFieldJSON `json:"fields"`
+}
+
+type contractFieldJSON struct {
+	Path      string `json:"path"`
+	Type      string `json:"type"`
+	Direction string `json:"direction"`
+	Required  bool   `json:"required"`
 }
 
 type contractJSON struct {
-	Key        string          `json:"key"`
-	ProjectKey string          `json:"project_key"`
-	Kind       string          `json:"kind"`
-	Status     string          `json:"status"`
-	Title      string          `json:"title"`
-	Agreement  string          `json:"agreement"`
-	Produces   []assertionJSON `json:"produces"`
-	Consumes   []assertionJSON `json:"consumes"`
+	Key        string                `json:"key"`
+	ProjectKey string                `json:"project_key"`
+	Kind       string                `json:"kind"`
+	Status     string                `json:"status"`
+	Title      string                `json:"title"`
+	Agreement  string                `json:"agreement"`
+	Issues     []model.ContractIssue `json:"issues"`
+	Produces   []assertionJSON       `json:"produces"`
+	Consumes   []assertionJSON       `json:"consumes"`
 }
 
 type contractsWire struct {
@@ -321,6 +334,10 @@ func (c contractsWire) contracts() []*model.Contract {
 			Key:       cw.Key,
 			Kind:      firstNonEmpty(cw.Kind, "http"),
 			Agreement: cw.Agreement,
+			Issues:    cw.Issues,
+			// The live API always sends its verdict; with it, the matrix shows
+			// the backend's issues instead of comparing again.
+			ServerVerdict: cw.Agreement != "",
 		}
 		for _, aw := range append(append([]assertionJSON{}, cw.Produces...), cw.Consumes...) {
 			at := parseTime(aw.AssertedAt)
@@ -336,10 +353,20 @@ func (c contractsWire) contracts() []*model.Contract {
 				SessionKey: aw.SessionKey,
 				ShapeHash:  aw.ShapeHash,
 				Status:     "active",
+				Fields:     liveFields(aw.Fields),
 				UpdatedAt:  at,
 			})
 		}
 		out = append(out, contract)
+	}
+	return out
+}
+
+// liveFields maps the API's canonical fields onto the board's model.
+func liveFields(in []contractFieldJSON) []model.Field {
+	out := make([]model.Field, 0, len(in))
+	for _, f := range in {
+		out = append(out, model.Field{Name: f.Path, Type: f.Type, Direction: f.Direction, Required: f.Required})
 	}
 	return out
 }
