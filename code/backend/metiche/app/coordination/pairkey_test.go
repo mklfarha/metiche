@@ -77,6 +77,31 @@ func TestPairKeySubjectKindScoped(t *testing.T) {
 	}
 }
 
+// A decision and the plan judged against it: the pair key record_decision and
+// the reviewer mint (docs/DECISIONS.md §3.0).
+func TestPairKeyDecisionAndIntent(t *testing.T) {
+	decision := PairSubject{Kind: "decision", UUID: "33333333-3333-4333-8333-333333333333", Revision: 1}
+	intent := PairSubject{Kind: "intent", UUID: "44444444-4444-4444-8444-444444444444", Revision: 1}
+
+	key := PairKey("decision_contradiction", decision, intent)
+	if key != PairKey("decision_contradiction", intent, decision) {
+		t.Fatal("a decision and intent pair must be symmetric")
+	}
+	bumped := intent
+	bumped.Revision = 2
+	if PairKey("decision_contradiction", decision, bumped) == key {
+		t.Error("an intent revision bump must mint a new pair: a changed plan earns one more look")
+	}
+	revised := decision
+	revised.Revision = 2
+	if PairKey("decision_contradiction", revised, intent) == key {
+		t.Error("a decision revision bump must mint a new pair")
+	}
+	if PairKey("duplicate_work", decision, intent) == key {
+		t.Error("the same subjects under duplicate_work are a different question and a different key")
+	}
+}
+
 // A uuid that made a round trip through something that upper-cased it must not
 // mint a second key for a pair the team already judged.
 func TestPairKeyNormalizesCasing(t *testing.T) {
