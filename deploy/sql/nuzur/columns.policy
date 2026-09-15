@@ -187,6 +187,7 @@ decision.decided_at                         expose
 decision.revision                           expose
 decision.created_at                         expose
 decision.updated_at                         expose
+decision.recorded_by_session_uuid           expose
 
 # ── notification_channel ─────────────────────────────────────────────────────
 notification_channel.id                     expose
@@ -382,6 +383,7 @@ conflict.notified_at                        expose
 conflict.max_severity_notified              expose
 conflict.created_at                         expose
 conflict.updated_at                         expose
+conflict.escalated_at                       expose
 
 # ── conflict_participant ─────────────────────────────────────────────────────
 conflict_participant.id                     expose
@@ -421,6 +423,8 @@ judgement.conflict_uuid                     expose
 judgement.pinned                            expose
 judgement.created_at                        expose
 judgement.updated_at                        expose
+judgement.judged_at                         expose
+judgement.assignment_count                  expose
 
 # ── instruction ──────────────────────────────────────────────────────────────
 instruction.id                              expose
