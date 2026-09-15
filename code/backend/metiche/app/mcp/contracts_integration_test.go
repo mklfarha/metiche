@@ -434,8 +434,9 @@ func TestIntegrationContractRepublishWritesNoDuplicates(t *testing.T) {
 	}
 }
 
-// TestIntegrationContractSamePathBothDirections: `id` sent and returned is one
-// field row (see insertContractFields) and does not fail the publish.
+// TestIntegrationContractSamePathBothDirections: `id` sent and returned is two
+// field rows, one per direction (uq_contract_field_path includes direction),
+// and does not fail the publish.
 func TestIntegrationContractSamePathBothDirections(t *testing.T) {
 	hs := newHarness(t)
 	ana := hs.contractAgent(t, "Ana", "client-a")
@@ -444,8 +445,15 @@ func TestIntegrationContractSamePathBothDirections(t *testing.T) {
 	if !strings.Contains(env.Note, "3 field(s)") {
 		t.Errorf("note = %q, want the 3 canonical fields", env.Note)
 	}
-	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `contract_field`"); n != 2 {
-		t.Errorf("%d field rows, want 2", n)
+	db := hs.core.DB()
+	if n := countRows(t, db, "SELECT COUNT(*) FROM `contract_field`"); n != 3 {
+		t.Errorf("%d field rows, want 3 (id in, name in, id out)", n)
+	}
+	if n := countRows(t, db, "SELECT COUNT(DISTINCT `direction`) FROM `contract_field` WHERE `path` = ?", "id"); n != 2 {
+		t.Errorf("id has field rows in %d direction(s), want 2 (request and response)", n)
+	}
+	if n := countRows(t, db, "SELECT COUNT(*) FROM `contract_field` WHERE `path` = ?", "id"); n != 2 {
+		t.Errorf("%d field rows for id, want 2", n)
 	}
 }
 

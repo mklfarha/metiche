@@ -566,16 +566,9 @@ func upsertAssertion(ctx context.Context, tc *TxContext, p *contractPublication)
 }
 
 // insertContractFields flattens the shape into contract_field in one
-// statement, at most MaxContractFields rows.
-//
-// One schema limit shows here. uq_contract_field_path is (assertion_uuid,
-// path) with no direction, so a path present in BOTH the request and the
-// response (an `id` sent and returned) can have only one row. The first in
-// canonical order (in before out) is written and the other is skipped. Nothing
-// that decides a verdict reads these rows — detection compares the canonical
-// shape on the assertion row, which keeps every field — so the only visible
-// effect is a field_count one short on the board. The model change that
-// removes it is making that index (assertion_uuid, direction, path).
+// statement, at most MaxContractFields rows. A path present in both the request
+// and the response gets one row per direction, matching
+// uq_contract_field_path (assertion_uuid, direction, path).
 func insertContractFields(ctx context.Context, tc *TxContext, p *contractPublication) error {
 	fields := p.In.Shape.Fields
 	if len(fields) == 0 {
@@ -585,12 +578,17 @@ func insertContractFields(ctx context.Context, tc *TxContext, p *contractPublica
 		ph   []string
 		args []any
 	)
-	seen := map[string]bool{}
+	type fieldKey struct {
+		direction coordination.ContractDirection
+		path      string
+	}
+	seen := map[fieldKey]bool{}
 	for _, f := range fields {
-		if seen[f.Path] {
+		k := fieldKey{f.Direction, f.Path}
+		if seen[k] {
 			continue
 		}
-		seen[f.Path] = true
+		seen[k] = true
 		id, err := uuid.NewV4()
 		if err != nil {
 			return err
