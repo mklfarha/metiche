@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -92,15 +93,25 @@ func loadSessionConflicts(ctx context.Context, tx *sql.Tx, teamUUID, sessionUUID
 		[]any{teamUUID, sessionUUID}, limit)
 }
 
+// conflictColumns is the one column list every conflict read selects, in the
+// order queryConflicts scans it.
+//
+// evidence is JSON the detector writes, and most of it is not the board's to
+// show: the two sides' intent summaries are whatever an agent typed. Only its
+// three path keys are read, each by name, so the rest of the document never
+// reaches a response.
+const conflictColumns = "c.`id`, c.`key`, c.`kind`, c.`severity`, c.`status`, c.`detected_by`, " +
+	"c.`detector_rule`, c.`suggested_action`, c.`occurrence_count`, " +
+	"c.`first_detected_at`, c.`last_detected_at`, " +
+	"c.`resolution`, c.`resolution_note`, c.`dismiss_reason`, c.`resolved_at`, " +
+	"JSON_VALUE(c.`evidence`, '$.overlap_path'), JSON_VALUE(c.`evidence`, '$.a_pattern'), " +
+	"JSON_VALUE(c.`evidence`, '$.b_pattern')"
+
 // loadConflictsWhere is the shared read. where is appended verbatim, so it is
-// only ever one of the literal fragments above; every value in it is a bound
-// parameter from whereArgs.
+// only ever one of the literal fragments in this package; every value in it is
+// a bound parameter from whereArgs.
 func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string, whereArgs []any, limit int) ([]conflictWire, error) {
-	q := "SELECT c.`id`, c.`key`, c.`kind`, c.`severity`, c.`status`, c.`detected_by`, " +
-		"c.`detector_rule`, c.`suggested_action`, c.`occurrence_count`, " +
-		"c.`first_detected_at`, c.`last_detected_at`, " +
-		"c.`resolution`, c.`resolution_note`, c.`dismiss_reason`, c.`resolved_at` " +
-		"FROM `conflict` c WHERE c.`team_uuid` = ?" + where
+	q := "SELECT " + conflictColumns + " FROM `conflict` c WHERE c.`team_uuid` = ?" + where
 	args := append([]any{teamUUID}, whereArgs...)
 	// Severity first: a board that sorted by time would bury the critical one
 	// under a stream of low-severity noise, which is the failure mode the
@@ -108,16 +119,31 @@ func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string,
 	q += " ORDER BY c.`severity` DESC, c.`last_detected_at` DESC, c.`key` LIMIT ?"
 	args = append(args, limit)
 
-	rows, err := tx.QueryContext(ctx, q, args...)
+	out, ids, _, _, err := queryConflicts(ctx, tx, q, args, limit, false)
 	if err != nil {
 		return nil, err
+	}
+	return out, attachParticipants(ctx, tx, teamUUID, ids, out)
+}
+
+// queryConflicts runs a query selecting conflictColumns — plus, when ordered,
+// one trailing sort-time column — and closes its rows before returning, so the
+// participants query can use the same transaction. It stops at limit rows and
+// reports whether there was another.
+func queryConflicts(ctx context.Context, tx *sql.Tx, q string, args []any, limit int, ordered bool) ([]conflictWire, []string, time.Time, bool, error) {
+	rows, err := tx.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, nil, time.Time{}, false, err
 	}
 	defer func() { _ = rows.Close() }()
 
 	out := make([]conflictWire, 0, 16)
-	index := map[string]*conflictWire{}
 	ids := make([]string, 0, 16)
+	var lastAt time.Time
 	for rows.Next() {
+		if len(out) == limit {
+			return out, ids, lastAt, true, nil
+		}
 		var (
 			id                                 string
 			c                                  conflictWire
@@ -126,11 +152,18 @@ func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string,
 			first, last, resolvedAt            sql.NullTime
 			occurrences                        sql.NullInt64
 			resolution, dismissReason          sql.NullInt64
+			overlapPath, aPattern, bPattern    sql.NullString
+			at                                 sql.NullTime
 		)
-		if err := rows.Scan(&id, &c.Key, &kind, &severity, &status, &detectedBy,
+		dest := []any{&id, &c.Key, &kind, &severity, &status, &detectedBy,
 			&rule, &action, &occurrences, &first, &last,
-			&resolution, &resNote, &dismissReason, &resolvedAt); err != nil {
-			return nil, err
+			&resolution, &resNote, &dismissReason, &resolvedAt,
+			&overlapPath, &aPattern, &bPattern}
+		if ordered {
+			dest = append(dest, &at)
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, nil, time.Time{}, false, err
 		}
 		c.Kind = enums.ConflictKind(kind.Int64).String()
 		c.Severity = enums.ConflictSeverity(severity.Int64).String()
@@ -147,16 +180,38 @@ func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string,
 		if dismissReason.Valid && enums.DismissReason(dismissReason.Int64) != enums.DISMISS_REASON_INVALID {
 			c.DismissReason = enums.DismissReason(dismissReason.Int64).String()
 		}
+		c.Paths = conflictPaths(overlapPath, aPattern, bPattern)
 		c.Participants = []participantWire{}
 		out = append(out, c)
 		ids = append(ids, id)
+		lastAt = at.Time
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	return out, ids, lastAt, false, rows.Err()
+}
+
+// conflictPaths is the overlapping path and the two claimed patterns, once
+// each, in that order. A conflict that is not about paths has none.
+func conflictPaths(vals ...sql.NullString) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, v := range vals {
+		p := strings.TrimSpace(v.String)
+		if !v.Valid || p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
 	}
-	if len(out) == 0 {
-		return out, nil
+	return out
+}
+
+// attachParticipants fills the participants of out (whose uuids are ids) in
+// one query, not one per conflict.
+func attachParticipants(ctx context.Context, tx *sql.Tx, teamUUID string, ids []string, out []conflictWire) error {
+	if len(ids) == 0 {
+		return nil
 	}
+	index := make(map[string]*conflictWire, len(ids))
 	for i := range out {
 		index[ids[i]] = &out[i]
 	}
@@ -168,7 +223,8 @@ func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string,
 		"LEFT JOIN `session` s ON s.`id` = cp.`session_uuid` " +
 		"LEFT JOIN `member` m ON m.`id` = cp.`member_uuid` " +
 		"LEFT JOIN `agent` a ON a.`id` = cp.`agent_uuid` " +
-		"WHERE cp.`team_uuid` = ? AND cp.`conflict_uuid` IN (" + placeholders(len(ids)) + ")"
+		"WHERE cp.`team_uuid` = ? AND cp.`conflict_uuid` IN (" + placeholders(len(ids)) + ") " +
+		"ORDER BY cp.`conflict_uuid`, cp.`role`, s.`key`"
 	pargs := make([]any, 0, len(ids)+1)
 	pargs = append(pargs, teamUUID)
 	for _, id := range ids {
@@ -177,7 +233,7 @@ func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string,
 
 	prows, err := tx.QueryContext(ctx, pq, pargs...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = prows.Close() }()
 
@@ -188,7 +244,7 @@ func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string,
 			sessionKey, name, label sql.NullString
 		)
 		if err := prows.Scan(&conflictUUID, &role, &subjectKind, &sessionKey, &name, &label); err != nil {
-			return nil, err
+			return err
 		}
 		c, ok := index[conflictUUID]
 		if !ok {
@@ -207,5 +263,5 @@ func loadConflictsWhere(ctx context.Context, tx *sql.Tx, teamUUID, where string,
 		}
 		c.Participants = append(c.Participants, p)
 	}
-	return out, prows.Err()
+	return prows.Err()
 }

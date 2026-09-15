@@ -349,6 +349,11 @@ var boardOnlyRoutes = map[string][]string{
 	webapi.PathInvite:  {http.MethodDelete},
 	// The run history: GET only, behind the same guard as the board reads.
 	webapi.PathSessions: {http.MethodGet},
+	// Conflict history, the event log backwards and the graph over a past
+	// window: GET only, the same guard.
+	webapi.PathConflictHistory: {http.MethodGet},
+	webapi.PathEvents:          {http.MethodGet},
+	webapi.PathGraph:           {http.MethodGet},
 }
 
 // TestBrowserRoutesAnswerOnlyRegisteredMethods: each new board route is on the

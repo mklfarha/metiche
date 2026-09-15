@@ -186,6 +186,12 @@ var AllowedRoutes = map[string]string{
 	// The run history (GET). Same guard as the four above, and like them not
 	// routed by any ingress: TestBrowserRoutesAreNotRoutedByAnyIngress pins it.
 	webapi.PathSessions: "board run history",
+	// The rest of the board's history (GET): past conflicts, the event log
+	// read backwards, and a past window of the graph. Same guard, same
+	// footing: not routed by any ingress, pinned by the same test.
+	webapi.PathConflictHistory: "board conflict history",
+	webapi.PathEvents:          "board event history",
+	webapi.PathGraph:           "board graph over a past window",
 
 	// Board sign-in (docs/BOARD_LOGIN.md §6.1). BOARD ONLY; NOT ROUTED BY ANY
 	// INGRESS. They must be listed here or this layer would 404 the board's

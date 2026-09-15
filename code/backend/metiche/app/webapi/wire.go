@@ -143,6 +143,11 @@ type conflictWire struct {
 	DismissReason  string  `json:"dismiss_reason,omitempty"`
 	ResolvedAt     *string `json:"resolved_at,omitempty"`
 
+	// Paths are the path the two sides overlapped on and the two patterns
+	// they claimed, from the detector's evidence. Empty for a conflict that is
+	// not about paths.
+	Paths []string `json:"paths"`
+
 	Participants []participantWire `json:"participants"`
 }
 

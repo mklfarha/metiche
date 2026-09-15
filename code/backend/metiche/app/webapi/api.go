@@ -118,6 +118,13 @@ const (
 	// paged with an opaque cursor (history.go).
 	PathSessions = "/v1/teams/{slug}/sessions"
 
+	// PathConflictHistory (conflicthistory.go), PathEvents (events.go) and
+	// PathGraph (graphhistory.go) are the rest of the board's history: past
+	// conflicts, the event log backwards, and what was entangled over a past
+	// window. Board only, like every read here.
+	PathEvents = "/v1/teams/{slug}/events"
+	PathGraph  = "/v1/teams/{slug}/graph"
+
 	// PathAccess answers "may this viewer read this team, and as what?" for
 	// the board (docs/BOARD_LOGIN.md §4.2). Board only; NOT routed by any
 	// ingress.
@@ -146,6 +153,9 @@ func (a *API) RegisterOn(r chi.Router) {
 	r.Get(PathDecisions, a.guard.Wrap(a.handleDecisions))
 	r.Get(PathSession, a.guard.Wrap(a.handleSession))
 	r.Get(PathSessions, a.guard.Wrap(a.handleSessions))
+	r.Get(PathConflictHistory, a.guard.Wrap(a.handleConflictHistory))
+	r.Get(PathEvents, a.guard.Wrap(a.handleEvents))
+	r.Get(PathGraph, a.guard.Wrap(a.handleGraph))
 	r.Get(PathAccess, a.guard.Wrap(a.handleAccess))
 }
 
