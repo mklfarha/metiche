@@ -94,6 +94,7 @@ type sweepEvent struct {
 //	BEGIN
 //	  SELECT sequence, board_revision FROM team WHERE id = ? FOR UPDATE
 //	  extra()                        — the caller's rows, if any
+//	  finish()                       — what extra decided, in words
 //	  INSERT team_event              — sequence = last + 1
 //	  UPDATE team SET sequence[, board_revision]
 //	COMMIT
@@ -172,6 +173,15 @@ func (s *Sweeper) appendEvent(ctx context.Context, ev sweepEvent) (bool, error) 
 			}
 			return false, err
 		}
+	}
+
+	// What extra decided under the lock, in the words the board reads. It runs
+	// here — after extra, before the INSERT — because that is the only moment
+	// when the decision has been made and the row does not yet exist. One
+	// call site for all three settle paths, because all three learn what they
+	// have to say at exactly this point.
+	if ev.finish != nil {
+		ev.summary, ev.subjectKey, ev.payload = ev.finish()
 	}
 
 	evUUID, err := uuid.NewV4()

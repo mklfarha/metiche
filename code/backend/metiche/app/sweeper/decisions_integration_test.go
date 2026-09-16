@@ -1027,6 +1027,93 @@ func TestEscalationQuestionsAlwaysFitAndKeepTheirInstruction(t *testing.T) {
 	}
 }
 
+// TestIntegrationReArmOnlyEverExtendsThePairsOwnJudge holds the ownership
+// clause on rearmPair's UPDATE, which is the one thing standing between §4.1
+// and handing one agent's plan to another agent to judge.
+//
+// (a) Two live sessions, each with a pair of its own whose window lapsed: one
+// pass extends both and moves neither judge.
+//
+// (b) The case the clause exists for. The backlog is read OUTSIDE any lock, so
+// between that scan and this UPDATE another pod can re-assign or expire the
+// row. This recreates that divergence directly — a pendingPair carrying a
+// judge the stored row no longer has — and the write must refuse it. Without
+// `AND judge_session_uuid = ?` the UPDATE lands on `id` alone and quietly
+// moves Bob's pair onto Ana's session with a fresh window.
+func TestIntegrationReArmOnlyEverExtendsThePairsOwnJudge(t *testing.T) {
+	h := newHarness(t)
+	base := time.Now().UTC().Truncate(time.Second)
+	clock := base
+
+	bob, bobAgent := h.seedPerson("M-2", "A-2", "Bob", "codex")
+	bobSession := h.seedSessionFor("S-22", bobAgent, bob, enums.SESSION_STATUS_LIVE, base)
+	anaSession := h.seedSessionFor("S-17", h.agentUUID, h.memberUUID, enums.SESSION_STATUS_LIVE, base)
+
+	bobDecision := h.seedDecision("#test-bob", enums.DECISION_STATUS_ACCEPTED, 1, uuid.Nil)
+	anaDecision := h.seedDecision("#test-ana", enums.DECISION_STATUS_ACCEPTED, 1, uuid.Nil)
+	bobIntent := h.seedIntent(bobSession, bob, testIntentKey, "read the session from localStorage",
+		enums.INTENT_STATUS_ACTIVE, 1)
+	anaIntent := h.seedIntent(anaSession, h.memberUUID, "INT-92", "set the cookie on login",
+		enums.INTENT_STATUS_ACTIVE, 1)
+
+	lapsed := base.Add(-time.Minute)
+	bobPair := h.seedPair("pair-bob", bobDecision, 1, bobIntent, 1, &bobSession, &lapsed, 1, lapsed)
+	anaPair := h.seedPair("pair-ana", anaDecision, 1, anaIntent, 1, &anaSession, &lapsed, 1, lapsed)
+
+	// (a) One pass, two re-arms, each staying where it belongs.
+	rep := h.runOnce(h.sweeper(atClock(&clock)))
+	if rep.JudgementsReArmed != 2 {
+		t.Fatalf("the pass re-armed %d pairs, want 2", rep.JudgementsReArmed)
+	}
+	for _, c := range []struct {
+		name  string
+		pair  uuid.UUID
+		judge uuid.UUID
+	}{{"Bob's", bobPair, bobSession}, {"Ana's", anaPair, anaSession}} {
+		st := h.pairState(c.pair)
+		if st.judge != c.judge.String() {
+			t.Errorf("%s pair now sits with %s; a pair only ever belongs to the plan's own session %s",
+				c.name, st.judge, c.judge)
+		}
+		if st.count != 2 {
+			t.Errorf("%s pair is at assignment_count %d, want 2", c.name, st.count)
+		}
+	}
+
+	// (b) The stale read: this pass believes Ana's session holds Bob's pair.
+	// The row says otherwise, and the row wins.
+	before := h.pairState(bobPair)
+	var out Report
+	stale := pendingPair{
+		id:              bobPair.String(),
+		judgeSession:    anaSession.String(),
+		assignmentCount: before.count,
+	}
+	if err := h.sweeper(atClock(&clock)).rearmPair(context.Background(), stale, decisionJudgeWindow, clock, &out); err != nil {
+		t.Fatalf("rearmPair: %v", err)
+	}
+	if out.JudgementsReArmed != 0 {
+		t.Errorf("re-arming reported %d pairs extended for a judge the row does not have, want 0", out.JudgementsReArmed)
+	}
+	after := h.pairState(bobPair)
+	if after.judge != bobSession.String() {
+		t.Fatalf("Bob's pair now sits with %s, want its own session %s — re-arming handed one agent's plan to another",
+			after.judge, bobSession)
+	}
+	if after.count != before.count {
+		t.Errorf("assignment_count moved %d → %d for an UPDATE that named the wrong judge", before.count, after.count)
+	}
+	if !before.expires.Valid || !after.expires.Valid || !after.expires.Time.Equal(before.expires.Time) {
+		t.Errorf("judging_expires_at moved %v → %v for an UPDATE that named the wrong judge",
+			before.expires.Time, after.expires.Time)
+	}
+
+	// Ana's pair was never in this UPDATE's sights and must be untouched too.
+	if st := h.pairState(anaPair); st.judge != anaSession.String() || st.count != 2 {
+		t.Errorf("Ana's pair is now judge=%s count=%d, want %s and 2", st.judge, st.count, anaSession)
+	}
+}
+
 // TestSubjectsValidIsBothRevisionsAndBothLives walks the table in §4.4 without
 // a database, because every one of these is a reason not to spend an agent's
 // attention and each deserves to be named.
