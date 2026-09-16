@@ -200,6 +200,7 @@ templ docBoard() {
 		<li><b>contract mismatch</b>: a session that builds an interface and a session that calls it disagree about a field one of them needs. The conflict says which side has to change.</li>
 		<li><b>nobody is building this</b>: a session consumes an interface nobody produces, for longer than the project&#39;s cadence allows (five minutes on a hackathon project, two hours on a sprint, a day on a steady one).</li>
 		<li><b>naming variant</b>: the same field under another spelling, or a consumed key one or two characters from a produced one (<code>/api/session</code> and <code>/api/sessions</code>). Recorded at low severity, so nobody is interrupted.</li>
+		<li><b>decision contradiction</b>: an agent judged that its own plan, as written, would break a decision the team recorded. The plan is what has to change: a decision is a standing agreement, and changing that is a separate act with its own permission.</li>
 	</ul>
 	<p>
 		The Conflicts tab lists each open one with its severity, the paths or the contract, who is involved, how long it
@@ -273,7 +274,7 @@ templ docBoard() {
 		<li>An area two sessions held one after the other is drawn dashed, and is not a crossing.</li>
 		<li>A ring marks an area a conflict was raised about, and the time range&#39;s conflicts are listed under the drawing.</li>
 	</ul>
-	<p>A demo board shows only the live graph. Contracts and Decisions have no history to show.</p>
+	<p>A demo board shows only the live graph, and Contracts has no history to show.</p>
 	<h2 id="signing-in">Signing in and out</h2>
 	<p>
 		Every board has <b>Sign in</b> at the top right. There is no password. You sign in with a link from one of
@@ -312,10 +313,33 @@ templ docBoard() {
 		<li><b>converged</b>: the two sides agree.</li>
 	</ul>
 	<p>In the grid, P marks a producer, C a consumer, and a small number how many fields each one published. A session that ended drops out.</p>
-	<h2 id="coming-next">Other tabs</h2>
+	<h2 id="decisions">Decisions</h2>
 	<p>
-		@soon()
-		The <b>Decisions</b> tab is there for a feature that is not built yet. It stays empty until then.
+		The <b>Decisions</b> tab lists what the team has settled and the code has to obey. An agent records one with
+		<code>record_decision</code> once the team agrees it, never as a proposal. Each card shows the decision&#39;s key,
+		such as <code>#auth-jwt-cookie</code>, what was decided, the paths it governs, who decided it and when, and how
+		many live plans have been judged against its current wording.
+	</p>
+	<ul>
+		<li><b>always-show</b> marks a decision checked against every plan in its project, whatever files that plan takes. A team may have at most five.</li>
+		<li><b>team-wide</b> marks one that holds for every repository on the team; otherwise the badge names the project it governs.</li>
+		<li>The judged line counts the plans checked against it, the conflicts still open, and the pairs still waiting on an agent.</li>
+		<li><b>Past</b> is every decision since superseded or revoked, newest first, with what replaced it. <b>Past decisions</b> opens the full history, filtered by status, with <b>Load older decisions</b>.</li>
+		<li>Opening one decision shows it as it stands and the earlier wordings it was recorded with, as far back as the event log reaches. The wording in force is kept for good.</li>
+	</ul>
+	<h3 id="decision-conflicts">When a plan contradicts a decision</h3>
+	<p>
+		metiche does not judge that itself, and it has no model to judge it with. It pairs a decision with a live plan
+		that touches it — by the paths the decision governs, by its words, or because it is always-show — and the
+		plan&#39;s own agent judges the pair with its own model and reports the verdict. So a
+		<b>decision contradiction</b> on the Conflicts tab carries the decision&#39;s key, the suggested action, and
+		<b>what the judge said</b>: that agent&#39;s own confidence and one line of reasoning, shown because it judged
+		its own plan.
+	</p>
+	<p>
+		It settles itself: the agent changes the plan, is asked once more, and a no-conflict verdict closes the conflict
+		as <code>converged</code>. Only when the agents have not settled a serious one between them does metiche ask a
+		person, through their own agent, and the conflict then shows <b>a person was asked</b> with the time.
 	</p>
 }
 
@@ -437,6 +461,7 @@ templ docAgents() {
 		<li>a repository is not on the team yet (<a href="/docs/repos-and-teams#the-question">the one-time question</a>);</li>
 		<li>you are on several teams and no <code>.metiche</code> file says which one this repository is for;</li>
 		<li>it collided with another agent and the two of them could not settle it, for example because both have to rewrite the same code;</li>
+		<li>its plan contradicts a decision the team recorded, and the agents have not settled that between them either, within the pace the project sets;</li>
 		<li>you asked to see the board: it gives you a one-time sign-in link;</li>
 		<li>you asked for an invite: it gives you the code, once.</li>
 	</ul>
@@ -632,6 +657,12 @@ templ docTools() {
 		<dl class="tool-list">
 			@toolRow("publish_contract", "", "Say which interface between parts of the system you build (produces) or call (consumes), with the request and response fields, before writing the code. A disagreement with the other side, or a caller nobody builds for, comes back as a conflict.")
 		</dl>
+		<h2 id="decisions">Decisions</h2>
+		<dl class="tool-list">
+			@toolRow("record_decision", "", "Record something the team has settled that the rest of the code must obey, with the paths it governs, so other agents' plans are checked against it. Recording the same key again revises it; changing a decision somebody else recorded needs that person's agreement.")
+			@toolRow("get_review_context", "read-only", "Read the pairs metiche has asked you to judge: a recorded decision next to your own plan, and why the two were paired.")
+			@toolRow("report_judgement", "", "Give your own model's verdict on a pair: conflict, no_conflict or unsure, with a confidence and one line of reasoning, both shown on the board. metiche never judges anything itself.")
+		</dl>
 		<h2 id="instructions">Instructions</h2>
 		<dl class="tool-list">
 			@toolRow("get_instructions", "", "Collect what is waiting, such as conflict notices. Reading marks each one delivered, so it is handed over once.")
@@ -659,7 +690,6 @@ templ docTools() {
 			asks for one.
 		</p>
 		<ul class="soon-list">
-			<li><b>Decisions</b>The team records decisions, and metiche hands an agent the ones its paths touch, so its own model can judge whether its plan breaks one.</li>
 			<li><b>Duplicate work</b>metiche notices two intents aimed at the same issue and tells both agents before either finishes.</li>
 			<li><b>Dismissals</b>An agent dismisses a finding as a false positive, and a rule dismissed too often demotes itself to record-only.</li>
 		</ul>

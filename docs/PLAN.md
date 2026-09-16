@@ -161,7 +161,10 @@ params and prose. UUIDs are for joins only.
   three agents in one directory is normal, and "conflicts involving my session" is the notification
   join. Unique `(team_uuid, dedupe_key)` so re-detection bumps a counter instead of spamming.
 - **`judgement`** — the anti-re-judging ledger, unique on `(team_uuid, pair_key)`.
-- **`instruction`** — the push-without-push mechanism (nudges, conflict notices, judge requests).
+- **`instruction`** — the push-without-push mechanism (nudges, conflict notices, and the question
+  metiche puts to a person when two agents have not settled a decision contradiction). A pair
+  waiting to be judged is **not** an instruction: it rides on `pending.reviews` and is read with
+  `get_review_context` (docs/DECISIONS.md §1.3).
   Index `(target_session_uuid, status)` backs the `pending` count on every response.
 - **`event`** — one append-only team-scoped log. Unique `(team_uuid, sequence)` and
   `(team_uuid, idempotency_key)`; `response_snapshot` json replays a retried call verbatim.
@@ -225,8 +228,9 @@ being lost, and can ship disabled per-team.
 and **revision-scoped** — which answers "how do you stop every agent re-judging the same pair
 forever": judged once, never surfaced again, unless a subject materially changes, which mints a new
 key and earns exactly one more look. On first surfacing the server inserts a `judgement` row
-assigned to the caller with a 120s window; the unique index makes it insert-first-wins, so **N agents
-never burn N× tokens on one pair**, and an assigned judge that crashes releases it after 120s.
+assigned to the plan's own agent with a 15-minute window, re-armed at most three times; the unique
+index makes it insert-first-wins, so **N agents never burn N× tokens on one pair**, and a pair whose
+judge goes quiet is re-armed or expired by the sweeper (docs/DECISIONS.md §1.3, §4.4).
 
 `report_judgement(pair_key, verdict, severity, confidence, rationale)` closes the loop. `no_conflict`
 kills the pair permanently and costs one tiny event — and that is 80% of cases, so it must be cheap.

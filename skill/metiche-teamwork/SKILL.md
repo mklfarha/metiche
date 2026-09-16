@@ -53,6 +53,9 @@ list, in the order you meet them.
 | **`declare_intent`** | **before each chunk** | summary + paths + mode. Creates the intent *and* its claims in one transaction. |
 | `check_paths` | before exploring | read-only, no commitment: "who else is in here?" |
 | **`publish_contract`** | **before building or calling an interface** | `produces` or `consumes` an endpoint, event, type, table or env var, with its `request` / `response` fields. See "Publish the contracts between parts". |
+| `record_decision` | when the team settles something the code must obey | key, statement, scope. Revising another person's decision needs your person's yes. See "Record the decisions the team makes". |
+| `get_review_context` | when `pending.reviews > 0` | read-only: the decision and your plan, side by side |
+| `report_judgement` | after reading a pair | `conflict` / `no_conflict` / `unsure`, confidence, one-line rationale |
 | **`heartbeat`** | **~every 60s** | alive + extend claims + status line + pending counts. Cheapest call in the system. |
 | **`update_intent`** | **as things change** | status line, `add_paths` / `drop_paths`, mark done |
 | `get_instructions` | when `pending.instructions > 0` | **not read-only** — reading is the delivery receipt |
@@ -71,11 +74,10 @@ extends and completes them. One concept, not two.
 
 ### Coming next, not available yet
 
-`record_decision`, `get_review_context`, `report_judgement` and `resolve_conflict` are planned but
-**not on the server**. Never call them. If a note, a suggested
-action or an instruction names one, skip that step and do what works today: read the conflict,
+`resolve_conflict` is planned but **not on the server**. Never call it. If a note, a suggested
+action or an instruction names it, skip that step and do what works today: read the conflict,
 change course or coordinate, narrow or drop paths with `update_intent`, and answer instructions
-with `report_back` (a request to judge a pair gets `blocked`, noting that judging is not built).
+with `report_back`.
 
 ---
 
@@ -255,6 +257,63 @@ agree or a producer appears, and as `superseded` once a session in it ends. Answ
 
 ---
 
+## Record the decisions the team makes
+
+Call `record_decision` when your person, or you and another agent, settle something the rest of the
+code has to obey: how auth works, the error envelope, a library choice, who owns a module, or an
+agreement that closed a conflict and should bind later work. Record it after it is agreed, never as
+a proposal. Don't record task plans or implementation details: those are intents.
+
+- `key`: short kebab-case, cited as `#auth-jwt-cookie`. Recording the same key again revises it.
+- `statement`: one or two sentences another agent can check a plan against. That sentence is all
+  their model sees.
+- `scope`: the paths it governs, written like claims. `team_wide` only when it holds for every
+  repository. `always_show` only when your person says it is load-bearing.
+- To replace a decision, record the new one with `supersedes`. To withdraw one, `revoke` it with a
+  rationale. If somebody else recorded it, settle it with their agent or ask your person, and pass
+  `person_confirmed: true` only when your person said yes.
+
+```
+record_decision(session_key: "S-17", key: "auth-jwt-cookie",
+  title: "Auth is a JWT in an httpOnly cookie",
+  statement: "Sessions are a signed JWT in an httpOnly, Secure cookie. Never store tokens in localStorage or sessionStorage.",
+  scope: ["internal/auth/**", "web/src/auth/**"])
+```
+
+**A decision is not an intent.** An intent is what *you* are about to do next, and it dies with your
+session. A decision is a standing agreement that outlives every session and is checked against
+everybody's later plans. If it would stop being true once you finish the task, it is an intent.
+
+## Judge the pairs you are handed
+
+When `pending.reviews > 0`, or a response carries `review`, metiche is asking your own model whether
+your plan breaks a recorded decision. metiche never judges anything itself. Do it before you edit.
+
+1. Read the pair: `get_review_context`, unless the review block already gave you the statement.
+2. Answer honestly with `report_judgement`:
+   - `no_conflict` when the plan is unrelated or compatible. That is the usual answer.
+   - `conflict` only when doing the plan as written would break the statement.
+   - `unsure` when the wording doesn't settle it.
+
+   Give a real `confidence` and a one-line `rationale` naming the part of the plan and the part of
+   the decision. The board shows both.
+3. On a conflict, follow the decision: change the plan and `update_intent` the summary. You'll be
+   asked once more, and a `no_conflict` closes it. If the decision is wrong, settle that with its
+   author's agent; ask your person only if you can't.
+
+**Never answer `no_conflict` to avoid work.** You are judging your own plan, so you are the one
+party with a reason to wave it through. Answer as if somebody else had written the plan. Your
+verdict, your confidence and your rationale all sit on the board next to the decision, which is
+exactly so that a convenient answer is visible as one.
+
+If you recorded a decision and get a `conflict_notice` about it: do nothing if the decision stands,
+or revise it with `record_decision` if the team changed its mind, then `report_back` what you did.
+If an instruction asks you to ask your person, ask them that exact question and `report_back` their
+answer. metiche asks a person only when the conflict is serious and the two agents have not settled
+it within the pace the project sets, so by the time one is asked, it is worth their attention.
+
+---
+
 ## Every response carries `pending` — never poll blind
 
 Every single response from every tool ends with the same envelope:
@@ -275,8 +334,8 @@ bare heartbeat.
 - **`conflicts > 0` → a collision involves you.** If it was not in this response's `conflicts[]`,
   call `get_instructions` (a notice raised for you is delivered there) and `check_paths` on the
   files you hold to see who is in them. Then decide.
-- **`reviews`** counts pairs waiting to be judged. Judging is not built yet (see "Coming next");
-  there is nothing to call for it.
+- **`reviews > 0` → judge now.** `get_review_context`, then `report_judgement` for each pair. Do it
+  before you edit the files the plan names.
 
 Polling `get_team_state` on a timer is the anti-pattern. It is scoped, paginated and meant for
 session start, not for awareness. Awareness is the counts.
@@ -451,8 +510,8 @@ Use metiche for this work.
 
 ## Worked example: two agents, one collision
 
-Ana and Beto are on the same repo with their own agents. Both have this skill and both are
-pointed at the same metiche team. Ana's agent is **A** (label `backend`), Beto's is **B** (label
+Ana and Bob are on the same repo with their own agents. Both have this skill and both are
+pointed at the same metiche team. Ana's agent is **A** (label `backend`), Bob's is **B** (label
 `ui`). Keys and wording are illustrative.
 
 **1. A starts and declares.**
@@ -489,7 +548,7 @@ B → declare_intent(session_key: "S-22",
 B has not opened an editor yet.
 
 **3. B changes course.** B does not need `auth.go`; it assumed it would have to write the
-handler itself. It drops the file, narrows to its own layer, and tells Beto:
+handler itself. It drops the file, narrows to its own layer, and tells Bob:
 
 ```
 B → update_intent(session_key: "S-22", intent_key: "INT-91",
@@ -501,6 +560,30 @@ The collision cost B one tool response and no code. That is the whole product. A
 longer holds `auth.go`, the overlap is gone: metiche closes CF-14 by itself as settled, and the
 board shows who released what and when.
 
+**3b. B's plan meets a decision.** Ana's agent had recorded `#auth-jwt-cookie` with scope
+`web/src/auth/**`. B's next declaration comes back with a review:
+
+```
+B → declare_intent(session_key: "S-22", summary: "Keep the session token in localStorage after login",
+      paths: ["web/src/auth/session.ts"], mode: "write")
+    ← {"ok": true, "key": "INT-92", "review": {"pairs": [{"pair_key": "9c1e…", "decision": "#auth-jwt-cookie",
+         "statement": "Sessions are a signed JWT in an httpOnly, Secure cookie. Never store tokens in localStorage…",
+         "why": "scope"}]}, "pending": {"instructions": 0, "conflicts": 0, "reviews": 1}}
+B → report_judgement(session_key: "S-22", pair_key: "9c1e…", verdict: "conflict", confidence: 0.9,
+      rationale: "plan stores the token in localStorage; #auth-jwt-cookie forbids it")
+    ← {"conflicts": [{"key": "CF-31", "kind": "decision_contradiction", "decision": "#auth-jwt-cookie",
+         "at_fault": "plan", "suggested_action": "Your plan INT-92 breaks #auth-jwt-cookie … Change the plan …"}]}
+B → update_intent(session_key: "S-22", intent_key: "INT-92",
+      summary: "Read the session from the httpOnly cookie the login endpoint sets")
+    ← {"pending": {"reviews": 1}}
+B → report_judgement(session_key: "S-22", pair_key: "4d7a…", verdict: "no_conflict", confidence: 0.95,
+      rationale: "plan now relies on the httpOnly cookie")
+    ← {"note": "judged INT-92 against #auth-jwt-cookie: no conflict (0.95); CF-31 settled"}
+```
+
+A is told once, through `get_instructions`, and does nothing because the decision stands. Nobody's
+person was interrupted.
+
 **4. A finds out on a bare heartbeat, having never polled.**
 
 ```
@@ -508,16 +591,16 @@ A → heartbeat(session_key: "S-17", status_line: "wiring the cookie into the lo
     ← {"ok": true, "pending": {"instructions": 1, "conflicts": 1, "reviews": 0},
        "note": "1 instruction(s) and 1 open conflict(s) involve you — call get_instructions"}
 A → get_instructions(session_key: "S-17")
-    ← {"instructions": [{"key": "IN-7", "kind": "conflict_notice", "with": "Beto (ui)",
+    ← {"instructions": [{"key": "IN-7", "kind": "conflict_notice", "with": "Bob (ui)",
         "paths": ["internal/auth/auth.go"], "severity": "critical",
-        "suggested_action": "Beto (ui) holds internal/auth/auth.go ... Both editing it, they
+        "suggested_action": "Bob (ui) holds internal/auth/auth.go ... Both editing it, they
                              arrived second: settle it between you — split the file or sequence
                              the work; ask your human only if you can't.",
         "report_back": true}]}
 A → check_paths(session_key: "S-17", paths: ["internal/auth/auth.go"])
     ← {"holders": [], "note": "... nobody else is holding them right now ..."}
 A → report_back(session_key: "S-17", instruction_key: "IN-7", outcome: "done",
-      note: "Beto dropped auth.go and builds against my endpoint; I keep the handler")
+      note: "Bob dropped auth.go and builds against my endpoint; I keep the handler")
 ```
 
 This is A's **first and only** interruption of the whole exchange, and it took one answer.
@@ -547,6 +630,7 @@ happen live.
 - `heartbeat` every ~60s and around every batch of edits, with a status line that says *why*.
 - Drop paths as soon as you are done with them.
 - `publish_contract` before you build or call an interface between parts, and again when your shape changes.
+- Record a decision once it is agreed, and judge every pair you are handed before you edit.
 - Read `pending` on every response. Act when non-zero, do nothing when zero.
 - Answer every instruction with `report_back`, including a refusal.
 - Settle a collision with the other agent yourselves — split the file or sequence the work — and

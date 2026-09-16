@@ -151,11 +151,11 @@ func TestLandingLinksToTheDocs(t *testing.T) {
 // comingNext is the marker every not-yet-built feature carries.
 const comingNext = "Coming next"
 
-// unbuiltKinds are the collision kinds whose tools (record_decision,
-// report_judgement, resolve_conflict) do not exist yet. Path overlap and
-// contract mismatch, "nobody is building this" included, run today.
+// unbuiltKinds are the collision kinds that cannot fire today: duplicate work
+// has no tool at all. Path overlap, contract mismatch ("nobody is building
+// this" included) and decision contradiction all run today — record_decision,
+// get_review_context and report_judgement are on the server.
 var unbuiltKinds = []string{
-	"decision contradiction",
 	"duplicate work",
 }
 
@@ -198,7 +198,7 @@ func TestUnbuiltCollisionsAreMarkedComingNext(t *testing.T) {
 	for _, c := range cards {
 		class, inner := c[1], stripTags(c[2])
 		switch {
-		case strings.Contains(class, "k-path") || strings.Contains(class, "k-contract"):
+		case strings.Contains(class, "k-path") || strings.Contains(class, "k-contract") || strings.Contains(class, "k-decision"):
 			live++
 			if strings.Contains(inner, comingNext) || strings.Contains(class, "soon") || !strings.Contains(inner, "works today") {
 				t.Errorf("%q works today but is not marked live: %s", class, strings.Join(strings.Fields(inner), " "))
@@ -206,12 +206,24 @@ func TestUnbuiltCollisionsAreMarkedComingNext(t *testing.T) {
 			if strings.Contains(class, "k-contract") && (!strings.Contains(strings.ToLower(inner), "nobody is building this") || !strings.Contains(inner, "is told")) {
 				t.Errorf("the contract card does not say, in the present tense, that nobody is building this is caught: %s", strings.Join(strings.Fields(inner), " "))
 			}
+			// The one judgement this page describes is made by the agent's own
+			// model, never by the server. The card has to say both, because
+			// "metiche judges your plan" would imply a model and a key here.
+			if strings.Contains(class, "k-decision") {
+				low := strings.ToLower(inner)
+				if !strings.Contains(low, "its own model") {
+					t.Errorf("the decision card does not say the plan's own agent judges it with its own model: %s", strings.Join(strings.Fields(inner), " "))
+				}
+				if !strings.Contains(low, "never judges") || !strings.Contains(low, "no model") {
+					t.Errorf("the decision card does not say the server never judges and has no model: %s", strings.Join(strings.Fields(inner), " "))
+				}
+			}
 		case !strings.Contains(class, "soon") || !strings.Contains(inner, comingNext):
 			t.Errorf("unbuilt card %q lacks the soon class or its %q badge", class, comingNext)
 		}
 	}
-	if live != 2 {
-		t.Errorf("%d live collision cards, want path overlap and contract mismatch", live)
+	if live != 3 {
+		t.Errorf("%d live collision cards, want path overlap, contract mismatch and decision contradiction", live)
 	}
 
 	// The section must not claim four live detections.
@@ -244,10 +256,13 @@ func TestLandingHasNoToolCount(t *testing.T) {
 	if !strings.Contains(text, "publish_contract") {
 		t.Errorf("landing does not list publish_contract, which is built")
 	}
-	for _, tool := range []string{"record_decision", "report_judgement", "resolve_conflict"} {
-		if strings.Contains(text, tool) {
-			t.Errorf("landing lists %s, which does not exist yet", tool)
+	for _, tool := range []string{"record_decision", "get_review_context", "report_judgement"} {
+		if !strings.Contains(text, tool) {
+			t.Errorf("landing does not list %s, which is built", tool)
 		}
+	}
+	if strings.Contains(text, "resolve_conflict") {
+		t.Errorf("landing lists resolve_conflict, which does not exist yet")
 	}
 }
 
