@@ -47,8 +47,8 @@ list, in the order you meet them.
 | tool | when | note |
 |---|---|---|
 | `join_team` | once, at setup | a join code (or `team_slug` plus one of your tokens) → this agent's bearer token. The installer normally does this. |
-| `create_team` | only when nobody has set the team up | makes the team, joins you, returns its first join code |
-| `list_teams` | before `start_session`, when no `.metiche` file names the team | one team → use it; more than one → ask the person which |
+| `create_team` | only after `list_teams` shows no team for this work | makes the team, joins you, returns its first join code. Refused if you are already on a team with that name — see below |
+| `list_teams` | **before `create_team`**, and before `start_session` when no `.metiche` file names the team | one team → use it; more than one → ask the person which |
 | `start_session` | once per piece of work | `repo_url`, `project_key`, `branch` straight from git (see below), `base_commit`, `goal`. Returns your `session_key`. |
 | **`declare_intent`** | **before each chunk** | summary + paths + mode. Creates the intent *and* its claims in one transaction. |
 | `check_paths` | before exploring | read-only, no commitment: "who else is in here?" |
@@ -71,6 +71,19 @@ list, in the order you meet them.
 
 There is **no claim verb**. `declare_intent` makes the claims; `update_intent` adds, drops,
 extends and completes them. One concept, not two.
+
+### Look before you create a team
+
+`list_teams` **before** `create_team`, every time. If a team for this work already exists, that is
+the team: join it (`join_team` with its `team_slug`) or pass that slug on your calls. Create only
+when there is genuinely none.
+
+`create_team` refuses a second team with a name you already have: `already_exists:`, naming the
+matching slugs. That is an answer, not an error to route around — and **never** retry under a
+different name. Two half-teams, split across two boards, is the exact failure the refusal exists to
+prevent. Use one of the slugs it named, or ask the person which they meant. Send
+`allow_duplicate_name: true` only when the person has said they really do want a second team with
+that name.
 
 ### Coming next, not available yet
 

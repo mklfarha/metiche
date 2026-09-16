@@ -131,8 +131,10 @@ ENV_LEGACY_HEADER="# metiche — created by install.sh. Keep this file private."
 # fails the build if you forget.
 #   0.5.0  902d2254...
 #   0.6.0  168388be...
+#   0.6.1  9e05ef0a...
 KNOWN_SKILL_SHA256="902d22540c064631ccdfef1d0da288cb46af00d9b34f55c02718f088f794faba
-168388bed24d41c7581acd21b24a456c8b1bfde49595d8f8f47a2b6db61d9cbc"
+168388bed24d41c7581acd21b24a456c8b1bfde49595d8f8f47a2b6db61d9cbc
+9e05ef0a5e6bc1058e0cb94cebf3afa4c9615db6a2e1a696b31ae286ad1d5ee7"
 
 URL="${METICHE_URL:-$METICHE_URL_DEFAULT}"
 # The metiche CLI (docs/CLI.md §6.3), installed from a GitHub release. The two

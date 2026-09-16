@@ -11,7 +11,7 @@
       "name": "metiche",
       "source": "./",
       "description": "Live coordination between coding agents on one repo — declare intent before you act, hold narrow path claims, and hear about collisions inside your own tool response.",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "category": "development",
       "homepage": "https://metiche.xyz",
       "keywords": [
