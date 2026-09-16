@@ -122,9 +122,17 @@ ENV_START="# >>> metiche >>>"
 ENV_END="# <<< metiche <<<"
 # The first line of every ~/.metiche/env an earlier installer wrote.
 ENV_LEGACY_HEADER="# metiche — created by install.sh. Keep this file private."
-# sha256 of every SKILL.md metiche has shipped. A standalone copy of the skill
-# is removed only when it matches one of these, or a copy on this machine.
-KNOWN_SKILL_SHA256="902d22540c064631ccdfef1d0da288cb46af00d9b34f55c02718f088f794faba"
+# sha256 of every SKILL.md metiche has shipped, oldest first. A standalone copy
+# of the skill is removed only when it matches one of these, or a copy on this
+# machine — an older shipped version is ours to replace, anything else is the
+# person's own edit and stays. So every entry stays forever: people still have
+# those versions installed. Whitespace separates them; `for _k in` splits it.
+# Ship a new SKILL.md, append its sha256 here — TestInstallerKnowsTheCurrentSkill
+# fails the build if you forget.
+#   0.5.0  902d2254...
+#   0.6.0  168388be...
+KNOWN_SKILL_SHA256="902d22540c064631ccdfef1d0da288cb46af00d9b34f55c02718f088f794faba
+168388bed24d41c7581acd21b24a456c8b1bfde49595d8f8f47a2b6db61d9cbc"
 
 URL="${METICHE_URL:-$METICHE_URL_DEFAULT}"
 # The metiche CLI (docs/CLI.md §6.3), installed from a GitHub release. The two
