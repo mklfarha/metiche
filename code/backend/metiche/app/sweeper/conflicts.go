@@ -47,6 +47,7 @@ func (s *Sweeper) settleAfterAbandon(ctx context.Context, teamUUID uuid.UUID, se
 		project, agent, member := c.projectUUID, c.agentUUID, c.memberUUID
 		s.settleConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, mcp.ReleaseSessionAbandoned, rep)
 		s.settleContractConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, rep)
+		s.settleDecisionConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, rep)
 	}
 }
 
@@ -165,6 +166,82 @@ func (s *Sweeper) settleContractConflicts(ctx context.Context, teamUUID, session
 		switch {
 		case err != nil:
 			rep.addErr("settling contract conflict "+conflictID.String(), err)
+		case wrote:
+			rep.ConflictsResolved++
+			rep.EventsEmitted++
+		}
+	}
+}
+
+// settleDecisionConflicts closes the decision_contradiction conflicts an
+// abandoned session took part in, one conflict_resolved event each. Same shape
+// as its two neighbours: candidates outside the lock, the decision inside it.
+//
+// The plans of a session nobody is running any more cannot break a decision:
+// docs/DECISIONS.md §4.5 rule 3. The DECISION itself survives — it is a
+// standing agreement, and writing it off because the agent that happened to
+// record it stopped heartbeating would quietly un-decide things. Only this
+// session's plans' conflicts close, and its pending pairs to judge expire.
+//
+// DecisionReleaseSessionAbandoned is not merely the wording: it is also what
+// suppresses COORDINATED (§4.5). Nobody coordinated here — metiche noticed a
+// silence — so the note says "Cleared by metiche", and a report_back somebody
+// left earlier does not get to claim the credit.
+func (s *Sweeper) settleDecisionConflicts(ctx context.Context, teamUUID, sessionUUID uuid.UUID,
+	projectUUID, agentUUID, memberUUID *uuid.UUID, rep *Report) {
+	// The pairs this session was asked to judge die with it (§4.5). No event,
+	// and no team lock: one conditional UPDATE off idx_judgement_assignment.
+	// Without this, a pair armed a minute before the session went quiet would
+	// sit pending until its window lapsed, and get re-armed for an agent that
+	// is never coming back.
+	if n, err := mcp.ExpireJudgementsOfSession(ctx, s.db, sessionUUID, s.now()); err != nil {
+		rep.addErr("expiring the abandoned session's pairs to judge", err)
+	} else {
+		rep.JudgementsExpired += int(n)
+	}
+
+	ids, err := mcp.OpenDecisionConflictsOfSession(ctx, s.db, teamUUID, sessionUUID)
+	if err != nil {
+		rep.addErr("finding the decision conflicts an abandoned session may have settled", err)
+		return
+	}
+	for _, id := range ids {
+		conflictID, session := id, sessionUUID
+		var settled mcp.SettledConflict
+		wrote, err := s.appendEvent(ctx, sweepEvent{
+			teamUUID:       teamUUID,
+			idempotencyKey: "sweep:conflict_resolved:" + conflictID.String(),
+			kind:           enums.EVENT_KIND_CONFLICT_RESOLVED,
+			structural:     true,
+			projectUUID:    projectUUID,
+			sessionUUID:    &session,
+			agentUUID:      agentUUID,
+			memberUUID:     memberUUID,
+			subjectKind:    enums.SUBJECT_KIND_CONFLICT,
+			subjectUUID:    &conflictID,
+			extra: func(ctx context.Context, tx *sql.Tx, _ int64, now time.Time) error {
+				out, ok, err := mcp.SettleDecisionConflict(ctx, tx, conflictID, mcp.DecisionRelease{
+					TeamUUID:    teamUUID,
+					SessionUUID: session,
+					Kind:        mcp.DecisionReleaseSessionAbandoned,
+					At:          now,
+				})
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return errNothingToSay
+				}
+				settled = out
+				return nil
+			},
+			finish: func() (string, string, []byte) {
+				return mcp.ConflictResolvedSummary(settled), settled.Key, mcp.ConflictResolvedPayload(settled).ToJSON()
+			},
+		})
+		switch {
+		case err != nil:
+			rep.addErr("settling decision conflict "+conflictID.String(), err)
 		case wrote:
 			rep.ConflictsResolved++
 			rep.EventsEmitted++

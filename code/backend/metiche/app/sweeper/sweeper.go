@@ -154,6 +154,18 @@ type Options struct {
 	// knob that bounds the sweeper's total lock footprint.
 	MaxUnclaimedPerPass int
 
+	// MaxJudgementsPerPass bounds the open-pairs scan of docs/DECISIONS.md
+	// §4.4 — the pairs one team's pass will assign, re-arm or expire. It takes
+	// no team lock, so this bounds work rather than contention; the leftovers
+	// come back on the next pass, a judging window being minutes long.
+	MaxJudgementsPerPass int
+
+	// MaxEscalationsPerPass bounds how many decision conflicts one team's pass
+	// will put in front of a person (§4.7). Each one takes the team lock
+	// briefly, the way a raised conflict does, and each one interrupts
+	// somebody — so this is the knob that bounds how loud one pass can be.
+	MaxEscalationsPerPass int
+
 	// MaxEventsPerPass bounds how many events one pass will append. The
 	// status flips are NOT bounded by it: the rows are corrected first and
 	// the events are emitted afterwards, so hitting the budget costs
@@ -194,6 +206,25 @@ const (
 	DefaultMaxUnclaimed       = 20
 	DefaultMaxEvents          = 500
 	DefaultLeaseName          = "metiche:sweeper"
+
+	// docs/DECISIONS.md §4.4 and §4.7's two LIMITs.
+	DefaultMaxJudgements  = 64
+	DefaultMaxEscalations = 16
+)
+
+// The escalation budgets of docs/DECISIONS.md §4.7: how long the agents get to
+// settle a decision conflict between themselves before a person is asked, by
+// the project's cadence.
+//
+// They are NOT options. coordination.EscalationBudget is the single source —
+// it is pure, it is what §9.1 freezes, and it is what the rule actually calls.
+// These constants exist so a reader can check the numbers against the document
+// without leaving this file, and TestEscalationBudgetsAreTheSpecNumbers pins
+// them to the function, so the two can never drift apart in silence.
+const (
+	DefaultEscalationHackathon = 10 * time.Minute
+	DefaultEscalationSprint    = 30 * time.Minute
+	DefaultEscalationSteady    = 2 * time.Hour
 )
 
 // withDefaults fills the zero values. It deliberately does NOT default
@@ -243,6 +274,12 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MaxUnclaimedPerPass <= 0 {
 		o.MaxUnclaimedPerPass = DefaultMaxUnclaimed
+	}
+	if o.MaxJudgementsPerPass <= 0 {
+		o.MaxJudgementsPerPass = DefaultMaxJudgements
+	}
+	if o.MaxEscalationsPerPass <= 0 {
+		o.MaxEscalationsPerPass = DefaultMaxEscalations
 	}
 	if o.MaxEventsPerPass <= 0 {
 		o.MaxEventsPerPass = DefaultMaxEvents
@@ -311,6 +348,17 @@ type Report struct {
 	// ConflictsResolved counts path_overlap conflicts closed because a lapsed
 	// claim or an abandoned session cleared the overlap.
 	ConflictsResolved int `json:"conflicts_resolved"`
+
+	// The decisions pass (docs/DECISIONS.md §4.4). JudgementsExpired is the
+	// quiet one: those pairs asked nobody anything and wrote no event.
+	JudgementsAssigned int `json:"judgements_assigned"`
+	JudgementsReArmed  int `json:"judgements_rearmed"`
+	JudgementsExpired  int `json:"judgements_expired"`
+
+	// ConflictsEscalated counts the decision conflicts this pass put in front
+	// of a person (§4.7). It is the loudest thing the sweeper does, so it is
+	// counted on its own rather than folded into InstructionsRaised.
+	ConflictsEscalated int `json:"conflicts_escalated"`
 
 	Retention RetentionReport `json:"retention"`
 
@@ -551,13 +599,28 @@ func (s *Sweeper) RunOnce(ctx context.Context) (Report, error) {
 			rep.addErr("detecting contract_unclaimed for team "+t.uuid.String(), err)
 		}
 
-		// ── 4. retention ────────────────────────────────────────────────────
+		// ── 4. the judging backlog and the judge window ─────────────────────
+		// docs/DECISIONS.md §4.4. Takes no team lock and writes no event: a
+		// pair handed out, re-armed or given up on changes nothing anybody is
+		// told about.
+		if err := s.sweepJudgements(ctx, t, now, &rep); err != nil {
+			rep.addErr("sweeping the pairs to judge for team "+t.uuid.String(), err)
+		}
+
+		// ── 5. decision conflicts the agents did not settle ─────────────────
+		// §4.7, and deliberately AFTER the backlog step: a pair handed out a
+		// moment ago is a turn the agents have not had yet.
+		if err := s.escalateDecisionConflicts(ctx, t, now, &rep); err != nil {
+			rep.addErr("escalating decision conflicts for team "+t.uuid.String(), err)
+		}
+
+		// ── 6. retention ────────────────────────────────────────────────────
 		if err := s.enforceRetention(ctx, t, now, defaultRetentionDays, &rep); err != nil {
 			rep.addErr("enforcing retention for team "+t.uuid.String(), err)
 		}
 	}
 
-	// ── 5. expired sign-in links and browser sessions ───────────────────────
+	// ── 7. expired sign-in links and browser sessions ───────────────────────
 	// Instance-wide, and NOT gated on RetentionEnabled (logins.go).
 	if err := s.sweepLogins(ctx, now, &rep); err != nil {
 		rep.addErr("sweeping expired browser logins", err)
@@ -622,6 +685,13 @@ type teamRow struct {
 	abandonedAfter time.Duration
 	notifyFloor    enums.ConflictSeverity
 
+	// The decisions settings (docs/DECISIONS.md §4.4, §4.7). humanFloor is the
+	// severity a decision conflict must reach before a person is ever asked;
+	// it defaults to high, which is why most conflicts never interrupt anybody.
+	judgeWindow         time.Duration
+	maxReviewsPerMinute int
+	humanFloor          enums.ConflictSeverity
+
 	// demotedRules is PLAN.md's self-tuning loop arriving here: a rule that
 	// crossed 50% false-positive dismissals on this team is demoted to
 	// record-only. The sweeper still records a demoted conflict; it just
@@ -675,6 +745,10 @@ func (s *Sweeper) loadTeams(ctx context.Context) ([]teamRow, error) {
 			staleAfter:     s.opts.SessionStale,
 			abandonedAfter: s.opts.SessionAbandoned,
 			notifyFloor:    enums.CONFLICT_SEVERITY_MEDIUM,
+
+			judgeWindow:         decisionJudgeWindow,
+			maxReviewsPerMinute: defaultMaxReviewsPerMinute,
+			humanFloor:          defaultHumanNotifyFloor,
 		}
 		if planID.Valid && planID.String != "" {
 			if pu, err := uuid.FromString(planID.String); err == nil {
@@ -707,6 +781,7 @@ func applyTeamSettings(t *teamRow, raw []byte, opts Options) {
 		t.notifyFloor = settings.notifyFloor
 	}
 	t.demotedRules = settings.demotedRules
+	applyDecisionSettings(t, raw)
 	_ = opts
 }
 
