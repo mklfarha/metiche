@@ -165,14 +165,16 @@ func pastConflictStatusNames() []string {
 }
 
 // liveConflictKinds are the kinds something actually detects today, in the
-// enum's order. The enum also names decision_contradiction, duplicate_work
-// and stale_base, which nothing raises yet; offering them as filters would
-// advertise detections that do not exist.
+// enum's order. The enum also names duplicate_work and stale_base, which
+// nothing raises yet; offering them as filters would advertise detections
+// that do not exist. decision_contradiction joined the list with
+// report_judgement (docs/DECISIONS.md §3.3), which is what raises one.
 var liveConflictKinds = []enums.ConflictKind{
 	enums.CONFLICT_KIND_PATH_OVERLAP,
 	enums.CONFLICT_KIND_CONTRACT_MISMATCH,
 	enums.CONFLICT_KIND_CONTRACT_UNCLAIMED,
 	enums.CONFLICT_KIND_CONTRACT_NAMING_VARIANT,
+	enums.CONFLICT_KIND_DECISION_CONTRADICTION,
 }
 
 // conflictKindNames lists the live conflict kinds by name.

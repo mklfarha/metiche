@@ -870,7 +870,7 @@ func newGuardedServer(t *testing.T, db *sql.DB) *httptest.Server {
 // out of five is not a gate.
 func boardPaths() []string {
 	return []string{"", "/conflicts", "/contracts", "/decisions", "/sessions", "/sessions/S-1",
-		"/conflicts/history", "/events", "/graph", "/stream?after=41"}
+		"/conflicts/history", "/decisions/history", "/events", "/graph", "/stream?after=41"}
 }
 
 // get issues a request, optionally bearing a token, and returns the status

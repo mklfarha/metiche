@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"database/sql"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -151,6 +152,16 @@ type conflictWire struct {
 	// ContractKey is the contract a contract_* conflict is about.
 	ContractKey string `json:"contract_key,omitempty"`
 
+	// DecisionKey and JudgeNote are a decision_contradiction's own two facts
+	// (docs/DECISIONS.md §9.4), both read from the detector's evidence by
+	// name: the decision the plan contradicts, and the one line the plan's
+	// own model wrote when it judged the pair. EscalatedAt is any kind's: it
+	// is set when metiche gave up waiting for the agents and asked a person,
+	// and cleared again when a conflict it closed reopens.
+	DecisionKey string  `json:"decision_key,omitempty"`
+	JudgeNote   string  `json:"judge_note,omitempty"`
+	EscalatedAt *string `json:"escalated_at,omitempty"`
+
 	Participants []participantWire `json:"participants"`
 }
 
@@ -219,16 +230,56 @@ type contractIssueWire struct {
 	Consumer  string `json:"consumer"`
 }
 
+// decisionWire is a recorded decision as the board draws it
+// (docs/DECISIONS.md §9.2). GET /decisions returns accepted ones; the history
+// endpoint returns the superseded and revoked ones, which are the only rows
+// that carry EndedAt.
+//
+// Rationale is the one free-text field a person wrote for the board rather
+// than for another agent. It is clipped and sanitized where it is read, never
+// here: a wire type that could hold an unbounded, unmasked note is a type that
+// eventually serves one.
 type decisionWire struct {
-	Key        string   `json:"key"`
-	Title      string   `json:"title"`
-	Statement  string   `json:"statement"`
-	Status     string   `json:"status"`
-	AlwaysShow bool     `json:"always_show"`
-	Revision   int64    `json:"revision"`
-	DecidedBy  string   `json:"decided_by,omitempty"`
-	DecidedAt  *string  `json:"decided_at,omitempty"`
-	Scope      []string `json:"scope"`
+	Key           string             `json:"key"`
+	Title         string             `json:"title"`
+	Statement     string             `json:"statement"`
+	Status        string             `json:"status"`
+	AlwaysShow    bool               `json:"always_show"`
+	Revision      int64              `json:"revision"`
+	DecidedBy     string             `json:"decided_by,omitempty"`
+	DecidedAt     *string            `json:"decided_at,omitempty"`
+	UpdatedAt     *string            `json:"updated_at,omitempty"`
+	EndedAt       *string            `json:"ended_at,omitempty"` // history only
+	Scope         []string           `json:"scope"`
+	ProjectKey    string             `json:"project_key,omitempty"` // empty = team-wide
+	Rationale     string             `json:"rationale,omitempty"`   // clipped 600
+	Supersedes    string             `json:"supersedes,omitempty"`
+	SupersededBy  string             `json:"superseded_by,omitempty"`
+	Judged        decisionJudgedWire `json:"judged"`
+	OpenConflicts []string           `json:"open_conflicts"`
+}
+
+// decisionJudgedWire counts the judgements on the decision's CURRENT
+// revision: what the plan owners' own models said when they checked their
+// plans against this wording. A count that included older revisions would
+// report agreement with a sentence nobody is being asked about any more.
+type decisionJudgedWire struct {
+	NoConflict int64 `json:"no_conflict"`
+	Conflict   int64 `json:"conflict"`
+	Unsure     int64 `json:"unsure"`
+	Pending    int64 `json:"pending"`
+}
+
+// decisionRevisionWire is one earlier wording of a decision, read from the
+// event log: there is no decision_revision table (§10, decision 5), so the
+// decision row holds the current wording and the older ones live in
+// decision_recorded events until event retention ages them out.
+type decisionRevisionWire struct {
+	Sequence   int64   `json:"sequence"`
+	Kind       string  `json:"kind"`
+	Summary    string  `json:"summary"`
+	Statement  string  `json:"statement,omitempty"` // payload.message
+	OccurredAt *string `json:"occurred_at,omitempty"`
 }
 
 type eventWire struct {
@@ -253,6 +304,51 @@ func rfc3339(t sql.NullTime) *string {
 	s := t.Time.UTC().Format(time.RFC3339)
 	return &s
 }
+
+// boardSecretPatterns are the shapes of credential that could reach a
+// free-text column an agent wrote — a decision's rationale, an earlier
+// wording in the event log. app/mcp masks them on the way in; this masks them
+// again on the way out, because the board is the public surface and a column
+// written by an older binary was never masked at all.
+var boardSecretPatterns = []struct {
+	re   *regexp.Regexp
+	with string
+}{
+	{regexp.MustCompile(`mtk_[A-Za-z0-9_\-]+`), "[redacted]"},
+	{regexp.MustCompile(`mbs_[A-Za-z0-9_\-]+`), "[redacted]"},
+	{regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._~+/=\-]+`), "[redacted]"},
+	{regexp.MustCompile(`://[^\s/@:]+:[^\s/@]+@`), "://[redacted]@"},
+	{regexp.MustCompile(`(?i)\b(password|passwd|pswd|secret|token|api[_-]?key)\b\s*[:=]\s*\S+`), "$1=[redacted]"},
+}
+
+// sanitizeBoardText collapses whitespace and masks credential-shaped text. It
+// mirrors app/mcp's sanitizeNoteText rather than calling it: that one is
+// unexported, and duplicating five regexps is cheaper than exporting a
+// sanitizer from the tool surface for a read endpoint to reach into.
+func sanitizeBoardText(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	for _, p := range boardSecretPatterns {
+		s = p.re.ReplaceAllString(s, p.with)
+	}
+	return s
+}
+
+// clipText shortens to max runes, marking the cut with an ellipsis. Runes,
+// not bytes: cutting a multi-byte character in half would serve invalid UTF-8.
+func clipText(s string, max int) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= max {
+		return string(r)
+	}
+	if max <= 1 {
+		return string(r[:max])
+	}
+	return strings.TrimSpace(string(r[:max-1])) + "…"
+}
+
+// boardText is what every agent-written note goes through before it is
+// served: masked, then clipped to what the card has room for.
+func boardText(s string, max int) string { return clipText(sanitizeBoardText(s), max) }
 
 // placeholders builds "?, ?, ?" for an IN list of n bound parameters.
 func placeholders(n int) string {

@@ -252,7 +252,10 @@ func TestContractsEndToEndOverMCP(t *testing.T) {
 		Kinds     []string                                 `json:"kinds"`
 	}
 	body = w.get(ana, "/v1/teams/"+tm.slug+"/conflicts/history", &hist)
-	if strings.Join(hist.Kinds, ",") != "path_overlap,contract_mismatch,contract_unclaimed,contract_naming_variant" {
+	// decision_contradiction joined the live kinds with report_judgement
+	// (docs/DECISIONS.md §5.1); duplicate_work and stale_base are still
+	// detected by nothing and are still absent.
+	if strings.Join(hist.Kinds, ",") != "path_overlap,contract_mismatch,contract_unclaimed,contract_naming_variant,decision_contradiction" {
 		t.Fatalf("history kinds = %v", hist.Kinds)
 	}
 	kinds := map[string]bool{}

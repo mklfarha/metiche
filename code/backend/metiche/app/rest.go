@@ -197,6 +197,11 @@ var AllowedRoutes = map[string]string{
 	webapi.PathConflictHistory: "board conflict history",
 	webapi.PathEvents:          "board event history",
 	webapi.PathGraph:           "board graph over a past window",
+	// Past decisions: the superseded and revoked ones GET /decisions no
+	// longer returns, and one decision's earlier wordings from the event log
+	// (docs/DECISIONS.md §5.1). Same guard and same footing as the three
+	// above.
+	webapi.PathDecisionHistory: "board decision history",
 
 	// Board sign-in (docs/BOARD_LOGIN.md §6.1). BOARD ONLY; NOT ROUTED BY ANY
 	// INGRESS. They must be listed here or this layer would 404 the board's

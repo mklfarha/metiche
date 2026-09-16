@@ -98,14 +98,16 @@ func loadSessionConflicts(ctx context.Context, tx *sql.Tx, teamUUID, sessionUUID
 //
 // evidence is JSON the detector writes, and most of it is not the board's to
 // show: the two sides' intent summaries are whatever an agent typed. Only its
-// three path keys are read, each by name, so the rest of the document never
-// reaches a response.
+// three path keys and, for a decision_contradiction, the first field issue —
+// the one line the plan's own model wrote (docs/DECISIONS.md §9.4) — are read,
+// each by name, so the rest of the document never reaches a response.
 const conflictColumns = "c.`id`, c.`key`, c.`kind`, c.`severity`, c.`status`, c.`detected_by`, " +
 	"c.`detector_rule`, c.`suggested_action`, c.`occurrence_count`, " +
 	"c.`first_detected_at`, c.`last_detected_at`, " +
 	"c.`resolution`, c.`resolution_note`, c.`dismiss_reason`, c.`resolved_at`, " +
 	"JSON_VALUE(c.`evidence`, '$.overlap_path'), JSON_VALUE(c.`evidence`, '$.a_pattern'), " +
-	"JSON_VALUE(c.`evidence`, '$.b_pattern')"
+	"JSON_VALUE(c.`evidence`, '$.b_pattern'), c.`escalated_at`, " +
+	"JSON_VALUE(c.`evidence`, '$.field_issues[0]')"
 
 // loadConflictsWhere is the shared read. where is appended verbatim, so it is
 // only ever one of the literal fragments in this package; every value in it is
@@ -153,12 +155,14 @@ func queryConflicts(ctx context.Context, tx *sql.Tx, q string, args []any, limit
 			occurrences                        sql.NullInt64
 			resolution, dismissReason          sql.NullInt64
 			overlapPath, aPattern, bPattern    sql.NullString
+			escalatedAt                        sql.NullTime
+			judgeNote                          sql.NullString
 			at                                 sql.NullTime
 		)
 		dest := []any{&id, &c.Key, &kind, &severity, &status, &detectedBy,
 			&rule, &action, &occurrences, &first, &last,
 			&resolution, &resNote, &dismissReason, &resolvedAt,
-			&overlapPath, &aPattern, &bPattern}
+			&overlapPath, &aPattern, &bPattern, &escalatedAt, &judgeNote}
 		if ordered {
 			dest = append(dest, &at)
 		}
@@ -180,9 +184,21 @@ func queryConflicts(ctx context.Context, tx *sql.Tx, q string, args []any, limit
 		if dismissReason.Valid && enums.DismissReason(dismissReason.Int64) != enums.DISMISS_REASON_INVALID {
 			c.DismissReason = enums.DismissReason(dismissReason.Int64).String()
 		}
-		c.Paths = conflictPaths(overlapPath, aPattern, bPattern)
-		if strings.HasPrefix(c.Kind, "contract_") {
-			c.ContractKey = strings.TrimSpace(overlapPath.String)
+		c.EscalatedAt = rfc3339(escalatedAt)
+		if enums.ConflictKind(kind.Int64) == enums.CONFLICT_KIND_DECISION_CONTRADICTION {
+			// A decision conflict's overlap_path is the decision's KEY, not a
+			// path (docs/DECISIONS.md §9.4), so it goes to decision_key and
+			// never into paths. What is left is the plan's path and the
+			// decision's scope pattern, in that order: what the agent is
+			// touching first, what governs it second.
+			c.DecisionKey = strings.TrimSpace(overlapPath.String)
+			c.JudgeNote = strings.TrimSpace(judgeNote.String)
+			c.Paths = conflictPaths(bPattern, aPattern)
+		} else {
+			c.Paths = conflictPaths(overlapPath, aPattern, bPattern)
+			if strings.HasPrefix(c.Kind, "contract_") {
+				c.ContractKey = strings.TrimSpace(overlapPath.String)
+			}
 		}
 		c.Participants = []participantWire{}
 		out = append(out, c)
