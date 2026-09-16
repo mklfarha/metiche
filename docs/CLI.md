@@ -36,11 +36,23 @@ invisible until somebody spends hours reading logs by hand.**
   creates one (`sessions.go:43,130`). So it made two projects, and a real collision on `app/rest.go`
   was never detected. A server fix is committed (`1b44075`): `start_session` matches by normalized `repo_url`.
   `metiche init` (§1.10) is the CLI half, and doctor detects the split (§2.2.1).
-- **A second team with the same name is one call away.** `create_team` dedupes only on its
-  idempotency key, from which it derives the team's uuid (`createteam.go:129-132`). The same name
-  with another key is a second team whose slug gets a `-xxxxxx` suffix (`createteam.go:215-221`).
-  `install.sh` checks `list_teams` for a same-named team before creating (`install.sh:1350-1358`);
-  an agent calling `create_team` directly does not.
+- **A second team with the same name was one call away.** `create_team` deduped on its
+  idempotency key alone, from which it derives the team's uuid, so the same name with another key
+  made a second team whose slug got a `-xxxxxx` suffix (`createteam.go:268-279`). An agent that
+  retried "create a team called X" after a lost answer, or in a new conversation, chose a fresh
+  key and made one. **A server fix is committed** (`816c298`, `app/mcp/createteamguard.go`): a
+  call carrying a token is refused with `already_exists` when the account is a live member of an
+  **active** team whose `slugKey(name, 40)` matches, and the refusal names every matching slug and
+  says to pass that `team_slug` instead. A replay of the creating call is answered before the
+  check, so a retry is never refused; two concurrent creates on one account serialize on a named
+  lock (`lockAccountCreates`, 10 s); and `create_team`'s description now tells callers to run
+  `list_teams` first (`server.go:226`). A second team with the same name is a deliberate act now:
+  `allow_duplicate_name: true`, or `metiche teams create <name> --allow-duplicate-name`
+  (`teams.go:189,210`). The CLI half checks `list_teams` itself and exits 6 before writing
+  anything (`teams.go:137-160`, §1.4.1), and `metiche teams` marks the duplicates an account
+  already has (§1.4). `install.sh` still compares `ascii_downcase` of the raw name rather than
+  `slugKey` (`install.sh:1474-1475`), so it catches only an exact-name repeat; §4.8 owns that
+  switch.
 
 The REST API is default-deny now (`code/backend/metiche/app/rest.go`, `AllowedRoutes`): only
 `/healthz`, `/v1/mcp`, `/v1/metrics/mcp` and the board's `/v1/teams/{slug}…` routes answer, and the
@@ -1382,9 +1394,9 @@ six new tools. The two scopes and the `create_team` change add none.
 
 > **Status (2026-09-14): built**: the guard (`app/mcp/createteamguard.go`) and the identity defaults (`createteam.go`), with two deviations in §11.
 
-The gap is in Context: dedupe is by idempotency key only. Agents choose a fresh key per attempt, so
-an agent that retries "create a team called X" after a lost response, or in a new conversation,
-makes a second X.
+The gap was in Context: dedupe was by idempotency key only. Agents choose a fresh key per attempt,
+so an agent that retried "create a team called X" after a lost response, or in a new conversation,
+made a second X. This section is what closed it.
 
 | | |
 |---|---|
@@ -1417,8 +1429,9 @@ makes a second X.
 
 Normalization is `slugKey`, the function that makes slugs (`handler.go:285-305`). So "Hack Night",
 "hack-night" and " HACK  night " are one name, exactly when they would have produced the same slug
-base. `install.sh:1351-1352` compares `ascii_downcase` of the raw name and should switch to the same
-rule (owned there). Its check stays, because it refuses before anything is written.
+base. `install.sh:1474-1475` still compares `ascii_downcase` of the raw name and should switch to
+the same rule (owned there; **not done**). Its check stays, because it refuses before anything is
+written.
 
 **Identity defaults for an agent token.** `metiche teams create` needs these (§1.4.1); they are
 independent of the guard.
