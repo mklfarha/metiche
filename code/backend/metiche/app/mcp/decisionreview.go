@@ -154,14 +154,9 @@ func (d *decisionReviewer) reviewIntent(ctx context.Context, tc *TxContext, m *M
 	if st := enums.IntentStatus(status); st != enums.INTENT_STATUS_DECLARED && st != enums.INTENT_STATUS_ACTIVE {
 		return nil
 	}
-	if update {
-		// A pair judged against the plan's previous wording can never be
-		// answered; the new revision earns its own.
-		if err := expireIntentJudgements(ctx, q, req.SessionUUID, *req.IntentUUID, revision, tc.Now); err != nil {
-			return err
-		}
-	}
-
+	// A pair against the plan's previous wording is NOT expired here. It stays
+	// pending, and report_judgement refuses it as stale (§3.3) so the agent is
+	// told its plan moved; the sweeper expires it later (§4.4).
 	var paths []coordination.NormalizedPath
 	if update {
 		held, err := loadIntentHeldPaths(ctx, q, intentID, tc.Now, settleMaxPathsPerSession)

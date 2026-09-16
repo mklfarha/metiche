@@ -500,9 +500,6 @@ func (h *Handler) applyRecordDecision(ctx context.Context, tc *TxContext, env *E
 			takeOverArg(takeOver, r.MemberUUID), tc.Now, target.ID.String()); err != nil {
 			return retryable(err, "superseding the old decision")
 		}
-		if err := expireDecisionJudgements(ctx, tc.Tx, r.TeamUUID, target.ID, 0, tc.Now); err != nil {
-			return err
-		}
 		n, err := h.settleConflictsOnDecision(ctx, tc, changed, target.Key, actor)
 		if err != nil {
 			return err
@@ -558,9 +555,6 @@ func (h *Handler) applyRecordDecision(ctx context.Context, tc *TxContext, env *E
 			int64(enums.DECISION_STATUS_REVOKED), r.SessionUUID.String(), takeOverArg(takeOver, r.MemberUUID),
 			nullIfEmpty(in.Rationale), tc.Now, row.ID.String()); err != nil {
 			return retryable(err, "revoking the decision")
-		}
-		if err := expireDecisionJudgements(ctx, tc.Tx, r.TeamUUID, row.ID, 0, tc.Now); err != nil {
-			return err
 		}
 		n, err := h.settleConflictsOnDecision(ctx, tc, changed, row.Key, actor)
 		if err != nil {
@@ -642,11 +636,9 @@ func (r *decisionRecord) rewriteDecision(ctx context.Context, h *Handler, tc *Tx
 	if err := r.writeScope(ctx, tc, true); err != nil {
 		return err
 	}
-	// Pairs against the old wording can never be answered; the new wording
-	// earns every plan a new pair in Detect.
-	if err := expireDecisionJudgements(ctx, tc.Tx, r.TeamUUID, row.ID, r.Revision, tc.Now); err != nil {
-		return err
-	}
+	// Pairs against the old wording stay pending: report_judgement refuses one
+	// as stale, naming the new revision (§3.3), and the new wording earns every
+	// live plan a fresh pair in Detect. Revisions close nothing (§4.5).
 	r.Outcome = outcome
 	return nil
 }

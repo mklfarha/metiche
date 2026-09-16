@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gofrs/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -718,8 +719,20 @@ func planOwnerAction(intent, decision, statement, decider, deciderSession string
 }
 
 // deciderAction is what the decider's agent reads after "CF-31 (medium) on
-// #key: ", within what get_instructions shows.
+// #key: ", within the instructionTextChars get_instructions shows.
+//
+// The quoted rationale is what gives way, never the sentence: an action cut
+// off before "revise it with record_decision" tells the decider a conflict
+// exists and not what to do about it, which is the one thing a notice must
+// never do. So the rationale gets the room that is left, at most §4.8's 60.
 func deciderAction(ownerName, intent, rationale string) string {
-	return clip(fmt.Sprintf("%s judged its plan %s breaks your decision: \"%s\". They were told to follow it. If the decision should change, revise it with record_decision.",
-		ownerName, intent, clip(sanitizeNoteText(rationale), 60)), instructionTextChars)
+	const shape = "%s judged its plan %s breaks your decision: \"%s\". They were told to follow it. If the decision should change, revise it with record_decision."
+	room := instructionTextChars - utf8.RuneCountInString(fmt.Sprintf(shape, ownerName, intent, ""))
+	if room > 60 {
+		room = 60
+	}
+	if room < 0 {
+		room = 0
+	}
+	return clip(fmt.Sprintf(shape, ownerName, intent, clip(sanitizeNoteText(rationale), room)), instructionTextChars)
 }

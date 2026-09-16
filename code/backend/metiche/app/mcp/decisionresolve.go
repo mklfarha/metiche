@@ -126,32 +126,15 @@ func ExpireJudgementsOfSession(ctx context.Context, q queryer, sessionUUID uuid.
 	return n, nil
 }
 
-// expireIntentJudgements expires an intent's pending judgements assigned to its
-// session: all of them (belowRevision 0), or only those judged against an
-// older revision of the plan. Driven by idx_judgement_assignment.
-func expireIntentJudgements(ctx context.Context, q queryer, sessionUUID, intentUUID uuid.UUID, belowRevision int64, now time.Time) error {
-	query := "UPDATE `judgement` SET `status` = ?, `updated_at` = ? WHERE `judge_session_uuid` = ? AND `status` = ? AND `subject_b_uuid` = ?"
-	args := []any{int64(enums.JUDGEMENT_STATUS_EXPIRED), now, sessionUUID.String(), int64(enums.JUDGEMENT_STATUS_PENDING), intentUUID.String()}
-	if belowRevision > 0 {
-		query += " AND `subject_b_revision` < ?"
-		args = append(args, belowRevision)
-	}
-	_, err := q.ExecContext(ctx, query, args...)
+// expireIntentJudgements expires the pending judgements assigned to a session
+// for one plan, when that plan is over (§3.4: update_intent terminal). Driven
+// by idx_judgement_assignment. A plan that merely changed keeps its pairs: the
+// agent is told they are stale when it answers one.
+func expireIntentJudgements(ctx context.Context, q queryer, sessionUUID, intentUUID uuid.UUID, now time.Time) error {
+	_, err := q.ExecContext(ctx,
+		"UPDATE `judgement` SET `status` = ?, `updated_at` = ? WHERE `judge_session_uuid` = ? AND `status` = ? AND `subject_b_uuid` = ?",
+		int64(enums.JUDGEMENT_STATUS_EXPIRED), now, sessionUUID.String(), int64(enums.JUDGEMENT_STATUS_PENDING), intentUUID.String())
 	return retryable(err, "expiring the plan's pairs to judge")
-}
-
-// expireDecisionJudgements expires the pending judgements on one decision: all
-// of them (belowRevision 0), or those against an older wording. Driven by
-// idx_judgement_subject (team_uuid, subject_a_uuid, …).
-func expireDecisionJudgements(ctx context.Context, q queryer, teamUUID, decisionUUID uuid.UUID, belowRevision int64, now time.Time) error {
-	query := "UPDATE `judgement` SET `status` = ?, `updated_at` = ? WHERE `team_uuid` = ? AND `subject_a_uuid` = ? AND `status` = ?"
-	args := []any{int64(enums.JUDGEMENT_STATUS_EXPIRED), now, teamUUID.String(), decisionUUID.String(), int64(enums.JUDGEMENT_STATUS_PENDING)}
-	if belowRevision > 0 {
-		query += " AND `subject_a_revision` < ?"
-		args = append(args, belowRevision)
-	}
-	_, err := q.ExecContext(ctx, query, args...)
-	return retryable(err, "expiring the decision's pairs to judge")
 }
 
 // SettleDecisionConflict re-evaluates one decision_contradiction conflict (§4.5) and closes it

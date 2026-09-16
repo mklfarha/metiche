@@ -568,7 +568,7 @@ func (h *Handler) UpdateIntent(ctx context.Context, _ *mcp.CallToolRequest, args
 			// contradicted no longer has a plan breaking it
 			// (docs/DECISIONS.md §3.4, §4.5).
 			if terminal {
-				if err := expireIntentJudgements(ctx, tc.Tx, sess.ID, intent.ID, 0, tc.Now); err != nil {
+				if err := expireIntentJudgements(ctx, tc.Tx, sess.ID, intent.ID, tc.Now); err != nil {
 					return err
 				}
 				ids, err := OpenDecisionConflictsOfSession(ctx, tc.Tx, who.Team.ID, sess.ID)
