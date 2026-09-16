@@ -1,8 +1,7 @@
 # metiche — learnings
 
 What went wrong (or nearly did) while building and running metiche, why, and the rule we
-follow now. Dates are 2026-09-12/13 (UTC evening/night). Entries marked **open** are not
-fixed yet.
+follow now. Dates are 2026-09-12 to 2026-09-15. Entries marked **open** are not fixed yet.
 
 Each entry: **what happened** → **why** → **rule** → **enforced by**.
 
@@ -47,7 +46,34 @@ identity value was left for an LLM to choose.
   `-xxxxxx` slug. Only `install.sh` checks `list_teams` by name first.
 - **Rule:** the server refuses a same-named team on the caller's account unless explicitly
   asked; agents call `list_teams` before `create_team`.
-- **Enforced by:** **open** — planned in `docs/CLI.md` §4.
+- **Enforced by:** **fixed.** 816c298: when the request carries a token, `create_team` compares
+  `slugKey(name, 40)` against the caller's live memberships of active teams and answers
+  `already_exists` naming every matching slug. `allow_duplicate_name: true` is the only way
+  past, and its schema says it is for when the person explicitly asked for a second team.
+  Concurrent creates on one account serialize on a MySQL named lock held until the membership
+  row exists, so the second create sees the first. A replay of the creating call is answered
+  before the check, so a retry is never refused. The `create_team` description now says to call
+  `list_teams` first (`server.go:226`). `createteamguard.go`, `createteamguard_test.go`;
+  `docs/CLI.md` §4.8.
+
+### 1.4 `session_key` is unique per team, so a bare key can be ambiguous
+
+- **What happened:** an agent's sessions failed every call on a new team, because another team
+  of the same account already had sessions with the same keys (`S-5`, `S-6`). `RequireSession`
+  matched both rows and refused `declare_intent`, `heartbeat` and `end_session` alike. The work
+  those sessions were doing never reached collision detection at all.
+- **Why:** the key is unique *within a team*, and the call carried no team. Worse, the refusal
+  said to "end the ones you are not using" — a way out the caller could not take, because
+  ending a session needs the same ambiguous key, and one of the matches had ended days ago.
+- **Rule:** an identifier that is only unique inside a scope carries that scope on every call
+  that uses it. And an error names something the caller can actually do.
+- **Enforced by:** **fixed.** 5d70295: `RequireSessionOnTeam` narrows in a fixed order —
+  `team_slug` when the call carries one (a filter, not a preference), then the calling agent's
+  own sessions, then live or stale over ended and abandoned — each step applied only while it
+  leaves something. Anything still ambiguous is two usable sessions with one key: refused with
+  the team slugs to choose from and an ask for `team_slug`, never picked arbitrarily. The seven
+  tools that take `session_key` gained an optional `team_slug`, and `start_session` returns the
+  one to pass (`app/mcp/auth.go`, `sessionkey_integration_test.go`).
 
 ### General rule
 Any identity value — agent, project, team, session — comes from **the credential**, **the
@@ -88,6 +114,35 @@ model's guess. When one looks free-text in a tool schema, that is a bug.
 - **Tests that can't fail prove nothing.** → Mutation runs: break the code on purpose, show
   the test fail, restore, show it pass. Required for every key check (e.g. 74752ea's
   installer fix reproduces the owner's exact error when reverted).
+- **A callback nothing called (the sweeper's settled conflicts).**
+  - **What happened:** `sweepEvent.finish` was set by all three settle paths in
+    `app/sweeper/conflicts.go` and never invoked: `appendEvent` ran the `extra` hook and then
+    wrote the row straight from the struct's own fields. Every conflict the sweeper settled —
+    path overlaps and contracts as well as decisions — wrote a `conflict_resolved` event with a
+    NULL summary, subject key and payload, so the board and the event feed showed a conflict
+    closing with no explanation at all.
+  - **Why:** the tests held the settle (the conflict closed, the sequence advanced) and the code
+    that *builds* the words, never the row that was stored. A struct field holding a callback is
+    worth exactly as much as the one call site that runs it.
+  - **Rule:** assert the stored row, column by column, not the code path that should have filled
+    it. Fixed in abe4bf6 — one call site, after `extra` and before the INSERT, which repairs all
+    three settle paths together. `conflict_event_integration_test.go` reads the `team_event` row
+    back for each of the three kinds and holds it to what `app/mcp` writes for the same
+    situation, plus the structural flag, the sequence and the idempotency key.
+- **A mutation that does not fail is itself a finding (decisions release).**
+  - Removing the clause that keeps a re-offered judging request with its own judge
+    (`AND judge_session_uuid = ?` in `rearmPair`, `app/sweeper/decisions.go`) failed no test. The
+    UPDATE is pinned by row id, so the guard only bites on a stale read — the backlog is scanned
+    outside any lock, and another pod can re-assign the row in between. Without the clause the
+    write lands on `id` alone and hands one agent's plan to another agent to judge.
+    `TestIntegrationReArmOnlyEverExtendsThePairsOwnJudge` (abe4bf6) now drives exactly that: a
+    `pendingPair` carrying a judge the stored row no longer has.
+  - An agent's own cursor-ordering mutation passed until it seeded two rows tied on the sort
+    column; then the broken ordering silently dropped a row. A test that cannot reach the branch
+    is not a test of it.
+  - A mutation changed two lines instead of one, because the pattern matched twice — so the
+    failure proved nothing about either line. **Confirm the pattern matches exactly one line, and
+    paste the diff of the mutation, not only the test output.**
 - **A stale server answers too.** Testing against an old binary still on `:8080` looked
   like a pass. → Build to an explicit binary path; confirm the listener with `lsof`.
 - **Prod state is checked from outside**: served `install.sh` hash vs the commit, tool
@@ -182,6 +237,26 @@ model's guess. When one looks free-text in a tool schema, that is a bug.
   reads it: old binary on new schema is fine; new binary on old schema breaks every join.
   `apply-schema.sh` is `CREATE TABLE IF NOT EXISTS` only → dated ALTER files in
   `deploy/sql/` (`2026-09-agent-token-hash.sql`), verified with `SHOW COLUMNS` first.
+- **A unique index that was too narrow.** `contract_field.uq_contract_field_path` was
+  `(assertion_uuid, path)`, so a field present in both the request and the response (an `id`
+  sent and returned) could be stored only once, and `insertContractFields` skipped the second.
+  Nothing that decides a verdict reads those rows — detection compares the canonical shape on
+  the assertion row, which keeps every field — so the only effect was a visible one: a
+  `field_count` one short on the board. → **When a row's identity includes a direction or a
+  role, that column belongs in the unique key.** The index is `(assertion_uuid, direction,
+  path)` from nuzur v7 (4015f5f, 7fbfbdb, `deploy/sql/2026-09-decisions.sql`).
+- **Dropping a unique index that a foreign key relies on fails with MySQL error 1553.**
+  `uq_contract_field_path` was the only index whose leftmost column is `assertion_uuid`, so it
+  was what `assertion_has_fields` was using. → Three statements, in this order: **add** the
+  replacement under a temporary name, **drop** the old one, **rename** the new one. The foreign
+  key always has a supporting index, and a failure midway leaves the table with both indexes or
+  with only the new one under its temporary name — `SHOW CREATE TABLE` says which, and the
+  remaining statements finish the job (`deploy/sql/2026-09-decisions.sql`).
+- **A migration is proven against a database, not read.** Migrate a copy of the old database and
+  compare `SHOW CREATE TABLE` with a fresh one built from `create.sql`, and run the **old**
+  code's tests against the migrated database before the new binary ships. The file is
+  deliberately not idempotent: a second run fails on a duplicate column (ERROR 1060) rather than
+  silently doing nothing, so "was it applied?" always has a clear answer.
 - **MySQL JSON columns:** passing `[]byte` fails (MySQL 3144 with `interpolateParams`) →
   pass `string(...)`; every DSN, including tests, uses `interpolateParams=true`.
 - **MySQL chart** needs `runAsUser: 999`.
@@ -238,6 +313,12 @@ model's guess. When one looks free-text in a tool schema, that is a bug.
 - **Orchestrate, and demand pasted proof.** Agents report files written, exact commands and
   real output. "Tests pass" with no output is treated as untested. The orchestrator re-runs
   the key proof before committing.
+- **Each agent runs its own database.** Integration tests need a real MySQL
+  (`METICHE_TEST_MYSQL_DSN`, `go test -p 1`) and agents run in parallel, so each brings up its
+  own container with a random password written under `umask 077` into a private directory and
+  never printed (`deploy/sql/nuzur/test-views-docker.sh` is the pattern). A shared database
+  makes one agent's failure another agent's mystery, and a password on a command line is a
+  password in someone's shell history.
 - **Explicit file ownership per agent.** `auth.go` was clobbered when two agents edited it
   at once. Every brief names the files an agent owns; two agents never share one.
 - **nuzur schema first, owner approval before codegen.** Generated `DO NOT EDIT` files are
