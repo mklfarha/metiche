@@ -450,6 +450,10 @@ func TestIntegrationDeclareIntentReplaysVerbatim(t *testing.T) {
 		sessionUUIDFor(t, hs, bobKey)); n != 1 {
 		t.Errorf("the retry declared %d intents, want 1", n)
 	}
+	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `intent` WHERE `session_uuid` = ? AND `wording_revision` = 1",
+		sessionUUIDFor(t, hs, bobKey)); n != 1 {
+		t.Errorf("%d intents declared with wording_revision 1, want 1: a new plan starts at wording revision 1", n)
+	}
 	if n := countRows(t, hs.core.DB(), "SELECT COUNT(*) FROM `conflict`"); n != 1 {
 		t.Errorf("the retry produced %d conflicts, want 1", n)
 	}

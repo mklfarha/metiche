@@ -255,8 +255,11 @@ func (h *Handler) DeclareIntent(ctx context.Context, _ *mcp.CallToolRequest, arg
 					Status:      enums.INTENT_STATUS_DECLARED,
 					ExternalRef: nullString(truncate(args.ExternalRef, 120)),
 					Revision:    1,
-					DeclaredAt:  nullTime(tc.Now),
-					ExpiresAt:   nullTime(tc.Now.Add(IntentHorizon)),
+					// The generated insert names every column, so the
+					// schema's DEFAULT 1 never applies; say it here.
+					WordingRevision: 1,
+					DeclaredAt:      nullTime(tc.Now),
+					ExpiresAt:       nullTime(tc.Now.Add(IntentHorizon)),
 				},
 			}, intentmod.WithSQLTransaction(tc.Tx)); err != nil {
 				return retryable(err, "recording the intent")
