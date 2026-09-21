@@ -421,6 +421,105 @@ func TestDecisionsPayloadIsTheSpecExample(t *testing.T) {
 	}
 }
 
+// TestDecisionsCountEachPlansLatestVerdict: judged counts one entry per plan,
+// its latest judgement on the decision's current revision (§5.1), not every
+// verdict it was ever given. Each decision below is one case, all served by
+// one GET.
+func TestDecisionsCountEachPlansLatestVerdict(t *testing.T) {
+	db := testDB(t)
+	fx := seedBoard(t, db)
+	ids := fixtureIDsFor(t, db, fx.teamID)
+	srv := newBoardServer(t, db)
+
+	decision := func(key string, revision int64) string {
+		id := newUUID(t)
+		mustExec(t, db, "INSERT INTO `decision` (`id`,`team_uuid`,`project_uuid`,`key`,`title`,`statement`,`status`,"+
+			"`always_show`,`revision`,`decided_by_member_uuid`,`decided_at`,`updated_at`) VALUES (?,?,?,?,?,?,?,?,?,?,NOW(),NOW())",
+			id, fx.teamID, ids.project, key, "test "+key, "test statement for "+key,
+			enums.DECISION_STATUS_ACCEPTED, 0, revision, ids.ana)
+		return id
+	}
+	judge := func(decisionID string, decisionRev int64, plan string, planRev int64,
+		status enums.JudgementStatus, verdict enums.JudgementVerdict) {
+		insertPlanJudgement(t, db, fx.teamID, decisionID, decisionRev, plan, planRev, status, verdict)
+	}
+	const (
+		judged  = enums.JUDGEMENT_STATUS_JUDGED
+		pending = enums.JUDGEMENT_STATUS_PENDING
+		expired = enums.JUDGEMENT_STATUS_EXPIRED
+		none    = enums.JUDGEMENT_VERDICT_INVALID
+	)
+
+	// A plan judged conflict, then revised (a new pair key) and judged
+	// no_conflict: the contradiction is settled, so it counts once, as
+	// no_conflict. The newer row is written FIRST, so insertion order cannot
+	// be what picks it. The decision is at revision 3; a verdict on its
+	// revision 2 is about wording it no longer has and is not counted at all.
+	rejudged, plan := decision("#test-rejudged", 3), newUUID(t)
+	judge(rejudged, 3, plan, 2, judged, enums.JUDGEMENT_VERDICT_NO_CONFLICT)
+	judge(rejudged, 3, plan, 1, judged, enums.JUDGEMENT_VERDICT_CONFLICT)
+	judge(rejudged, 2, newUUID(t), 1, judged, enums.JUDGEMENT_VERDICT_CONFLICT)
+
+	// Two plans, each judged once: two entries.
+	twoPlans := decision("#test-two-plans", 1)
+	judge(twoPlans, 1, newUUID(t), 1, judged, enums.JUDGEMENT_VERDICT_NO_CONFLICT)
+	judge(twoPlans, 1, newUUID(t), 4, judged, enums.JUDGEMENT_VERDICT_NO_CONFLICT)
+
+	// A plan judged conflict, revised, and not yet re-judged: it is waiting
+	// on its new wording, not still in conflict.
+	recheck, plan := decision("#test-recheck", 1), newUUID(t)
+	judge(recheck, 1, plan, 1, judged, enums.JUDGEMENT_VERDICT_CONFLICT)
+	judge(recheck, 1, plan, 2, pending, none)
+
+	// Expired rows are never counted and never the latest. A plan whose only
+	// pair expired counts nothing; a plan whose re-check expired unanswered
+	// still counts by the verdict it was last given.
+	lapsed := decision("#test-expired", 1)
+	judge(lapsed, 1, newUUID(t), 1, expired, none)
+	plan = newUUID(t)
+	judge(lapsed, 1, plan, 1, judged, enums.JUDGEMENT_VERDICT_UNSURE)
+	judge(lapsed, 1, plan, 2, expired, none)
+
+	var out decisionsResponse
+	raw := getJSON(t, srv.URL+"/v1/teams/"+fx.slug+"/decisions", &out)
+	got := map[string]decisionJudgedWire{}
+	for _, d := range out.Decisions {
+		got[d.Key] = d.Judged
+	}
+	for key, want := range map[string]decisionJudgedWire{
+		"#test-rejudged":  {NoConflict: 1},
+		"#test-two-plans": {NoConflict: 2},
+		"#test-recheck":   {Pending: 1},
+		"#test-expired":   {Unsure: 1},
+	} {
+		g, ok := got[key]
+		if !ok {
+			t.Fatalf("%s is not on /decisions: %s", key, raw)
+		}
+		if g != want {
+			t.Errorf("%s judged = %+v, want %+v", key, g, want)
+		} else {
+			t.Logf("%s judged = %+v", key, g)
+		}
+	}
+}
+
+// insertPlanJudgement writes one judgement row for a named plan at a named
+// plan revision. The pair key carries both revisions, as the reviewer's does.
+func insertPlanJudgement(t *testing.T, db *sql.DB, teamID, decisionID string, decisionRev int64, plan string, planRev int64,
+	status enums.JudgementStatus, verdict enums.JudgementVerdict) {
+	t.Helper()
+	var verdictArg any
+	if verdict != enums.JUDGEMENT_VERDICT_INVALID {
+		verdictArg = verdict.ToInt64()
+	}
+	mustExec(t, db, "INSERT INTO `judgement` (`id`,`team_uuid`,`pair_key`,`kind`,`subject_a_kind`,`subject_a_uuid`,`subject_a_revision`,"+
+		"`subject_b_kind`,`subject_b_uuid`,`subject_b_revision`,`status`,`verdict`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+		newUUID(t), teamID, fmt.Sprintf("pair-%s-%d-%s-%d", decisionID[:8], decisionRev, plan[:8], planRev),
+		enums.CONFLICT_KIND_DECISION_CONTRADICTION, enums.SUBJECT_KIND_DECISION, decisionID, decisionRev,
+		enums.SUBJECT_KIND_INTENT, plan, planRev, status.ToInt64(), verdictArg)
+}
+
 // TestDecisionsListsAlwaysShowFirstAndClipsTheRationale: the order the tab
 // draws, and what happens to a rationale an agent wrote too long, with a
 // credential in it.

@@ -205,21 +205,43 @@ func attachDecisionDetail(ctx context.Context, tx *sql.Tx, teamUUID string, ids 
 	return attachOpenDecisionConflicts(ctx, tx, teamUUID, byKey)
 }
 
-// attachJudgedCounts counts the judgements on each decision's CURRENT
-// revision, by verdict among the judged rows and as one number among the
-// pending ones, assigned or not. Expired rows are not counted: a pair whose
-// window lapsed was never answered, and reporting it as waiting would show a
-// board that is waiting for nobody.
+// attachJudgedCounts counts, per decision at its CURRENT revision, one entry
+// per plan: the state of that plan's LATEST judgement row, by verdict when it
+// is judged and as one number when it is pending, assigned or not
+// (docs/DECISIONS.md §5.1).
+//
+// A plan's latest row is, among its rows on the decision's current revision
+// that have not expired, the one with the highest plan revision
+// (subject_b_revision). Revisions only grow, so that is the row on the plan's
+// current revision when one exists, and otherwise the newest row it has. A
+// plan judged conflict, then revised and judged no_conflict, counts once, as
+// no_conflict: the earlier verdict was about wording the plan no longer has.
+// The plan revision is part of the pair key, so (decision revision, plan,
+// plan revision) names one row; the id only makes the order total.
+//
+// Expired rows are neither counted nor chosen as latest: a pair whose window
+// lapsed was never answered, and reporting it as waiting would show a board
+// that is waiting for nobody. A plan that has ended still counts by its last
+// verdict: the card reads "checked against N plans", and it was checked.
+// Ending a plan expires its pending rows, so an ended plan is never waiting.
 //
 // The join to `decision` is what "current revision" means — subject_a is the
 // decision, subject_b the plan — and idx_judgement_subject
-// (team_uuid, subject_a_uuid, subject_b_uuid) serves the lookup.
+// (team_uuid, subject_a_uuid, subject_b_uuid) serves the lookup, handing the
+// rows over already grouped by (decision, plan), the window's partition.
 func attachJudgedCounts(ctx context.Context, tx *sql.Tx, args []any, in string, byID map[string]*decisionWire) error {
-	q := "SELECT j.`subject_a_uuid`, j.`status`, j.`verdict`, COUNT(*) FROM `judgement` j " +
+	q := "SELECT l.`subject_a_uuid`, l.`status`, l.`verdict`, COUNT(*) FROM (" +
+		"SELECT j.`subject_a_uuid`, j.`status`, j.`verdict`, ROW_NUMBER() OVER (" +
+		"PARTITION BY j.`subject_a_uuid`, j.`subject_b_uuid` " +
+		"ORDER BY j.`subject_b_revision` DESC, j.`id` DESC) AS `rn` " +
+		"FROM `judgement` j " +
 		"JOIN `decision` d ON d.`id` = j.`subject_a_uuid` AND d.`revision` = j.`subject_a_revision` " +
-		"WHERE j.`team_uuid` = ? AND j.`subject_a_uuid` IN (" + in + ") " +
-		"GROUP BY j.`subject_a_uuid`, j.`status`, j.`verdict`"
-	rows, err := tx.QueryContext(ctx, q, args...)
+		"WHERE j.`team_uuid` = ? AND j.`subject_a_uuid` IN (" + in + ") AND j.`status` <> ?" +
+		") l WHERE l.`rn` = 1 " +
+		"GROUP BY l.`subject_a_uuid`, l.`status`, l.`verdict`"
+	// A copy, so the caller's slice is never appended into.
+	qargs := append(append(make([]any, 0, len(args)+1), args...), int64(enums.JUDGEMENT_STATUS_EXPIRED))
+	rows, err := tx.QueryContext(ctx, q, qargs...)
 	if err != nil {
 		return err
 	}

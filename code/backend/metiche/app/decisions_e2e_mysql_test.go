@@ -579,12 +579,12 @@ func TestDecisionsEndToEndOverMCP(t *testing.T) {
 	if strings.Join(bd.Scope, ",") != strings.Join(decScope(), ",") {
 		t.Errorf("board scope = %v, want %v", bd.Scope, decScope())
 	}
-	// Both verdicts were given against revision 1 of the decision, so §5.1's
-	// rule ("judgements on the decision's CURRENT revision, by verdict") counts
-	// both. §7.4's sketch of "conflict 0" is unreachable while the conflict
-	// verdict's row still names revision 1 — see the report.
-	if bd.Judged.NoConflict != 1 || bd.Judged.Conflict != 1 || bd.Judged.Unsure != 0 || bd.Judged.Pending != 0 {
-		t.Errorf("judged counts = %+v, want 1 no_conflict and 1 conflict on revision 1", bd.Judged)
+	// Both verdicts were given against revision 1 of the decision, but §5.1
+	// counts each plan once, by its latest judgement: Bob's plan was judged
+	// conflict at plan revision 1 and no_conflict at plan revision 2, so the
+	// settled contradiction reads conflict 0, no_conflict 1 (§7.4 step 6).
+	if bd.Judged.NoConflict != 1 || bd.Judged.Conflict != 0 || bd.Judged.Unsure != 0 || bd.Judged.Pending != 0 {
+		t.Errorf("judged counts = %+v, want 1 no_conflict and 0 conflict: the plan's latest verdict", bd.Judged)
 	}
 	if len(bd.OpenConflicts) != 0 {
 		t.Errorf("open_conflicts = %v after the conflict settled", bd.OpenConflicts)

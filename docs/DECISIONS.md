@@ -832,7 +832,12 @@ revision, the decision was revised.
 ### 5.1 Backend reads (`app/webapi`, owner B2)
 
 - **`GET /v1/teams/{slug}/decisions?limit=N`.** Default and max 300, as today. **Now returns accepted decisions only**, always-show first, then `updated_at` desc, then key. Wire in §9.2.
-  - `judged` counts judgements on the decision's **current revision**: `no_conflict`, `conflict` and `unsure` by verdict among judged rows; `pending` among pending rows, assigned or not. Expired rows are not counted. The count is served by `idx_judgement_subject` and filtered by `subject_a_revision`.
+  - `judged` counts **one entry per plan**: the state of that plan's **latest** judgement on the decision's **current revision**. `no_conflict`, `conflict` and `unsure` count plans whose latest row is judged with that verdict; `pending` counts plans whose latest row is pending, assigned or not. The four numbers never add up to more than the number of plans paired with this revision.
+    - **Latest** is, among the plan's rows at `subject_a_revision` = the decision's revision whose status is not `expired`, the one with the highest `subject_b_revision` (the id breaks a tie, which the pair key rules out). Revisions only grow, so that is the row on the plan's current revision when one exists, otherwise the newest row the plan has.
+    - A plan judged `conflict`, then revised (a new pair key) and judged `no_conflict`, counts once, as `no_conflict`. A plan judged `conflict` whose revision is still waiting to be judged counts as `pending`, not `conflict`.
+    - Expired rows are never counted and never the latest: a plan whose re-check expired unanswered still counts by its last verdict; a plan whose only pair expired counts nothing.
+    - A plan that has ended (done, abandoned, superseded) still counts by its last verdict. The card says "checked against N plans", a statement of what was checked, and `open_conflicts` — not `judged.conflict` — is what says a contradiction is live. Ending a plan expires its pending rows, so an ended plan is never counted as waiting.
+    - Served by `idx_judgement_subject` (`team_uuid`, `subject_a_uuid`, `subject_b_uuid`), filtered by `subject_a_revision` and status, with `ROW_NUMBER()` over `(subject_a_uuid, subject_b_uuid)` picking the latest row; no join to `intent`.
   - `open_conflicts` lists open or acknowledged decision conflicts on this decision by key. The query goes `conflict_participant` `subject_kind = decision` → conflict, plus conflicts whose evidence `overlap_path` = key, de-duplicated. Since a decider participant may not exist, **the evidence path is authoritative**: `idx_conflict_open` over the team's open conflicts, filtered by kind and `JSON_VALUE(evidence, '$.overlap_path')`.
 - **`GET /v1/teams/{slug}/decisions/history?status=&cursor=&limit=&key=`.** New, wire in §9.3.
   - `status` is empty (both), `superseded` or `revoked`.
@@ -1263,6 +1268,7 @@ func ShouldEscalate(severity, humanFloor Severity, openSince, now time.Time, cad
 
 Rules:
 - `scope`, `open_conflicts` and `judged` are always present.
+- `judged` counts each plan once, by its latest judgement on the current revision (§5.1); in the example, eight plans were paired with revision 2: five judged `no_conflict`, one `conflict` (CF-31), two still waiting.
 - `decided_by`, `decided_at`, `updated_at`, `project_key`, `rationale`, `supersedes` and `superseded_by` are omitted when empty.
 - `status` is always `accepted` here.
 - Times are RFC 3339 UTC.
