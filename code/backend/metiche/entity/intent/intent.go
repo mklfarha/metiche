@@ -15,24 +15,25 @@ import (
 )
 
 type Intent struct {
-	ID          uuid.UUID          `json:"id"`
-	TeamUUID    uuid.UUID          `json:"team_uuid"`
-	ProjectUUID uuid.UUID          `json:"project_uuid"`
-	SessionUUID uuid.UUID          `json:"session_uuid"`
-	MemberUUID  uuid.UUID          `json:"member_uuid"`
-	Key         string             `json:"key"`
-	Summary     string             `json:"summary"`
-	Detail      null.String        `json:"detail"`
-	Kind        enums.IntentKind   `json:"kind"`
-	Status      enums.IntentStatus `json:"status"`
-	ExternalRef null.String        `json:"external_ref"`
-	Revision    int64              `json:"revision"`
-	DeclaredAt  null.Time          `json:"declared_at"`
-	StartedAt   null.Time          `json:"started_at"`
-	EndedAt     null.Time          `json:"ended_at"`
-	ExpiresAt   null.Time          `json:"expires_at"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   time.Time          `json:"updated_at"`
+	ID              uuid.UUID          `json:"id"`
+	TeamUUID        uuid.UUID          `json:"team_uuid"`
+	ProjectUUID     uuid.UUID          `json:"project_uuid"`
+	SessionUUID     uuid.UUID          `json:"session_uuid"`
+	MemberUUID      uuid.UUID          `json:"member_uuid"`
+	Key             string             `json:"key"`
+	Summary         string             `json:"summary"`
+	Detail          null.String        `json:"detail"`
+	Kind            enums.IntentKind   `json:"kind"`
+	Status          enums.IntentStatus `json:"status"`
+	ExternalRef     null.String        `json:"external_ref"`
+	Revision        int64              `json:"revision"`
+	DeclaredAt      null.Time          `json:"declared_at"`
+	StartedAt       null.Time          `json:"started_at"`
+	EndedAt         null.Time          `json:"ended_at"`
+	ExpiresAt       null.Time          `json:"expires_at"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	WordingRevision int64              `json:"wording_revision"`
 }
 
 func (e Intent) String() string {

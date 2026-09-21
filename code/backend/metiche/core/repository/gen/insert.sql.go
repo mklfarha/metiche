@@ -681,30 +681,31 @@ func (q *Queries) InsertInstruction(ctx context.Context, arg InsertInstructionPa
 
 const insertIntent = `-- name: InsertIntent :execresult
 INSERT INTO ` + "`" + `intent` + "`" + `
-(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `)
+(` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `wording_revision` + "`" + `)
 VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 `
 
 type InsertIntentParams struct {
-	ID          string      `json:"id"`
-	TeamUUID    string      `json:"team_uuid"`
-	ProjectUUID string      `json:"project_uuid"`
-	SessionUUID string      `json:"session_uuid"`
-	MemberUUID  string      `json:"member_uuid"`
-	Key         string      `json:"key"`
-	Summary     string      `json:"summary"`
-	Detail      null.String `json:"detail"`
-	Kind        int64       `json:"kind"`
-	Status      int64       `json:"status"`
-	ExternalRef null.String `json:"external_ref"`
-	Revision    int64       `json:"revision"`
-	DeclaredAt  null.Time   `json:"declared_at"`
-	StartedAt   null.Time   `json:"started_at"`
-	EndedAt     null.Time   `json:"ended_at"`
-	ExpiresAt   null.Time   `json:"expires_at"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+	ID              string      `json:"id"`
+	TeamUUID        string      `json:"team_uuid"`
+	ProjectUUID     string      `json:"project_uuid"`
+	SessionUUID     string      `json:"session_uuid"`
+	MemberUUID      string      `json:"member_uuid"`
+	Key             string      `json:"key"`
+	Summary         string      `json:"summary"`
+	Detail          null.String `json:"detail"`
+	Kind            int64       `json:"kind"`
+	Status          int64       `json:"status"`
+	ExternalRef     null.String `json:"external_ref"`
+	Revision        int64       `json:"revision"`
+	DeclaredAt      null.Time   `json:"declared_at"`
+	StartedAt       null.Time   `json:"started_at"`
+	EndedAt         null.Time   `json:"ended_at"`
+	ExpiresAt       null.Time   `json:"expires_at"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+	WordingRevision int64       `json:"wording_revision"`
 }
 
 func (q *Queries) InsertIntent(ctx context.Context, arg InsertIntentParams) (sql.Result, error) {
@@ -727,6 +728,7 @@ func (q *Queries) InsertIntent(ctx context.Context, arg InsertIntentParams) (sql
 		arg.ExpiresAt,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.WordingRevision,
 	)
 }
 

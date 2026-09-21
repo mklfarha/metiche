@@ -57,6 +57,7 @@ func (e Intent) Validate() error {
 
 	}
 	c.Field("intent.revision", validation.Integer(e.Revision, false, 0, 0, false, false, false, true, -2147483648, 2147483647))
+	c.Field("intent.wording_revision", validation.Integer(e.WordingRevision, false, 0, 0, false, false, false, true, -2147483648, 2147483647))
 
 	return c.Result()
 }

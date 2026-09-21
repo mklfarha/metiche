@@ -148,6 +148,8 @@ func intentDeclarations() *filtering.Declarations {
 		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
 
 		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
+
+		filtering.DeclareIdent("wording_revision", filtering.TypeInt),
 	)
 	if err != nil {
 		log.Printf("error creating declarations for intent: %v", err)

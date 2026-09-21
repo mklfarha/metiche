@@ -48,7 +48,7 @@ SELECT `id`,`team_uuid`,`project_uuid`,`agent_uuid`,`member_uuid`,`key`,`branch`
 FROM `session`;
 
 -- name: FetchIntent :many
-SELECT `id`,`team_uuid`,`project_uuid`,`session_uuid`,`member_uuid`,`key`,`summary`,`detail`,`kind`,`status`,`external_ref`,`revision`,`declared_at`,`started_at`,`ended_at`,`expires_at`,`created_at`,`updated_at`
+SELECT `id`,`team_uuid`,`project_uuid`,`session_uuid`,`member_uuid`,`key`,`summary`,`detail`,`kind`,`status`,`external_ref`,`revision`,`declared_at`,`started_at`,`ended_at`,`expires_at`,`created_at`,`updated_at`,`wording_revision`
 FROM `intent`;
 
 -- name: FetchClaim :many

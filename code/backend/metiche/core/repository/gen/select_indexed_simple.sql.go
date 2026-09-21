@@ -3903,7 +3903,7 @@ func (q *Queries) FetchInstructionByTeamUUIDAndKey(ctx context.Context, arg Fetc
 }
 
 const fetchIntentByID = `-- name: FetchIntentByID :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `wording_revision` + "`" + `
 FROM ` + "`" + `intent` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ?
@@ -3938,6 +3938,7 @@ func (q *Queries) FetchIntentByID(ctx context.Context, id string) ([]Intent, err
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WordingRevision,
 		); err != nil {
 			return nil, err
 		}
@@ -3953,7 +3954,7 @@ func (q *Queries) FetchIntentByID(ctx context.Context, id string) ([]Intent, err
 }
 
 const fetchIntentByIDForUpdate = `-- name: FetchIntentByIDForUpdate :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `wording_revision` + "`" + `
 FROM ` + "`" + `intent` + "`" + `
 WHERE 
     ` + "`" + `id` + "`" + ` = ? 
@@ -3988,6 +3989,7 @@ func (q *Queries) FetchIntentByIDForUpdate(ctx context.Context, id string) ([]In
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WordingRevision,
 		); err != nil {
 			return nil, err
 		}
@@ -4003,7 +4005,7 @@ func (q *Queries) FetchIntentByIDForUpdate(ctx context.Context, id string) ([]In
 }
 
 const fetchIntentByProjectUUIDAndStatus = `-- name: FetchIntentByProjectUUIDAndStatus :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `wording_revision` + "`" + `
 FROM ` + "`" + `intent` + "`" + `
 WHERE 
     ` + "`" + `project_uuid` + "`" + ` = ? AND ` + "`" + `status` + "`" + ` = ? 
@@ -4050,6 +4052,7 @@ func (q *Queries) FetchIntentByProjectUUIDAndStatus(ctx context.Context, arg Fet
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WordingRevision,
 		); err != nil {
 			return nil, err
 		}
@@ -4065,7 +4068,7 @@ func (q *Queries) FetchIntentByProjectUUIDAndStatus(ctx context.Context, arg Fet
 }
 
 const fetchIntentByTeamUUIDAndExternalRef = `-- name: FetchIntentByTeamUUIDAndExternalRef :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `wording_revision` + "`" + `
 FROM ` + "`" + `intent` + "`" + `
 WHERE 
     ` + "`" + `external_ref` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -4112,6 +4115,7 @@ func (q *Queries) FetchIntentByTeamUUIDAndExternalRef(ctx context.Context, arg F
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WordingRevision,
 		); err != nil {
 			return nil, err
 		}
@@ -4127,7 +4131,7 @@ func (q *Queries) FetchIntentByTeamUUIDAndExternalRef(ctx context.Context, arg F
 }
 
 const fetchIntentByTeamUUIDAndKey = `-- name: FetchIntentByTeamUUIDAndKey :many
-SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `
+SELECT ` + "`" + `id` + "`" + `,` + "`" + `team_uuid` + "`" + `,` + "`" + `project_uuid` + "`" + `,` + "`" + `session_uuid` + "`" + `,` + "`" + `member_uuid` + "`" + `,` + "`" + `key` + "`" + `,` + "`" + `summary` + "`" + `,` + "`" + `detail` + "`" + `,` + "`" + `kind` + "`" + `,` + "`" + `status` + "`" + `,` + "`" + `external_ref` + "`" + `,` + "`" + `revision` + "`" + `,` + "`" + `declared_at` + "`" + `,` + "`" + `started_at` + "`" + `,` + "`" + `ended_at` + "`" + `,` + "`" + `expires_at` + "`" + `,` + "`" + `created_at` + "`" + `,` + "`" + `updated_at` + "`" + `,` + "`" + `wording_revision` + "`" + `
 FROM ` + "`" + `intent` + "`" + `
 WHERE 
     ` + "`" + `key` + "`" + ` = ? AND ` + "`" + `team_uuid` + "`" + ` = ? 
@@ -4174,6 +4178,7 @@ func (q *Queries) FetchIntentByTeamUUIDAndKey(ctx context.Context, arg FetchInte
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WordingRevision,
 		); err != nil {
 			return nil, err
 		}

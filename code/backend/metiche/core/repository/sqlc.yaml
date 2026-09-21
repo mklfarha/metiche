@@ -228,7 +228,8 @@ sql:
           uses: Uses
           verdict: Verdict
           visibility: Visibility
-          weight: Weight        
+          weight: Weight
+          wording_revision: WordingRevision        
         # sqlc type overrides. Keys are the db_type strings sqlc derives from the
         # schema, which DIFFER by engine (MySQL bare names vs Postgres catalog
         # names like pg_catalog.varchar / bpchar / pg_catalog.timestamp). Each

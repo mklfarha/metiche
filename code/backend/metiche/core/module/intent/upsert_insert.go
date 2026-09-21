@@ -122,5 +122,7 @@ func mapUpsertRequestToInsertParams(req types.UpsertRequest) metichedb.InsertInt
 		CreatedAt: req.Intent.CreatedAt,
 
 		UpdatedAt: req.Intent.UpdatedAt,
+
+		WordingRevision: req.Intent.WordingRevision,
 	}
 }

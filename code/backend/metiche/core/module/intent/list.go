@@ -186,6 +186,8 @@ var listFields = []string{
 	"created_at",
 
 	"updated_at",
+
+	"wording_revision",
 }
 
 var listFieldRegistry = map[string]func(*repogen.Intent) any{
@@ -225,4 +227,6 @@ var listFieldRegistry = map[string]func(*repogen.Intent) any{
 	"created_at": func(i *repogen.Intent) any { return &i.CreatedAt },
 
 	"updated_at": func(i *repogen.Intent) any { return &i.UpdatedAt },
+
+	"wording_revision": func(i *repogen.Intent) any { return &i.WordingRevision },
 }

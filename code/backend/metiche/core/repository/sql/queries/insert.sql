@@ -73,9 +73,9 @@ VALUES
 
 -- name: InsertIntent :execresult
 INSERT INTO `intent`
-(`id`,`team_uuid`,`project_uuid`,`session_uuid`,`member_uuid`,`key`,`summary`,`detail`,`kind`,`status`,`external_ref`,`revision`,`declared_at`,`started_at`,`ended_at`,`expires_at`,`created_at`,`updated_at`)
+(`id`,`team_uuid`,`project_uuid`,`session_uuid`,`member_uuid`,`key`,`summary`,`detail`,`kind`,`status`,`external_ref`,`revision`,`declared_at`,`started_at`,`ended_at`,`expires_at`,`created_at`,`updated_at`,`wording_revision`)
 VALUES
-(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
 
 -- name: InsertClaim :execresult
 INSERT INTO `claim`

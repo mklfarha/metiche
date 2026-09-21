@@ -8,24 +8,25 @@ import (
 
 func (e Intent) FieldIdentifierToTypeMap() map[string]entitytypes.FieldType {
 	return map[string]entitytypes.FieldType{
-		"id":           entitytypes.StringFieldType,
-		"team_uuid":    entitytypes.StringFieldType,
-		"project_uuid": entitytypes.StringFieldType,
-		"session_uuid": entitytypes.StringFieldType,
-		"member_uuid":  entitytypes.StringFieldType,
-		"key":          entitytypes.StringFieldType,
-		"summary":      entitytypes.StringFieldType,
-		"detail":       entitytypes.StringFieldType,
-		"kind":         entitytypes.SingleEnumFieldType,
-		"status":       entitytypes.SingleEnumFieldType,
-		"external_ref": entitytypes.StringFieldType,
-		"revision":     entitytypes.IntFieldType,
-		"declared_at":  entitytypes.TimestampFieldType,
-		"started_at":   entitytypes.TimestampFieldType,
-		"ended_at":     entitytypes.TimestampFieldType,
-		"expires_at":   entitytypes.TimestampFieldType,
-		"created_at":   entitytypes.TimestampFieldType,
-		"updated_at":   entitytypes.TimestampFieldType,
+		"id":               entitytypes.StringFieldType,
+		"team_uuid":        entitytypes.StringFieldType,
+		"project_uuid":     entitytypes.StringFieldType,
+		"session_uuid":     entitytypes.StringFieldType,
+		"member_uuid":      entitytypes.StringFieldType,
+		"key":              entitytypes.StringFieldType,
+		"summary":          entitytypes.StringFieldType,
+		"detail":           entitytypes.StringFieldType,
+		"kind":             entitytypes.SingleEnumFieldType,
+		"status":           entitytypes.SingleEnumFieldType,
+		"external_ref":     entitytypes.StringFieldType,
+		"revision":         entitytypes.IntFieldType,
+		"declared_at":      entitytypes.TimestampFieldType,
+		"started_at":       entitytypes.TimestampFieldType,
+		"ended_at":         entitytypes.TimestampFieldType,
+		"expires_at":       entitytypes.TimestampFieldType,
+		"created_at":       entitytypes.TimestampFieldType,
+		"updated_at":       entitytypes.TimestampFieldType,
+		"wording_revision": entitytypes.IntFieldType,
 	}
 }
 
@@ -49,6 +50,7 @@ func (e Intent) OrderedFieldIdentifiers() []string {
 	res = append(res, "expires_at")
 	res = append(res, "created_at")
 	res = append(res, "updated_at")
+	res = append(res, "wording_revision")
 
 	return res
 }

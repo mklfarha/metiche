@@ -320,6 +320,7 @@ CREATE TABLE IF NOT EXISTS `intent` (
     `expires_at` DATETIME,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `wording_revision` INT NOT NULL DEFAULT 1,
     PRIMARY KEY (`id`),
     INDEX `idx_intent_live` (`project_uuid`, `status`, `expires_at`),
     INDEX `idx_intent_external_ref` (`team_uuid`, `external_ref`),
