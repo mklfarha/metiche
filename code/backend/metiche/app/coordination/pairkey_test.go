@@ -113,3 +113,37 @@ func TestPairKeyNormalizesCasing(t *testing.T) {
 		t.Error("case and surrounding space must not change the pair key")
 	}
 }
+
+// A duplicate_work pair: two intents at their wording_revision
+// (docs/DUPLICATES.md §3.0, §7.1). Subject b is always the judge's plan in
+// storage, but the key must not care which side surfaced the pair.
+func TestPairKeyDuplicateWork(t *testing.T) {
+	other := PairSubject{Kind: "intent", UUID: "55555555-5555-4555-8555-555555555555", Revision: 1}
+	judge := PairSubject{Kind: "intent", UUID: "66666666-6666-4666-8666-666666666666", Revision: 1}
+
+	key := PairKey("duplicate_work", other, judge)
+	if key != PairKey("duplicate_work", judge, other) {
+		t.Fatal("a duplicate pair must be symmetric: whichever plan surfaced it, one row")
+	}
+
+	// A material rewording bumps wording_revision and earns one more look,
+	// on either side.
+	reworded := judge
+	reworded.Revision = 2
+	if PairKey("duplicate_work", other, reworded) == key {
+		t.Error("a wording_revision bump on the judge's plan must mint a new key")
+	}
+	rewordedOther := other
+	rewordedOther.Revision = 2
+	if PairKey("duplicate_work", rewordedOther, judge) == key {
+		t.Error("a wording_revision bump on the other plan must mint a new key")
+	}
+	if PairKey("duplicate_work", rewordedOther, judge) == PairKey("duplicate_work", other, reworded) {
+		t.Error("bumping a and bumping b are different pairs")
+	}
+
+	// The same two uuids judged for a decision are a different question.
+	if PairKey("decision_contradiction", other, judge) == key {
+		t.Error("duplicate_work and decision_contradiction over the same uuids must differ")
+	}
+}

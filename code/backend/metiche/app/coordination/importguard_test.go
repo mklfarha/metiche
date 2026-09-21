@@ -1,8 +1,11 @@
 package coordination
 
 import (
+	"errors"
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -52,6 +55,29 @@ func TestImportGuardNoHTTPClientOrModelSDK(t *testing.T) {
 		"../mcp/reviewcontext.go",
 		"../mcp/reportjudgement.go",
 		"../mcp/decisionresolve.go",
+	}
+	// The duplicate-work scorer is pure like the rest (docs/DUPLICATES.md §9.1);
+	// the glob must be looking at it.
+	sawDuplicates := false
+	for _, f := range coordination {
+		sawDuplicates = sawDuplicates || f == "duplicates.go"
+	}
+	if !sawDuplicates {
+		t.Error("app/coordination/duplicates.go is not under the guard")
+	}
+	// The app/mcp files that pair duplicates and render the review block
+	// (§7.1). A later wave writes them; each is checked from the moment it
+	// exists.
+	for _, file := range []string{
+		"../mcp/duplicatereview.go",
+		"../mcp/duplicateresolve.go",
+		"../mcp/reviewrender.go",
+	} {
+		if _, err := os.Stat(file); err == nil {
+			decisionFiles = append(decisionFiles, file)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("stat %s: %v", file, err)
+		}
 	}
 	checked := 0
 	for _, file := range append(coordination, decisionFiles...) {
