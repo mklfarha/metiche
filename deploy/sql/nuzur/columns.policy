@@ -274,6 +274,7 @@ intent.ended_at                             expose
 intent.expires_at                           expose
 intent.created_at                           expose
 intent.updated_at                           expose
+intent.wording_revision                     expose
 
 # ── claim ────────────────────────────────────────────────────────────────────
 claim.id                                    expose

@@ -1,0 +1,44 @@
+-- v8-wording-revision: intent.wording_revision, the revision of a plan's
+-- wording (summary and detail) as distinct from intent.revision, so that
+-- duplicate-work judgements can be tied to the wording they were made on
+-- (docs/DUPLICATES.md).
+--
+-- Apply BEFORE the binary generated from v8 ships. Order is load-bearing:
+--   old binary + new schema  fine: every INSERT it runs on intent names its
+--                            columns, so the new one takes its DEFAULT 1; its
+--                            UPDATEs name their columns and leave it alone;
+--                            nothing it reads selects it (no SELECT * on
+--                            intent anywhere).
+--   new binary + old schema  every intent read and write fails on the unknown
+--                            column `wording_revision` (ERROR 1054), so no
+--                            plan can be declared, updated or shown.
+--
+-- Zero data migration. Every existing intent takes wording_revision = 1 from
+-- the column default: its current wording is its first recorded wording.
+-- There is nothing to backfill and no index or foreign key to build.
+--
+-- The column is added AFTER `updated_at`, last in the table, which is where
+-- nuzur put it in the model (core/repository/sql/schema/create.sql), not next
+-- to `revision`. The names, type, default and column order match create.sql,
+-- so SHOW CREATE TABLE is identical to a fresh install. On MySQL 8.0 an
+-- appended NOT NULL column with a constant default is added in place
+-- (ALGORITHM=INSTANT): a metadata change, no table copy, no long lock.
+--
+-- deploy/scripts/apply-schema.sh only runs CREATE TABLE IF NOT EXISTS and will
+-- never change an existing table; this file is how production gets it.
+-- Verify afterwards with:
+-- SHOW CREATE TABLE `intent`;
+--   (the line `wording_revision` int NOT NULL DEFAULT '1' follows updated_at)
+-- SELECT COUNT(*) FROM `intent` WHERE `wording_revision` <> 1;
+--   (0: every existing plan is at wording revision 1)
+--
+-- The nuzur read-only views must follow it: deploy/sql/nuzur/gen-views.sh
+-- apply refuses while the live columns differ from the model, and check-live
+-- reports drift until it is run.
+--
+-- Not idempotent on purpose: a second run fails on the duplicate column
+-- `wording_revision` (ERROR 1060) rather than silently doing nothing, so "was
+-- it applied?" always has a clear answer, and the failure changes nothing.
+
+ALTER TABLE `intent`
+  ADD COLUMN `wording_revision` INT NOT NULL DEFAULT 1 AFTER `updated_at`;
