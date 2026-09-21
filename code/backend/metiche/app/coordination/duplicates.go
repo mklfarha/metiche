@@ -105,6 +105,11 @@ var duplicatePhraseJoins = []struct {
 	{regexp.MustCompile(`(?i)\blog[\s_-]*out\b`), "logout"},
 	{regexp.MustCompile(`(?i)\bset[\s_-]*up\b`), "setup"},
 	{regexp.MustCompile(`(?i)\bcheck[\s_-]*out\b`), "checkout"},
+	// "actions" and "workflow" alone are too common to fold; with github in
+	// front they are CI.
+	{regexp.MustCompile(`(?i)\b(github|gh)[\s_-]*(actions?|workflows?)\b`), "githubci"},
+	{regexp.MustCompile(`(?i)\bsocket[\s._-]*io\b`), "socketio"},
+	{regexp.MustCompile(`(?i)\breal[\s_-]*time\b`), "realtime"},
 }
 
 func duplicateJoinPhrases(text string) string {
@@ -122,6 +127,7 @@ var duplicateStoplist = func() map[string]bool {
 		build create implement write wire hook fix update handle support improve
 		refactor clean cleanup setup set get start finish do try quick initial
 		first basic simple
+		fixe fixes fixed fixing
 	`) {
 		m[w] = true
 	}
@@ -136,7 +142,7 @@ var duplicateSynonymRows = []struct {
 	words     []string
 }{
 	{"page", LayerUI, []string{"page", "screen", "view", "ui", "frontend", "form", "modal", "dialog"}},
-	{"endpoint", LayerAPI, []string{"endpoint", "route", "api", "handler", "backend", "server", "controller"}},
+	{"endpoint", LayerAPI, []string{"endpoint", "route", "api", "apis", "handler", "backend", "server", "controller"}},
 	{"schema", LayerData, []string{"schema", "table", "migration", "database", "db", "sql"}},
 	{"login", "", []string{"login", "signin", "logon"}},
 	{"signup", "", []string{"signup", "register", "registration"}},
@@ -144,6 +150,11 @@ var duplicateSynonymRows = []struct {
 	{"auth", "", []string{"auth", "authentication", "authn"}},
 	{"image", "", []string{"image", "img", "picture", "photo"}},
 	{"button", "", []string{"button", "btn"}},
+	{"reset", "", []string{"reset", "forgot", "recover", "recovery"}},
+	{"ci", "", []string{"ci", "cd", "cicd", "pipeline", "githubci"}},
+	{"theme", "", []string{"theme", "mode", "darkmode"}},
+	{"toggle", "", []string{"toggle", "switcher"}},
+	{"realtime", "", []string{"realtime", "websocket", "socket", "socketio", "live", "pubsub"}},
 }
 
 type duplicateSynonym struct {
@@ -257,7 +268,7 @@ func FrequentTerms(all []DuplicateTerms) map[string]bool {
 // DuplicateScore is why a pair of summaries is, or is not, a candidate.
 type DuplicateScore struct {
 	Candidate bool
-	Rule      string   // "words" | "words_long" | "words_single" | "words_and_paths" | ""
+	Rule      string   // "words" | "words_long" | "words_single" | "words_layer" | "words_and_paths" | ""
 	Shared    []string // non-vague shared keys, in mine's order
 	Core      int      // shared keys that are not layer words
 	Ratio     float64  // len(Shared) / smaller non-vague key count
@@ -310,6 +321,30 @@ func duplicateIsOnly(keys []string, k string) bool {
 	return len(keys) == 1 && keys[0] == k
 }
 
+// duplicateSameNonVague reports whether two key lists hold the same non-vague
+// keys as sets.
+func duplicateSameNonVague(a []string, aVague map[string]bool, b []string, bVague map[string]bool) bool {
+	setOf := func(keys []string, vague map[string]bool) map[string]bool {
+		out := map[string]bool{}
+		for _, k := range keys {
+			if !vague[k] {
+				out[k] = true
+			}
+		}
+		return out
+	}
+	sa, sb := setOf(a, aVague), setOf(b, bVague)
+	if len(sa) != len(sb) {
+		return false
+	}
+	for k := range sa {
+		if !sb[k] {
+			return false
+		}
+	}
+	return true
+}
+
 // ScoreDuplicate applies §4.2's rules to two summaries' terms, after dropping
 // the scan's frequent keys. The first rule that fits names the result.
 func ScoreDuplicate(mine, theirs DuplicateTerms, drop map[string]bool, pathsOverlap bool) DuplicateScore {
@@ -353,6 +388,12 @@ func ScoreDuplicate(mine, theirs DuplicateTerms, drop map[string]bool, pathsOver
 	case c == 1 && ((duplicateIsOnly(m, core) && duplicateNonVague(t, theirs.Vague) <= duplicateSingleMaxOther) ||
 		(duplicateIsOnly(t, core) && duplicateNonVague(m, mine.Vague) <= duplicateSingleMaxOther)):
 		score.Rule = "words_single"
+	// Layer only, but the same thing: both plans reduce to the identical
+	// non-vague key set ("set up the database" and "database schema and
+	// migrations" are both {schem}). A set that merely shares a layer word
+	// ("login page", "signup page") never fires.
+	case c == 0 && shared >= 1 && duplicateSameNonVague(m, mine.Vague, t, theirs.Vague):
+		score.Rule = "words_layer"
 	case pathsOverlap && c >= 1 && score.Ratio >= duplicatePathsMinRatio:
 		score.Rule = "words_and_paths"
 	}

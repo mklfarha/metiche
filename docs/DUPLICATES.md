@@ -536,15 +536,15 @@ screen", "stripe checkout", "docker setup". Raw token overlap fails on exactly t
 "add login page" and "build the login screen" share one word. So the comparison runs on **concept keys**,
 built by `coordination.DuplicateTermsOf(summary, projectKey)`, pure:
 
-1. **Lowercase, then join phrases** that split into stopwords: `sign in`→`signin`, `sign up`→`signup`, `sign out`→`signout`, `log in`→`login`, `log out`→`logout`, `set up`→`setup`, `check out`→`checkout`.
+1. **Join phrases** that split into stopwords, matched case-insensitively on whole words across a space, hyphen, underscore or nothing (`SignIn`), before `Tokenize` lowercases (so camelCase still splits): `sign in`→`signin`, `sign up`→`signup`, `sign out`→`signout`, `log in`→`login`, `log out`→`logout`, `set up`→`setup`, `check out`→`checkout`; and `github actions` / `github workflow(s)` / `gh actions`→`githubci`, `socket.io`→`socketio`, `real time`→`realtime`. Bare `actions` and `workflow` are not joined or folded: too common outside CI.
 2. **`coordination.Tokenize(text, 32)`**: splits identifiers, drops single characters, numbers and the shared stopwords (which already include `add`, `new`, `make`, `use`), folds plurals.
-3. **Drop the duplicate stoplist**: task verbs that name no deliverable — `build`, `create`, `implement`, `write`, `wire`, `hook`, `fix`, `update`, `handle`, `support`, `improve`, `refactor`, `clean`, `cleanup`, `setup`, `set`, `get`, `start`, `finish`, `do`, `try`, `quick`, `initial`, `first`, `basic`, `simple`. Also drop the tokens of the project key (a repo called `recipe-share` says `recipe` in every summary).
+3. **Drop the duplicate stoplist**: task verbs that name no deliverable — `build`, `create`, `implement`, `write`, `wire`, `hook`, `fix`, `update`, `handle`, `support`, `improve`, `refactor`, `clean`, `cleanup`, `setup`, `set`, `get`, `start`, `finish`, `do`, `try`, `quick`, `initial`, `first`, `basic`, `simple`, and the forms of fix that `Tokenize` does not fold to it: `fixe` (from `fixes`), `fixes`, `fixed`, `fixing`. Also drop the tokens of the project key (a repo called `recipe-share` says `recipe` in every summary); the project key gets the same phrase joins.
 4. **Fold synonyms** to one canonical word:
 
    | canonical | folded from | layer |
    |---|---|---|
    | `page` | page, screen, view, ui, frontend, form, modal, dialog | ui |
-   | `endpoint` | endpoint, route, api, handler, backend, server, controller | api |
+   | `endpoint` | endpoint, route, api, apis, handler, backend, server, controller | api |
    | `schema` | schema, table, migration, database, db, sql | data |
    | `login` | login, signin, logon | |
    | `signup` | signup, register, registration | |
@@ -552,6 +552,13 @@ built by `coordination.DuplicateTermsOf(summary, projectKey)`, pure:
    | `auth` | auth, authentication, authn | |
    | `image` | image, img, picture, photo | |
    | `button` | button, btn | |
+   | `reset` | reset, forgot, recover, recovery | |
+   | `ci` | ci, cd, cicd, pipeline, githubci (step 1) | |
+   | `theme` | theme, mode, darkmode | |
+   | `toggle` | toggle, switcher | |
+   | `realtime` | realtime, websocket, socket, socketio, live, pubsub | |
+
+   (`apis` is listed because `Tokenize` does not fold a plural after `i`. The last five rows were added on 2026-09-21 to close misses found by the §7.1 vectors; each has should-not-match vectors guarding it.)
 
 5. **Comparison key** = the first `DuplicateKeyRunes` (5) runes of the canonical word. This matches word forms the plural fold misses (`summary`/`summarize` → `summa`, `deploy`/`deployment` → `deplo`, `notify`/`notification` → `notif`, `websocket` → `webso`) at the cost of rare false matches (`product`/`production`) that the judge then answers.
 6. **Vague keys** stay in the set but never count as shared and block the single-concept rule: `test`, `bug`, `issue`, `error`, `feature`, `stuff`, `thing`, `code`, `work`, `task`, `part`, `flow`, `demo`, `mvp`, `app`, `user`, `style`, `lint`, `typo`, `doc` (plurals are folded first, so `docs` is `doc`). Vague words are matched on their 5-rune key, after folding: `styles` is vague, `styling` (`styli`) is not.
@@ -566,15 +573,16 @@ project with thirty plans stops matching on its domain word.
 **The rules** (`coordination.ScoreDuplicate(mine, theirs, drop, pathsOverlap)`), with M and T the two key
 sets after the filter:
 
-- **Layer guard.** If both sides name a layer and their layer sets are disjoint (a `page` against an `endpoint`, a `page` against a `schema`), not a candidate. That is a producer and a consumer, which is contracts' job, not duplication.
+- **Layer guard.** If both sides name a layer and their layer sets are disjoint (a `page` against an `endpoint`, a `page` against a `schema`), not a candidate. That is a producer and a consumer, which is contracts' job, not duplication. The guard reads each plan's layers **before** the frequency filter: a layer is what a plan is, not a similarity signal, so a project where `page` is frequent still does not pair "login page" with "login endpoint".
 - S = shared keys that are not vague. C = those of S that are not layer words (the *core*). m = the smaller count of non-vague keys. m = 0 is never a candidate.
 - **words:** C ≥ 1, S ≥ 2 and S/m ≥ 0.6.
 - **words (long):** C ≥ 3 and S/m ≥ 0.4.
 - **words (single concept):** C = 1 and one side's whole key set, vague keys included, is exactly that key, and the other side has at most 2 non-vague keys. ("docker setup" and "set up docker compose".)
+- **words (same layer set):** C = 0, S ≥ 1, and the two sides' non-vague key sets are identical. ("set up the database" and "database schema and migrations" are both `{schem}`.) Sets that merely share a layer word ("login page" `{login, page}` against "signup page" `{signu, page}`; "seed the database" `{seed, schem}` against "database schema" `{schem}`) never fire.
 - **words_and_paths:** the two sessions' claims overlap (`req.OverlapSessions`), C ≥ 1 and S/m ≥ 0.5.
 - Otherwise not a candidate.
 
-The first rule that fits names the `why` (`words` or `words_and_paths`); an issue match is `same_issue`
+The first rule that fits names the `why` (`words` or `words_and_paths`; `ScoreDuplicate` reports `words`, `words_long`, `words_single` or `words_layer`, all of which are the `words` why); an issue match is `same_issue`
 whatever the wording. The detector rule on a conflict is `duplicate_work.words` for every wording rule.
 
 **Worked examples** (all are §7.1 test vectors):
@@ -583,12 +591,14 @@ whatever the wording. The detector rule on a conflict is `duplicate_work.words` 
 |---|---|---|---|---|
 | add login page | build the login screen | login, page | login, page | **candidate** (words: C 1, S 2, 2/2) |
 | login form | sign in page | login, page | login, page | **candidate** |
-| dark mode toggle | add dark mode | dark, mode, toggl | dark, mode | **candidate** |
+| dark mode toggle | add dark mode | dark, theme, toggl | dark, theme | **candidate** |
 | stripe checkout | checkout flow with stripe | strip, check | check, flow*, strip | **candidate** |
 | docker setup | set up docker compose | docke | docke, compo | **candidate** (single concept) |
 | login page | login endpoint | login, page | login, endpo | not: layers ui vs api |
 | signup page | login page | signu, page | login, page | not: C 0 |
 | add tests for auth | auth middleware | test*, auth | auth, middl | not: S 1; single blocked by the vague key |
+| set up the database | database schema and migrations | schem | schem | **candidate** (same layer set) |
+| password reset flow | forgot password page | passw, reset, flow* | reset, passw, page | **candidate** (words: C 2, S 2, 2/2) |
 
 (* = vague)
 
@@ -899,6 +909,16 @@ Should be candidates (hackathon, no issue id):
 | 12 | leaderboard | leaderboard page | single concept |
 | 13 | Add POST /api/login: password check, mint session cookie, wire the handler | implement login endpoint with refresh tokens and session cookie | words |
 | 14 | navbar icons | navbar spacing tweaks (the two sessions' claims overlap) | words_and_paths |
+| 15 | password reset flow | forgot password page | words |
+| 16 | set up the database | database schema and migrations | same layer set (`words_layer`) |
+| 17 | CI pipeline | github actions ci | single concept |
+| 18 | add dark mode | light and dark theme switcher | words |
+| 19 | realtime updates with websockets | live updates via socket.io | single concept |
+| 20 | socket.io chat | live chat | words |
+| 21 | ci/cd pipeline | github workflow for tests | single concept |
+| 22 | dark mode switcher | theme toggle | words |
+
+Rows 15–22 were added on 2026-09-21: 15–19 are misses the implementer found with its own pairs, closed by the coordinator's decision (bias towards catching: a missed duplicate is the failure this feature exists to stop; a false candidate costs one quiet judgement).
 
 Should not be candidates:
 
@@ -919,6 +939,22 @@ Should not be candidates:
 | 13 | refactor session store to redis | session cookie expiry bug | S 1 |
 | 14 | shop checkout | shop search (project key `shop`) | project key dropped; nothing shared |
 | 15 | navbar icons | navbar spacing tweaks (no claim overlap) | S 1: only the path boost makes it a candidate (should-match #14) |
+| 16 | live demo deploy | realtime chat | S 1 (the realtime fold) |
+| 17 | theme colors | dark mode | S 1 (the theme fold): a palette and a dark mode are related, not the same work |
+| 18 | reset button styling | password reset | S 1 (the reset fold) |
+| 19 | database backup script | schema migrations | shared key is a layer word only; the sets differ |
+| 20 | github readme | ci pipeline | nothing shared: `github` alone is not CI |
+| 21 | offline mode | dark theme | S 1 (the theme fold) |
+| 22 | edit mode | dark mode | S 1 (the theme fold) |
+| 23 | websocket server | websocket client ui | layer guard |
+| 24 | api docs | backend error handling | shared key is a layer word only; the sets differ |
+| 25 | signup page | login screen | no core key shared; the sets differ |
+| 26 | account recovery email | password reset page | S 1 (the reset fold) |
+| 27 | github actions for lint | user actions menu | nothing shared: bare `actions` is not CI |
+
+Rows 16–27 guard the 2026-09-21 folds and the same-layer-set rule.
+
+**Accepted false candidates**, pinned in the implementer's own pairs so a change is visible: "login page tests" / "login page" (words 2/2: the vague `test` blocks only the single-concept rule) and "dark mode toggle" / "dark mode colors for charts" (words 2/3). Found with the new folds and **not yet decided**: "data pipeline" / "ci setup" (single concept on `ci`), "ui tests" / "frontend bugs" (same layer set `{page}`) and "fixed navbar" / "navbar dropdown" (`fixed` is stoplisted, leaving `{navba}`).
 
 Every row above was worked through §4.2's pipeline by hand; the implementer pins them as written, and a
 row that disagrees with the code is a bug in one of the two, settled through the coordinator, never by
@@ -1018,7 +1054,7 @@ skipped test is not run.
 - the rewording-only trigger removed (the reviewer runs on every material update);
 - the subject-a expiry on rewording removed;
 - the staleness compare removed in `report_judgement` Apply, and in the sweeper;
-- each `ScoreDuplicate` comparison (`>= 0.6` → `>`, `>= 2`, `>= 3`, `>= 0.4`, the single-concept "≤ 2", `>= 0.5`); the layer guard removed; vague keys counted as shared;
+- each `ScoreDuplicate` comparison (`>= 0.6` → `>`, `>= 2`, `>= 3`, `>= 0.4`, the single-concept "≤ 2", `>= 0.5`); the layer guard removed; vague keys counted as shared; the same-layer-set rule removed (vector 16 must fail); the realtime row removed (vectors 19 and 20 must fail);
 - one synonym row removed (vector 1 must fail); the phrase join removed (vector 2 must fail); the project-key drop removed;
 - the frequency filter's `>= 8` or `max(4, ⌈n/3⌉)`;
 - the project filter removed from the words scan; the issue lookup losing `team_uuid`;
@@ -1126,7 +1162,7 @@ func FrequentTerms(all []DuplicateTerms) map[string]bool
 
 type DuplicateScore struct {
 	Candidate bool
-	Rule      string   // "words" | "words_long" | "words_single" | "words_and_paths" | ""
+	Rule      string   // "words" | "words_long" | "words_single" | "words_layer" | "words_and_paths" | ""
 	Shared    []string // non-vague shared keys, in mine's order
 	Core      int      // shared keys that are not layer words
 	Ratio     float64  // len(Shared) / smaller non-vague key count
@@ -1332,3 +1368,11 @@ These tighten the approved design. None changes the model or an owner decision.
 - **`wording_revision` is computed under the lock**, from the row, so concurrent rewordings cannot both skip the bump.
 - **Only the subject-a side is expired on a rewording.** The caller's own stale pairs are refused as stale and expired by the sweeper, exactly as decisions do, so there is one staleness path.
 - **No instruction is written by `report_judgement`** for a duplicate; the sweeper owns the incumbent's notice, so a judge that yields in time interrupts nobody.
+
+**Made while implementing Wave A1 (2026-09-21), accepted by the coordinator:**
+
+- **The layer guard reads layers before the frequency filter** (`app/coordination/duplicates.go`, `duplicateLayerGuard`). Applying it after the filter would let a project where `page` is frequent pair "login page" with "login endpoint". Pinned by `TestScoreDuplicateLayerGuardSurvivesTheFilter`.
+- **Phrase joins match case-insensitively on the original text** instead of lowercasing first (`duplicatePhraseJoins`), so `Tokenize` still splits camelCase; `sign-in`, `sign_in` and `SignIn` join too. Identical for lowercase input. The project key gets the same joins.
+- **The import guard checks the three future `app/mcp` files once they exist** (`importguard_test.go`): `duplicatereview.go`, `duplicateresolve.go`, `reviewrender.go`. Listing them before Wave B writes them would fail the test; any stat error other than not-found fails it.
+- **`Demoted` wins over the issue floor** in `DuplicateSeverity`: a demoted rule always records `low`. It cannot clash in practice, because a shared issue carries the `same_issue` rule, not the demoted `words`.
+- **Bias towards catching.** Wording misses found with hackathon pairs were closed with five synonym rows (`reset`, `ci`, `theme`, `toggle`, `realtime`), three phrase joins, the fix forms in the stoplist, `apis`, and the same-layer-set rule (§4.2). `ScoreDuplicate` gained the rule value `words_layer` (§9.1); like every wording rule it is the `words` why and `duplicate_work.words` on a conflict.

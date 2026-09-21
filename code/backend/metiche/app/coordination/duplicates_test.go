@@ -57,6 +57,16 @@ var dupShouldMatch = []dupVector{
 	{a: "leaderboard", b: "leaderboard page", rule: "words_single"},
 	{a: "Add POST /api/login: password check, mint session cookie, wire the handler", b: "implement login endpoint with refresh tokens and session cookie", rule: "words"},
 	{a: "navbar icons", b: "navbar spacing tweaks", overlap: true, rule: "words_and_paths"},
+	// Misses closed by the coordinator's decision of 2026-09-21 (§4.2's
+	// reset, ci, theme, toggle and realtime rows, and the identical-layer rule).
+	{a: "password reset flow", b: "forgot password page", rule: "words"},
+	{a: "set up the database", b: "database schema and migrations", rule: "words_layer"},
+	{a: "CI pipeline", b: "github actions ci", rule: "words_single"},
+	{a: "add dark mode", b: "light and dark theme switcher", rule: "words"},
+	{a: "realtime updates with websockets", b: "live updates via socket.io", rule: "words_single"},
+	{a: "socket.io chat", b: "live chat", rule: "words"},
+	{a: "ci/cd pipeline", b: "github workflow for tests", rule: "words_single"},
+	{a: "dark mode switcher", b: "theme toggle", rule: "words"},
 }
 
 // §7.1 "Should not be candidates". why: guard = layer guard decided it;
@@ -77,6 +87,19 @@ var dupShouldNotMatch = []dupVector{
 	{a: "refactor session store to redis", b: "session cookie expiry bug", why: "s1"},
 	{a: "shop checkout", b: "shop search", project: "shop", why: "s0"},
 	{a: "navbar icons", b: "navbar spacing tweaks", why: "s1"},
+	// The new folds must not open floodgates: one pair per fold at least.
+	{a: "live demo deploy", b: "realtime chat", why: "s1"},
+	{a: "theme colors", b: "dark mode", why: "s1"},
+	{a: "reset button styling", b: "password reset", why: "s1"},
+	{a: "database backup script", b: "schema migrations", why: "c0"},
+	{a: "github readme", b: "ci pipeline", why: "s0"},
+	{a: "offline mode", b: "dark theme", why: "s1"},
+	{a: "edit mode", b: "dark mode", why: "s1"},
+	{a: "websocket server", b: "websocket client ui", why: "guard"},
+	{a: "api docs", b: "backend error handling", why: "c0"},
+	{a: "signup page", b: "login screen", why: "c0"},
+	{a: "account recovery email", b: "password reset page", why: "s1"},
+	{a: "github actions for lint", b: "user actions menu", why: "s0"},
 }
 
 func TestDuplicateSpecShouldMatch(t *testing.T) {
@@ -144,7 +167,7 @@ func TestDuplicateWorkedExampleKeys(t *testing.T) {
 	}{
 		{"add login page", "build the login screen", []string{"login", "page"}, []string{"login", "page"}, nil, true},
 		{"login form", "sign in page", []string{"login", "page"}, []string{"login", "page"}, nil, true},
-		{"dark mode toggle", "add dark mode", []string{"dark", "mode", "toggl"}, []string{"dark", "mode"}, nil, true},
+		{"dark mode toggle", "add dark mode", []string{"dark", "theme", "toggl"}, []string{"dark", "theme"}, nil, true},
 		{"stripe checkout", "checkout flow with stripe", []string{"strip", "check"}, []string{"check", "flow", "strip"}, []string{"flow"}, true},
 		{"docker setup", "set up docker compose", []string{"docke"}, []string{"docke", "compo"}, nil, true},
 		{"login page", "login endpoint", []string{"login", "page"}, []string{"login", "endpo"}, nil, false},
@@ -180,12 +203,13 @@ func TestDuplicateWorkedExampleKeys(t *testing.T) {
 // in either direction is visible; a row where the two disagree is logged as a
 // FINDING and reported, never bent to agree.
 type dupOwnPair struct {
-	a, b    string
-	project string
-	overlap bool
-	person  bool
-	rule    string // "" = not a candidate
-	note    string
+	a, b     string
+	project  string
+	overlap  bool
+	person   bool
+	rule     string // "" = not a candidate
+	accepted bool   // a known disagreement the coordinator accepted
+	note     string
 }
 
 var dupOwnPairs = []dupOwnPair{
@@ -196,16 +220,10 @@ var dupOwnPairs = []dupOwnPair{
 	{a: "file upload", b: "upload files to s3", person: true, rule: "words"},
 	{a: "readme", b: "write the README", person: true, rule: "words_single"},
 	{a: "landing page", b: "build the landing page hero", person: true, rule: "words"},
-	{a: "password reset flow", b: "forgot password page", person: true, rule: "",
-		note: "one shared key (passw); 'reset' and 'forgot' name the same page but share no key"},
-	{a: "set up the database", b: "database schema and migrations", person: true, rule: "",
-		note: "both fold to the one layer key schem, so C = 0 and no rule can fire"},
-	{a: "CI pipeline", b: "github actions ci", person: true, rule: "",
-		note: "one shared key (ci); 'pipeline' and 'github actions' are the same thing, no synonym row"},
-	{a: "add dark mode", b: "light and dark theme switcher", person: true, rule: "",
-		note: "one shared key (dark); 'mode' vs 'theme switcher'"},
-	{a: "realtime updates with websockets", b: "live updates via socket.io", person: true, rule: "",
-		note: "'update' is stoplisted; websockets (webso) and socket (socke) have different 5-rune keys"},
+	// The five misses this table first found (password reset, database setup,
+	// CI, dark mode, realtime) were closed and are §7.1 should-match vectors now.
+	{a: "live scoreboard", b: "realtime scores with websockets", person: true, rule: "words"},
+	{a: "sign up form", b: "registration page", person: true, rule: "words"},
 	// A person says: related, but different work.
 	{a: "stripe checkout page", b: "stripe checkout endpoint", person: false, rule: ""},
 	{a: "chat message schema", b: "chat message list ui", person: false, rule: ""},
@@ -218,10 +236,23 @@ var dupOwnPairs = []dupOwnPair{
 	{a: "unit tests for the api", b: "api rate limiting", person: false, rule: ""},
 	{a: "mobile responsive navbar", b: "navbar logo", person: false, rule: ""},
 	{a: "image upload", b: "image resizing", person: false, rule: ""},
-	{a: "login page tests", b: "login page", person: false, rule: "words",
+	// Accepted false candidates (coordinator, 2026-09-21): a missed duplicate
+	// is the failure this feature exists to stop; a false candidate costs one
+	// quiet judgement and interrupts nobody. Pinned so a change is visible.
+	{a: "login page tests", b: "login page", person: false, rule: "words", accepted: true,
 		note: "'test' is vague, which blocks only the single-concept rule; login+page still meet words 2/2"},
-	{a: "dark mode toggle", b: "dark mode colors for charts", person: false, rule: "words",
-		note: "dark+mode is 2 of 3 keys (0.67): the toggle and the chart palette share their subject only"},
+	{a: "dark mode toggle", b: "dark mode colors for charts", person: false, rule: "words", accepted: true,
+		note: "dark+theme is 2 of 3 keys (0.67): the toggle and the chart palette share their subject only"},
+	// False candidates the new folds and rule introduce: logged as FINDINGs for
+	// the coordinator, pinned as the rules behave, not yet accepted.
+	{a: "data pipeline", b: "ci setup", person: false, rule: "words_single",
+		note: "pipeline folds to ci in every sense; 'ci setup' is just {ci}"},
+	{a: "ui tests", b: "frontend bugs", person: false, rule: "words_layer",
+		note: "both reduce to the layer set {page}; the vague words that differ do not count"},
+	{a: "fixed navbar", b: "navbar dropdown", person: false, rule: "words_single",
+		note: "'fixed' (the CSS position) is now stoplisted, leaving {navba}"},
+	// 'live' folds to realtime, but the vague 'demo' blocks single concept.
+	{a: "live demo", b: "websocket notifications", person: false, rule: ""},
 }
 
 func TestDuplicateOwnHackathonPairs(t *testing.T) {
@@ -231,14 +262,20 @@ func TestDuplicateOwnHackathonPairs(t *testing.T) {
 			verdict := "agrees with a person"
 			if s.Candidate != p.person {
 				verdict = "FINDING: disagrees with a person (" + p.note + ")"
+				if p.accepted {
+					verdict = "ACCEPTED false candidate (" + p.note + ")"
+				}
 			}
 			t.Logf("keys A %v | keys B %v | shared %v core %d ratio %.2f -> candidate=%v rule=%q; person says duplicate=%v; %s",
 				a.Keys, b.Keys, s.Shared, s.Core, s.Ratio, s.Candidate, s.Rule, p.person, verdict)
 			if s.Rule != p.rule {
 				t.Errorf("%q vs %q: rule %q, pinned %q", p.a, p.b, s.Rule, p.rule)
 			}
-			if (p.rule != "") == p.person && p.note != "" {
+			if (p.rule != "") == p.person && (p.note != "" || p.accepted) {
 				t.Errorf("row has a finding note but rules and person agree")
+			}
+			if p.accepted && p.person {
+				t.Errorf("only false candidates are accepted; a miss is never accepted")
 			}
 		})
 	}
@@ -265,6 +302,12 @@ func TestDuplicateTermsPhraseJoining(t *testing.T) {
 		{"check out cart", []string{"check", "cart"}, map[string]string{"check": "checkout"}},
 		{"signing in", []string{"signi"}, nil}, // a whole-word join only
 		{"catalog in view", []string{"catal", "page"}, nil},
+		{"GitHub Actions", []string{"ci"}, map[string]string{"ci": "githubci"}},
+		{"gh workflows", []string{"ci"}, nil},
+		{"socket.io", []string{"realt"}, map[string]string{"realt": "socketio"}},
+		{"real-time", []string{"realt"}, map[string]string{"realt": "realtime"}},
+		{"user actions menu", []string{"user", "actio", "menu"}, nil}, // bare actions is not CI
+		{"onboarding workflow", []string{"onboa", "workf"}, nil},      // nor bare workflow
 	}
 	for _, tc := range cases {
 		got := DuplicateTermsOf(tc.in, "")
@@ -280,7 +323,7 @@ func TestDuplicateTermsPhraseJoining(t *testing.T) {
 }
 
 func TestDuplicateTermsStoplist(t *testing.T) {
-	stop := "build create implement write wire hook fix update handle support improve refactor clean cleanup setup set get start finish do try quick initial first basic simple"
+	stop := "build create implement write wire hook fix update handle support improve refactor clean cleanup setup set get start finish do try quick initial first basic simple fixes fixed fixing"
 	got := DuplicateTermsOf(stop+" widget", "")
 	if !reflect.DeepEqual(got.Keys, []string{"widge"}) {
 		t.Fatalf("stoplist leaked: %v", got.Keys)
@@ -320,7 +363,7 @@ func TestDuplicateTermsEverySynonymRow(t *testing.T) {
 		words []string
 	}{
 		{"page", LayerUI, []string{"page", "screen", "view", "ui", "frontend", "form", "modal", "dialog", "screens"}},
-		{"endpo", LayerAPI, []string{"endpoint", "route", "api", "handler", "backend", "server", "controller", "routes"}},
+		{"endpo", LayerAPI, []string{"endpoint", "route", "api", "apis", "handler", "backend", "server", "controller", "routes"}},
 		{"schem", LayerData, []string{"schema", "table", "migration", "database", "db", "sql", "migrations"}},
 		{"login", "", []string{"login", "signin", "logon"}},
 		{"signu", "", []string{"signup", "register", "registration"}},
@@ -328,6 +371,11 @@ func TestDuplicateTermsEverySynonymRow(t *testing.T) {
 		{"auth", "", []string{"auth", "authentication", "authn"}},
 		{"image", "", []string{"image", "img", "picture", "photo", "photos"}},
 		{"butto", "", []string{"button", "btn"}},
+		{"reset", "", []string{"reset", "forgot", "recover", "recovery"}},
+		{"ci", "", []string{"ci", "cd", "cicd", "pipeline", "pipelines", "github actions"}},
+		{"theme", "", []string{"theme", "themes", "mode", "darkmode"}},
+		{"toggl", "", []string{"toggle", "switcher", "toggles"}},
+		{"realt", "", []string{"realtime", "websocket", "websockets", "socket", "socketio", "live", "pubsub"}},
 	}
 	for _, row := range rows {
 		for _, w := range row.words {
