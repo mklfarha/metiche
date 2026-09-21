@@ -31,9 +31,11 @@ import (
 //   - session.base_commit. Not exposed; the board shows it as a tooltip on the
 //     branch and in the runs list, so those render empty.
 //   - claim.intent_key. Not exposed. Nothing on the board reads it today.
-//   - conflict.detail. Not exposed. The paths, the contract key, and for a
-//     decision_contradiction the decision key and the judge's note, are read
-//     from the conflict's evidence on the backend and are on the wire.
+//   - conflict.detail. Not exposed. The paths, the contract key, for a
+//     decision_contradiction the decision key and the judge's note, and for a
+//     duplicate_work the two plans, the signals, the shared issue id and the
+//     judge's note, are read from the conflict's evidence on the backend and
+//     are on the wire.
 //   - conflict participants' member_key. Only member_name comes back, so the
 //     key is resolved through the participant's session where there is one.
 //   - contract assertion fields. The API returns shape_hash and field_count
@@ -150,7 +152,24 @@ type conflictJSON struct {
 	JudgeNote   string  `json:"judge_note"`
 	EscalatedAt *string `json:"escalated_at"`
 
+	// Plans, Signals and IssueRef are duplicate_work only
+	// (docs/DUPLICATES.md §9.3), and JudgeNote and EscalatedAt apply there
+	// too: the two plans that look like the same work, [incumbent, yield
+	// side]; why the server paired them; the issue id both name, if any.
+	Plans    []conflictPlanJSON `json:"plans"`
+	Signals  []string           `json:"signals"`
+	IssueRef string             `json:"issue_ref"`
+
 	Participants []participantJSON `json:"participants"`
+}
+
+// conflictPlanJSON is app/webapi's conflictPlanWire (docs/DUPLICATES.md §9.3).
+type conflictPlanJSON struct {
+	Key     string `json:"key"`
+	Who     string `json:"who"`
+	Summary string `json:"summary"`
+	Path    string `json:"path"`
+	Yields  bool   `json:"yields"`
 }
 
 type snapshotWire struct {
@@ -281,6 +300,17 @@ func (c conflictJSON) conflict(memberBySession map[string]string) *model.Conflic
 		DecisionKey: c.DecisionKey,
 		JudgeNote:   c.JudgeNote,
 		EscalatedAt: parseTime(c.EscalatedAt),
+		Signals:     c.Signals,
+		IssueRef:    c.IssueRef,
+	}
+	for _, p := range c.Plans {
+		out.Plans = append(out.Plans, model.ConflictPlan{
+			Key:     p.Key,
+			Who:     p.Who,
+			Summary: p.Summary,
+			Path:    p.Path,
+			Yields:  p.Yields,
+		})
 	}
 	if out.RaisedAt.IsZero() {
 		out.RaisedAt = parseTime(c.LastDetectedAt)

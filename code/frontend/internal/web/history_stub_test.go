@@ -34,8 +34,9 @@ type stubBoardHistory struct {
 var (
 	stubConflictStatuses = []string{"resolved", "dismissed", "expired"}
 	// stubConflictKinds is app/webapi's liveConflictKinds, which gains
-	// decision_contradiction (docs/DECISIONS.md §5.1).
-	stubConflictKinds    = []string{"path_overlap", "contract_mismatch", "stale_base", "decision_contradiction"}
+	// decision_contradiction (docs/DECISIONS.md §5.1) and duplicate_work
+	// (docs/DUPLICATES.md §5.1).
+	stubConflictKinds    = []string{"path_overlap", "contract_mismatch", "stale_base", "decision_contradiction", "duplicate_work"}
 	stubEventKinds       = []string{"session_started", "intent_declared", "claim_released", "conflict_raised"}
 	stubDecisionStatuses = []string{"superseded", "revoked"}
 )

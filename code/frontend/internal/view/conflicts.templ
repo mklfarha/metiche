@@ -53,6 +53,9 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 			if c.DecisionKey != "" {
 				<a class="badge kind dec-key" href={ decisionURL(s.Team.Slug, c.DecisionKey) } title="the decision this plan contradicts">{ c.DecisionKey }</a>
 			}
+			if c.IssueRef != "" {
+				<span class="badge kind dup-issue" title="the issue both plans name">{ c.IssueRef }</span>
+			}
 			if !c.EscalatedAt.IsZero() {
 				<span class="badge dec-asked" title={ "metiche asked a person at " + runStamp(c.EscalatedAt) + ", because the agents had not settled it" }>a person was asked { clock(c.EscalatedAt) }</span>
 			}
@@ -77,6 +80,9 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 		</div>
 		if c.Detail != "" {
 			<div class="detail">{ c.Detail }</div>
+		}
+		if len(c.Plans) > 0 {
+			@dupPlans(c)
 		}
 		if !open && c.ResolutionNote != "" {
 			// How it was settled replaces what to do: a settled conflict has
@@ -106,7 +112,8 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 				</span>
 			</div>
 		}
-		if len(c.Paths) > 0 {
+		if len(c.Paths) > 0 && len(c.Plans) == 0 {
+			// A duplicate's paths are its plans' paths, already on each plan.
 			<div class="paths" style="margin-bottom:8px">
 				for _, p := range c.Paths {
 					<div class={ "path", "hot-"+c.Severity }><span>{ p }</span></div>
@@ -130,4 +137,39 @@ templ conflictCard(s state.Snapshot, c *model.Conflict, open bool) {
 		// that used to be here posted to this service, which applied a made-up
 		// event and broadcast it to every viewer.
 	</div>
+}
+
+// dupPlans is the middle of a duplicate_work card (docs/DUPLICATES.md §5.2):
+// the two plans that look like the same work, side by side, each with its
+// key, whose it is, what it says and the path it holds; the one the server
+// asked to yield is badged, with the reason; then why the server paired them.
+// Every class is prefixed dup-: .who and .empty already mean something else
+// on this board.
+templ dupPlans(c *model.Conflict) {
+	<div class="dup-plans">
+		for _, p := range c.Plans {
+			<div class={ "dup-plan", templ.KV("dup-yields", p.Yields) }>
+				<div class="dup-plan-head">
+					<span class="dup-key">{ p.Key }</span>
+					if p.Yields {
+						<span class="badge dup-stop" title="the plan declared (or reworded) later is the one asked to yield: ordering assigns responsibility, not permission">asked to stop</span>
+					}
+				</div>
+				<div class="dup-who">{ p.Who }</div>
+				<div class="dup-summary">“{ p.Summary }”</div>
+				if p.Path != "" {
+					<div class="dup-path" title={ p.Path }>{ p.Path }</div>
+				}
+				<div class="dup-reason">{ dupReason(p) }</div>
+			</div>
+		}
+	</div>
+	if len(c.Signals) > 0 {
+		<div class="dup-signals">
+			<span class="dup-signals-k">why paired</span>
+			for _, sig := range c.Signals {
+				<span class="dup-chip">{ sig }</span>
+			}
+		</div>
+	}
 }

@@ -129,7 +129,9 @@ templ conflictHistoryRow(slug string, c *model.Conflict) {
 				<span class="text">{ c.ResolutionNote }</span>
 			</div>
 		}
-		if len(c.Paths) > 0 {
+		if len(c.Plans) > 0 {
+			@dupPlans(c)
+		} else if len(c.Paths) > 0 {
 			<div class="paths">
 				for _, path := range c.Paths {
 					<div class="path" title={ path }><span>{ path }</span></div>

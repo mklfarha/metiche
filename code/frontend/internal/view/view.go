@@ -322,6 +322,14 @@ func suggestedAction(s state.Snapshot, c *model.Conflict) string {
 		vars["who"] = wording.Join(planSide(s, c))
 
 	case model.KindDuplicateWork:
+		// With the two plans on the wire (docs/DUPLICATES.md §9.3) the
+		// backend's sentence (§4.10) is the one to show: it names the plan
+		// already building it and tells the side asked to yield what to do.
+		// The cadence phrase ("one of you stop") would contradict it by not
+		// saying which one.
+		if len(c.Plans) > 0 && c.SuggestedAction != "" {
+			return c.SuggestedAction
+		}
 		kind = wording.KindDuplicate
 		vars["who"] = wording.Join(all)
 
@@ -576,3 +584,12 @@ func graphDiamond(n state.GraphNode) string {
 }
 
 func f(v float64) string { return fmt.Sprintf("%.1f", v) }
+
+// dupReason is the line under a duplicate plan saying why it is, or is not,
+// the side asked to yield (docs/DUPLICATES.md §4.3): the later declarer is.
+func dupReason(p model.ConflictPlan) string {
+	if p.Yields {
+		return "declared later, so asked to yield"
+	}
+	return "declared first"
+}

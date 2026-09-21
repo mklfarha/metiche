@@ -276,3 +276,22 @@ func TestConflictKindFilterIncludesDecisionContradiction(t *testing.T) {
 		t.Fatalf("kind query = %q", q)
 	}
 }
+
+// TestConflictKindFilterIncludesDuplicateWork: the backend's live kinds gain
+// duplicate_work (docs/DUPLICATES.md §5.1); the filter offers it under its
+// readable label and forwards it.
+func TestConflictKindFilterIncludesDuplicateWork(t *testing.T) {
+	x := historyWorld(t)
+	body := x.get("/t/" + pubSlug + "/conflicts").Body.String()
+	chip := `href="/t/` + pubSlug + `/conflicts?kind=duplicate_work"`
+	if !strings.Contains(body, chip) || !strings.Contains(body, ">duplicate work</a>") {
+		t.Fatalf("the kind filter does not offer duplicate_work")
+	}
+	rec := x.get("/t/" + pubSlug + "/conflicts?kind=duplicate_work")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `aria-current="true" `+chip) {
+		t.Fatalf("filtering by duplicate_work: %d", rec.Code)
+	}
+	if q := x.backend.lastHistoryQuery(pubSlug, "conflicts/history"); q != "kind=duplicate_work&limit=50" {
+		t.Fatalf("kind query = %q", q)
+	}
+}

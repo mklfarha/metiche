@@ -363,12 +363,33 @@ type Conflict struct {
 	// agents said. Empty for a conflict that is still open.
 	ResolutionNote string `json:"resolution_note"`
 	Occurrences    int    `json:"occurrences"`
-	// JudgeNote is what the plan's own agent said when it judged the plan
-	// against a decision: its confidence and reason. decision_contradiction only.
+	// JudgeNote is what the plan's own agent said when it judged its plan:
+	// its confidence and reason. decision_contradiction and duplicate_work.
 	JudgeNote string `json:"judge_note"`
 	// EscalatedAt is when metiche asked a person, because the agents did not
 	// settle it in time. Zero when nobody was asked.
 	EscalatedAt time.Time `json:"escalated_at"`
+	// Plans, Signals and IssueRef are duplicate_work only
+	// (docs/DUPLICATES.md §9.3). Plans are the two plans that look like the
+	// same work, the incumbent first and the side asked to yield second, as
+	// the backend sends them; Signals are why the server paired them, in its
+	// own words ("shared words: login, screen"); IssueRef is the issue id
+	// both plans name, when they share one.
+	Plans    []ConflictPlan `json:"plans,omitempty"`
+	Signals  []string       `json:"signals,omitempty"`
+	IssueRef string         `json:"issue_ref,omitempty"`
+}
+
+// ConflictPlan is one side of a duplicate_work conflict: a plan, whose it is,
+// what it says, and whether the server asked it to yield. The side asked to
+// yield is the one declared (or reworded) later: ordering assigns
+// responsibility, not permission.
+type ConflictPlan struct {
+	Key     string `json:"key"`
+	Who     string `json:"who"`
+	Summary string `json:"summary"`
+	Path    string `json:"path,omitempty"`
+	Yields  bool   `json:"yields"`
 }
 
 // Open reports whether the conflict still wants a human's attention.

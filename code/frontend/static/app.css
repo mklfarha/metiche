@@ -1111,3 +1111,40 @@ a.badge.dec-key:hover { border-color: var(--accent); }
   .dec-why summary { display: flex; align-items: center; min-height: 40px; }
   a.badge.dec-key { min-height: 40px; }
 }
+
+/* ---------------------------------------------------------------- duplicates
+ *
+ * The middle of a duplicate_work card (docs/DUPLICATES.md §5.2): the two
+ * plans side by side, in the collision mark's own two colours (the plan that
+ * was there first in indigo, like a holder; the one asked to yield in coral,
+ * like a challenger), then why the server paired them. Every class is
+ * prefixed dup-. The two plans stack below 760px; keys, summaries and paths
+ * wrap anywhere, so nothing is wider than its column. */
+.dup-plans {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px;
+}
+.dup-plan {
+  min-width: 0; padding: 8px 10px; border-radius: 5px;
+  background: var(--indigo-bg); border: 1px solid var(--line); border-left: 3px solid var(--indigo-ink);
+}
+.dup-plan.dup-yields { background: var(--coral-bg); border-left-color: var(--coral); }
+.dup-plan-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 3px; }
+.dup-key { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.badge.dup-stop { color: var(--coral-ink); border-color: var(--sev-high-line); background: var(--panel); }
+.dup-who { font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.dup-summary { font-size: 13px; font-weight: 500; color: var(--ink); margin: 3px 0; overflow-wrap: anywhere; }
+.dup-path { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.dup-reason { margin-top: 4px; font-size: 11px; color: var(--ink-3); }
+.dup-yields .dup-reason { color: var(--coral-ink); }
+.dup-signals { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-bottom: 8px; min-width: 0; }
+.dup-signals-k {
+  font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); font-weight: 700;
+}
+.dup-chip {
+  max-width: 100%; padding: 1px 7px; font-size: 11px; color: var(--ink-2);
+  background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 4px; overflow-wrap: anywhere;
+}
+.badge.dup-issue { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .dup-plans { grid-template-columns: minmax(0, 1fr); }
+}
