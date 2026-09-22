@@ -281,6 +281,7 @@ handler.SetDetector(metichemcp.ChainDetectors(
    LIMIT 8
    ```
 4. **words**, this project only. `loadLiveIntents` (extended to return `wording_revision`, `kind` and the session's `parent_session_uuid`), `idx_intent_live`, LIMIT 100, excluding the caller's session. Then in Go: `coordination.DuplicateTermsOf` for the caller and each candidate; `coordination.FrequentTerms` over all of them; `coordination.ScoreDuplicate` for each, with `pathsOverlap = req.OverlapSessions[candidate.session] != ""`.
+4b. **Re-judge an open conflict, whatever the score** (rewordings only). Every open or acknowledged `duplicate_work` conflict this plan is in (`OpenDuplicateConflictsOfSession`'s two paths plus this intent, capped at `settleMaxConflicts`) names its other plan in the `plans:` fact; each such plan that is still declared or active, with its session live or stale, is a **re-judge candidate** and gets a pair at the new wording even when the new summary no longer scores against it. A genuine re-scope ("build the login screen" → "add password strength meter") stops resembling the other plan, and without this pair nothing but a plan ending could close the conflict (§4.7 rule 5). Plans with no open duplicate conflict keep the score gate exactly as before. Re-judge candidates skip steps 5 and 6 (they were paired once already) but not the pinned and existing-key checks.
 5. **Drop:** the caller's own session (already excluded); a supervisor/subagent pair (`candidate.session == caller.parent` or `candidate.parent == caller.session`; siblings are kept, because two subagents on one thing is a real duplicate); candidate intents of kind `hold`; pairs pinned at any revision, either order:
    ```sql
    SELECT `subject_a_uuid`, `subject_b_uuid` FROM `judgement`
@@ -289,9 +290,9 @@ handler.SetDetector(metichemcp.ChainDetectors(
    LIMIT ?
    ```
    and pairs whose exact key already exists in any status (`existingPairKeys`).
-6. **Rank** with `coordination.RankDuplicateCandidates`: same_issue 3 > words_and_paths 2 > words 1, then core shared keys descending, then shared keys, then intent key ascending. Keep `duplicateMaxPairsPerCall`.
+6. **Rank** with `coordination.RankDuplicateCandidates`: same_issue 3 > words_and_paths 2 > words 1, then core shared keys descending, then shared keys, then intent key ascending. Re-judge candidates go **first**, in conflict order, and are all kept; scored candidates fill what is left of `duplicateMaxPairsPerCall`. So under the per-minute cap a re-judge pair is assigned before any new candidate and is never starved into the backlog behind one.
 7. **Insert**, a = candidate, b = caller, both at `wording_revision`, `kind = duplicate_work`, `status = pending`. **Assigned** to the caller (`judging_expires_at = now + window`, `assignment_count = 1`) while `reviewsAssignedRecently` is under the cap; **otherwise unassigned** (backlog; the sweeper assigns it to subject b's session). Staleness is by `wording_revision`, so a backlogged pair can never be judged against old wording.
-8. **Append** a `reviewBlockPair` for each inserted and assigned pair.
+8. **Append** a `reviewBlockPair` for each inserted and assigned pair. A re-judge pair's `why` is `open_conflict`.
 
 #### The review block (shared with decisions)
 
@@ -306,7 +307,7 @@ type reviewBlockPair struct {
 	Plan      string `json:"plan,omitempty"`      // duplicate pairs: the other plan's key
 	With      string `json:"with,omitempty"`      // duplicate pairs: describeHolder of its owner
 	Summary   string `json:"summary,omitempty"`   // duplicate pairs: the other plan's summary
-	Why       string `json:"why"`                 // decisions: scope|always_show|words; duplicates: same_issue|words_and_paths|words
+	Why       string `json:"why"`                 // decisions: scope|always_show|words; duplicates: same_issue|words_and_paths|words|open_conflict
 }
 ```
 
@@ -369,6 +370,7 @@ For `duplicate_work`:
   - `same issue: %s`
   - `your summaries share words: %s` (the caller's own words for up to 4 shared keys, comma-joined; §4.2)
   - `you also claim overlapping files: %s` (first overlap of the two plans' held write paths)
+  - `the duplicate conflict %s between these plans is still open: judge your plan as it is worded now` (the conflict key, when the pair's conflict is open or acknowledged; this is the why of a re-judge pair, §3.1 step 4b)
 - `revision` is the intents' `revision` for display; `wording_revision` is never shown.
 
 ```json
@@ -710,8 +712,7 @@ acknowledged `duplicate_work` conflicts (`idx_participant_session`), and (b) con
 `kind = duplicate_work`, `conflict_uuid IS NOT NULL` (`idx_judgement_subject`), then filtered to open or
 acknowledged by primary key. Capped at `settleMaxConflicts`.
 
-A rewording never settles anything by itself. It earns a new pair, and that verdict converges or keeps the
-conflict.
+A rewording never settles anything by itself. While the pair's duplicate conflict is open, a rewording of either plan **always** earns a re-judge pair against the other plan, whatever the new wording scores (§3.1 step 4b), assigned to the reworded plan's own session ahead of new candidates under the cap. That verdict converges the conflict (rule 5) or keeps it; a conflict verdict makes the reworded plan the yield side (§4.3).
 
 ### 4.8 Asking a person — only when the agents did not settle it
 
@@ -1375,4 +1376,5 @@ These tighten the approved design. None changes the model or an owner decision.
 - **Phrase joins match case-insensitively on the original text** instead of lowercasing first (`duplicatePhraseJoins`), so `Tokenize` still splits camelCase; `sign-in`, `sign_in` and `SignIn` join too. Identical for lowercase input. The project key gets the same joins.
 - **The import guard checks the three future `app/mcp` files once they exist** (`importguard_test.go`): `duplicatereview.go`, `duplicateresolve.go`, `reviewrender.go`. Listing them before Wave B writes them would fail the test; any stat error other than not-found fails it.
 - **`Demoted` wins over the issue floor** in `DuplicateSeverity`: a demoted rule always records `low`. It cannot clash in practice, because a shared issue carries the `same_issue` rule, not the demoted `words`.
+- **Re-judge after a re-scope (2026-09-21, follow-up to B1).** A rewording under an open duplicate conflict always mints a re-judge pair against the other plan, whatever the score (§3.1 step 4b, `why: open_conflict`), ordered before new candidates so the per-minute cap cannot starve it. Found by reading `reviewIntent`: a genuine re-scope no longer scored as a candidate, so no pair was minted and the conflict could only close when a plan ended, while the incumbent could still be told after the grace and a person asked. Settling on the rewording alone, with no judgement, was rejected: the owner's rule is that the agents settle it and the agent's own model decides, and a rewording that keeps the same work under new words must stay open. Plans with no open conflict keep the score gate, so ordinary rewordings add no pairs.
 - **Bias towards catching.** Wording misses found with hackathon pairs were closed with five synonym rows (`reset`, `ci`, `theme`, `toggle`, `realtime`), three phrase joins, the fix forms in the stoplist, `apis`, and the same-layer-set rule (§4.2). `ScoreDuplicate` gained the rule value `words_layer` (§9.1); like every wording rule it is the `words` why and `duplicate_work.words` on a conflict.
