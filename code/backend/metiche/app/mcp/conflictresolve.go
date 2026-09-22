@@ -124,6 +124,9 @@ type SettledConflict struct {
 	Resolution  enums.ConflictResolution
 	Note        string
 	OverlapPath string
+	// PlanKeys is set only on a duplicate_work conflict: the yield side's
+	// plan key, then the other plan's (b, a).
+	PlanKeys [2]string
 }
 
 // ─────────────────────────────────────────────
@@ -723,6 +726,9 @@ func ConflictResolvedSummary(s SettledConflict) string {
 		return truncate(fmt.Sprintf("%s settled (%s): the %s on %s", s.Key, s.Resolution.String(), what, firstNonEmpty(s.OverlapPath, "the contract")), 240)
 	case enums.CONFLICT_KIND_DECISION_CONTRADICTION:
 		return truncate(fmt.Sprintf("%s settled (%s): the plan no longer contradicts %s", s.Key, s.Resolution.String(), firstNonEmpty(s.OverlapPath, "the decision")), 240)
+	case enums.CONFLICT_KIND_DUPLICATE_WORK:
+		return truncate(fmt.Sprintf("%s settled (%s): %s no longer duplicates %s", s.Key, s.Resolution.String(),
+			firstNonEmpty(s.PlanKeys[0], "the plan"), firstNonEmpty(s.PlanKeys[1], "the other plan")), 240)
 	}
 	where := s.OverlapPath
 	if where == "" {

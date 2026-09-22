@@ -131,7 +131,10 @@ type ConflictNotice struct {
 	Contract string `json:"contract,omitempty"`
 	// Decision is set only on a decision_contradiction: the decision's key.
 	// AtFault is then always "plan".
-	Decision        string   `json:"decision,omitempty"`
+	Decision string `json:"decision,omitempty"`
+	// DuplicateOf is set only on a duplicate_work conflict: the other plan's key.
+	// AtFault is then always "later".
+	DuplicateOf     string   `json:"duplicate_of,omitempty"`
 	AtFault         string   `json:"at_fault,omitempty"`
 	Fields          []string `json:"fields,omitempty"`
 	SuggestedAction string   `json:"suggested_action"`

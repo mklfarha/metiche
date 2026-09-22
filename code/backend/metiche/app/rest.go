@@ -134,9 +134,15 @@ func ProvideCustomRoutes(coreImpl *core.Implementation, logger *zap.Logger) rest
 		// The decision reviewer runs second, on the same transaction: it
 		// pairs a declared or updated plan with the recorded decisions it
 		// touches and writes the inline review block (docs/DECISIONS.md §3.2).
+		// The duplicate reviewer runs before it and takes the shared review
+		// cap first; the renderer writes both reviewers' pairs into one block,
+		// last (docs/DUPLICATES.md §3.1).
 		handler.SetDetector(metichemcp.ChainDetectors(
 			metichemcp.NewPathDetector(coreImpl, logger),
-			metichemcp.NewDecisionReviewer(coreImpl, logger)))
+			metichemcp.NewDuplicateReviewer(coreImpl, logger),
+			metichemcp.NewDecisionReviewer(coreImpl, logger),
+			metichemcp.NewReviewRenderer(),
+		))
 
 		// The board's half of the surface. Same role gate as the MCP
 		// endpoint above: these are what the frontend reads, so they belong

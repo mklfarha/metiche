@@ -184,6 +184,11 @@ report_judgement. no_conflict is the usual answer; conflict only when doing the 
 statement. On a conflict, change the plan and update_intent; if the decision is wrong, settle it with its author's
 agent, and ask your person only if you can't.
 
+A review pair of kind duplicate_work puts your plan next to another agent's live plan: answer whether doing yours
+would build the same thing theirs is building (the same area is not enough). On a conflict you declared later, so
+stop (update_intent status superseded) or re-scope and reword the summary before you edit. Name the thing in every
+summary, even a hurried one: that line is how two agents find out they are building the same thing.
+
 If the person asks to see the board, call open_board.
 
 Retries are safe: pass the same idempotency_key and you get the same answer back, applied once.

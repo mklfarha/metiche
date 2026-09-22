@@ -505,12 +505,42 @@ func (h *Handler) EndSession(ctx context.Context, _ *mcp.CallToolRequest, args E
 			if err != nil {
 				return err
 			}
-			_, err = h.settleDecisionConflicts(ctx, tc, DecisionRelease{
+			if _, err := h.settleDecisionConflicts(ctx, tc, DecisionRelease{
 				TeamUUID:    who.Team.ID,
 				SessionUUID: sess.ID,
 				Kind:        DecisionReleaseSessionEnded,
 				At:          tc.Now,
-			}, ids, actor)
+			}, ids, actor); err != nil {
+				return err
+			}
+
+			// Nobody is asked about its plans any more, and the duplicates
+			// they were in may be settled: nobody is left to duplicate, or to
+			// be duplicated (docs/DUPLICATES.md §3.4, §4.7).
+			// ExpireJudgementsOfSession above covered the pairs it was judging.
+			live, err := sessionLiveIntentIDs(ctx, tc.Tx, sess.ID)
+			if err != nil {
+				return err
+			}
+			liveIDs := make([]uuid.UUID, 0, len(live))
+			for _, raw := range live {
+				if id, err := uuid.FromString(raw); err == nil {
+					liveIDs = append(liveIDs, id)
+				}
+			}
+			if _, err := ExpireDuplicatePairsOnIntents(ctx, tc.Tx, who.Team.ID, liveIDs, tc.Now); err != nil {
+				return err
+			}
+			dups, err := OpenDuplicateConflictsOfSession(ctx, tc.Tx, who.Team.ID, sess.ID)
+			if err != nil {
+				return err
+			}
+			_, err = h.settleDuplicateConflicts(ctx, tc, DuplicateRelease{
+				TeamUUID:    who.Team.ID,
+				SessionUUID: sess.ID,
+				Kind:        DuplicateReleaseSessionEnded,
+				At:          tc.Now,
+			}, dups, actor)
 			return err
 		},
 	})

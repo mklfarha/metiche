@@ -96,7 +96,7 @@ func RegisterDecisionTools(s *mcp.Server, h *Handler, logger *zap.Logger) {
 
 	addTool(s, h, logger, &mcp.Tool{
 		Name: "get_review_context",
-		Description: "Read the pairs metiche has asked you to judge: a recorded team decision next to your own plan, with why they were paired. " +
+		Description: "Read the pairs metiche has asked you to judge: your own plan next to a recorded team decision, or next to another agent's live plan that may be the same work, with why they were paired. " +
 			"Call it when pending.reviews is above zero, or when a response's review block did not carry everything you need, then answer each pair with report_judgement. " +
 			"Read-only: it changes nothing and can be called again. metiche never judges anything itself — your model does.",
 		Annotations: readOnly,
@@ -105,10 +105,10 @@ func RegisterDecisionTools(s *mcp.Server, h *Handler, logger *zap.Logger) {
 	// Idempotent: the key is the judgement and the verdict, like report_back.
 	addTool(s, h, logger, &mcp.Tool{
 		Name: "report_judgement",
-		Description: "Give your verdict on a pair from get_review_context or a review block: would your plan, as written, break the recorded decision? " +
-			"'no_conflict' is the usual answer; 'conflict' only when doing the plan would break the statement; 'unsure' when the wording does not settle it. " +
+		Description: "Give your verdict on a pair from get_review_context or a review block: would your plan, as written, break the recorded decision — or build the same thing the other agent's plan is already building? " +
+			"'no_conflict' is the usual answer; 'conflict' only when doing the plan would break the statement, or would produce the same change as the other plan (the same area is not enough); 'unsure' when what you were shown does not settle it. " +
 			"Include an honest confidence and a one-line rationale; both are shown on the board. " +
-			"A conflict comes back in conflicts[] with what to do, and the decision's author's agent is told. " +
+			"A conflict comes back in conflicts[] with what to do. " +
 			"Change your plan and update_intent, and you will be asked once more; a no_conflict then settles it. " +
 			"Safe to retry: the same verdict on the same pair returns the first answer.",
 		Annotations: idempotent,
@@ -986,6 +986,13 @@ type liveIntent struct {
 	Summary  string
 	Revision int64
 	Session  string
+	// WordingRevision, Kind and Parent are for the duplicate reviewer
+	// (docs/DUPLICATES.md §3.1): the pair key's revision, the hold skip and
+	// the supervisor/subagent skip. Parent is the session's
+	// parent_session_uuid, "" when it has none.
+	WordingRevision int64
+	Kind            enums.IntentKind
+	Parent          string
 }
 
 // loadLiveIntents reads live plans matching where. For a project,
@@ -996,7 +1003,8 @@ func loadLiveIntents(ctx context.Context, q queryer, where string, whereArgs []a
 	args = append(args, int64(enums.INTENT_STATUS_DECLARED), int64(enums.INTENT_STATUS_ACTIVE), now,
 		int64(enums.SESSION_STATUS_LIVE), int64(enums.SESSION_STATUS_STALE), excludeSession.String(), limit)
 	rows, err := q.QueryContext(ctx,
-		"SELECT i.`id`, i.`key`, i.`summary`, i.`revision`, i.`session_uuid` FROM `intent` i "+
+		"SELECT i.`id`, i.`key`, i.`summary`, i.`revision`, i.`session_uuid`, i.`wording_revision`, i.`kind`, "+
+			"COALESCE(s.`parent_session_uuid`, '') FROM `intent` i "+
 			"JOIN `session` s ON s.`id` = i.`session_uuid` "+
 			"WHERE "+where+" AND i.`status` IN (?, ?) AND i.`expires_at` > ? AND s.`status` IN (?, ?) AND i.`session_uuid` <> ? "+
 			"ORDER BY i.`declared_at` DESC, i.`key` LIMIT ?", args...)
@@ -1006,10 +1014,14 @@ func loadLiveIntents(ctx context.Context, q queryer, where string, whereArgs []a
 	defer func() { _ = rows.Close() }()
 	var out []liveIntent
 	for rows.Next() {
-		var li liveIntent
-		if err := rows.Scan(&li.ID, &li.Key, &li.Summary, &li.Revision, &li.Session); err != nil {
+		var (
+			li   liveIntent
+			kind int64
+		)
+		if err := rows.Scan(&li.ID, &li.Key, &li.Summary, &li.Revision, &li.Session, &li.WordingRevision, &kind, &li.Parent); err != nil {
 			return nil, retryable(err, "reading the live plans")
 		}
+		li.Kind = enums.IntentKind(kind)
 		out = append(out, li)
 	}
 	return out, retryable(rows.Err(), "reading the live plans")

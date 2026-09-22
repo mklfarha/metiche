@@ -33,10 +33,10 @@ type ReportJudgementParams struct {
 	SessionKey string   `json:"session_key" jsonschema:"The session_key start_session gave you."`
 	TeamSlug   string   `json:"team_slug,omitempty" jsonschema:"The team this session is on, by slug: the team_slug start_session returned. Optional on one team; pass team_slug when you are on more than one team, because session keys are per team."`
 	PairKey    string   `json:"pair_key" jsonschema:"The pair_key from a review block or get_review_context, exactly as given. metiche computed it; never make one up."`
-	Verdict    string   `json:"verdict" jsonschema:"'conflict' if carrying out your plan as written would break the decision; 'no_conflict' if it would not (the usual answer: unrelated or compatible); 'unsure' if the decision's wording does not settle it."`
+	Verdict    string   `json:"verdict" jsonschema:"'conflict' if carrying out your plan as written would break the decision, or would build the same thing the other plan is already building; 'no_conflict' if not (the usual answer: unrelated, compatible, or only the same area); 'unsure' if what you were shown does not settle it."`
 	Confidence *float64 `json:"confidence,omitempty" jsonschema:"How sure you are, 0 to 1. Be honest: a conflict below 0.7 is recorded on the board but interrupts nobody. Required for conflict."`
-	Severity   string   `json:"severity,omitempty" jsonschema:"For a conflict: 'low', 'medium' (default) or 'high', meaning how much breaks if the plan goes ahead. Ignored otherwise."`
-	Rationale  string   `json:"rationale,omitempty" jsonschema:"One line naming what in your plan meets what in the decision: 'plan stores the token in localStorage; #auth-jwt-cookie forbids it'. Max 400 characters. Required for conflict and unsure. Shown on the board; no secrets."`
+	Severity   string   `json:"severity,omitempty" jsonschema:"For a conflict: 'low', 'medium' (default) or 'high': how much breaks, or how much work is wasted, if you go ahead. Ignored otherwise."`
+	Rationale  string   `json:"rationale,omitempty" jsonschema:"One line naming what meets what: 'plan stores the token in localStorage; #auth-jwt-cookie forbids it', or 'both build the login page; INT-83 already has the route'. Max 400 characters. Required for conflict and unsure. Shown on the board; no secrets."`
 }
 
 // judgementInput is a validated verdict.
@@ -114,6 +114,10 @@ type judgementReport struct {
 	IntentSession      string
 	IntentMember       string
 	IntentProject      string
+
+	// Filled by Apply for a duplicate_work pair: subject a (the other plan)
+	// and subject b (the judge's own plan), as they stand under the lock.
+	DupA, DupB duplicatePlan
 }
 
 // ReportJudgement records a verdict on one pair.
@@ -141,12 +145,24 @@ func (h *Handler) ReportJudgement(ctx context.Context, _ *mcp.CallToolRequest, a
 		return nil, nil, fmt.Errorf("this pair is %s's to judge, not yours", judgeName(ctx, h.core.DB(), row))
 	}
 
-	decisionID, err := uuid.FromString(row.DecisionID)
+	subjectA, err := uuid.FromString(row.SubjectAID)
 	if err != nil {
 		return nil, nil, err
 	}
-	intentID, _ := uuid.FromString(row.IntentID)
+	intentID, _ := uuid.FromString(row.SubjectBID)
 	j := &judgementReport{In: in, TeamUUID: who.Team.ID, SessionUUID: sess.ID, AgentLabel: ag.Label, Row: row}
+
+	// The event is about subject a: the decision, or the other plan
+	// (docs/DUPLICATES.md §3.3). The payload's intent is always the judge's.
+	var subjectKind enums.SubjectKind
+	switch row.Kind {
+	case enums.CONFLICT_KIND_DECISION_CONTRADICTION:
+		subjectKind = enums.SUBJECT_KIND_DECISION
+	case enums.CONFLICT_KIND_DUPLICATE_WORK:
+		subjectKind = enums.SUBJECT_KIND_INTENT
+	default:
+		return nil, nil, fmt.Errorf("pairs of kind %s cannot be judged yet", row.Kind.String())
+	}
 
 	response, err := h.commit(ctx, Mutation{
 		TeamUUID: who.Team.ID,
@@ -159,8 +175,8 @@ func (h *Handler) ReportJudgement(ctx context.Context, _ *mcp.CallToolRequest, a
 		SessionUUID:    uuidPtr(sess.ID),
 		AgentUUID:      uuidPtr(ag.ID),
 		MemberUUID:     uuidPtr(who.Member.ID),
-		SubjectKind:    enums.SUBJECT_KIND_DECISION,
-		SubjectUUID:    uuidPtr(decisionID),
+		SubjectKind:    subjectKind,
+		SubjectUUID:    uuidPtr(subjectA),
 		Payload:        payload_entity.EventPayload{IntentUUID: uuidPtr(intentID)},
 		Apply: func(ctx context.Context, tc *TxContext, env *Envelope) error {
 			return applyReportJudgement(ctx, tc, env, j)
@@ -204,6 +220,9 @@ func applyReportJudgement(ctx context.Context, tc *TxContext, env *Envelope, j *
 		return errors.New("this pair expired unanswered; call get_review_context for what is waiting now")
 	}
 	j.Row = row
+	if row.Kind == enums.CONFLICT_KIND_DUPLICATE_WORK {
+		return applyDuplicateJudgement(ctx, tc, env, j)
+	}
 
 	var (
 		dStatus, dRev int64
@@ -211,7 +230,7 @@ func applyReportJudgement(ctx context.Context, tc *TxContext, env *Envelope, j *
 	)
 	err = tc.Tx.QueryRowContext(ctx,
 		"SELECT `key`, `status`, `revision`, `statement`, `always_show`, COALESCE(`decided_by_member_uuid`, ''), COALESCE(`recorded_by_session_uuid`, '') "+
-			"FROM `decision` WHERE `id` = ?", row.DecisionID).
+			"FROM `decision` WHERE `id` = ?", row.SubjectAID).
 		Scan(&j.DecisionKey, &dStatus, &dRev, &j.DecisionStatement, &j.DecisionAlwaysShow, &decidedBy, &j.RecordedBy)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -223,13 +242,13 @@ func applyReportJudgement(ctx context.Context, tc *TxContext, env *Envelope, j *
 	if st := enums.DecisionStatus(dStatus); st != enums.DECISION_STATUS_ACCEPTED {
 		return fmt.Errorf("%s was %s; nothing to judge", j.DecisionKey, st.String())
 	}
-	if dRev != row.DecisionRev {
-		return fmt.Errorf("%s is now revision %d and you judged revision %d: call get_review_context for the current pair", j.DecisionKey, dRev, row.DecisionRev)
+	if dRev != row.SubjectARev {
+		return fmt.Errorf("%s is now revision %d and you judged revision %d: call get_review_context for the current pair", j.DecisionKey, dRev, row.SubjectARev)
 	}
 
 	var iStatus, iRev int64
 	err = tc.Tx.QueryRowContext(ctx,
-		"SELECT `key`, `status`, `revision`, `summary`, `session_uuid`, `member_uuid`, `project_uuid` FROM `intent` WHERE `id` = ?", row.IntentID).
+		"SELECT `key`, `status`, `revision`, `summary`, `session_uuid`, `member_uuid`, `project_uuid` FROM `intent` WHERE `id` = ?", row.SubjectBID).
 		Scan(&j.IntentKey, &iStatus, &iRev, &j.IntentSummary, &j.IntentSession, &j.IntentMember, &j.IntentProject)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -240,10 +259,66 @@ func applyReportJudgement(ctx context.Context, tc *TxContext, env *Envelope, j *
 	if st := enums.IntentStatus(iStatus); st != enums.INTENT_STATUS_DECLARED && st != enums.INTENT_STATUS_ACTIVE {
 		return fmt.Errorf("%s is %s; nothing to judge", j.IntentKey, st.String())
 	}
-	if iRev != row.IntentRev {
-		return fmt.Errorf("%s is now revision %d and you judged revision %d: call get_review_context for the current pair", j.IntentKey, iRev, row.IntentRev)
+	if iRev != row.SubjectBRev {
+		return fmt.Errorf("%s is now revision %d and you judged revision %d: call get_review_context for the current pair", j.IntentKey, iRev, row.SubjectBRev)
 	}
 
+	if err := recordVerdict(ctx, tc, j); err != nil {
+		return err
+	}
+	env.Key = j.IntentKey
+	return nil
+}
+
+// applyDuplicateJudgement is Apply for a duplicate_work pair (docs/DUPLICATES.md
+// §3.3): both plans still live, each at the wording it was paired at, and the
+// other side's session still there.
+func applyDuplicateJudgement(ctx context.Context, tc *TxContext, env *Envelope, j *judgementReport) error {
+	row := j.Row
+	a, err := loadDuplicatePlan(ctx, tc.Tx, row.SubjectAID)
+	if err != nil {
+		return err
+	}
+	b, err := loadDuplicatePlan(ctx, tc.Tx, row.SubjectBID)
+	if err != nil {
+		return err
+	}
+	if !a.Found || !b.Found {
+		return errors.New("this pair's plan no longer exists; nothing to judge")
+	}
+	for _, p := range []duplicatePlan{b, a} {
+		if !p.live() {
+			return fmt.Errorf("%s is %s; nothing to judge", p.Key, p.Status.String())
+		}
+	}
+	// Staleness is by wording_revision: a pair made against old wording is
+	// refused, and the rewording already minted the current one.
+	if b.WordingRevision != row.SubjectBRev {
+		return fmt.Errorf("%s was reworded after this pair was made: call get_review_context for the current pair", b.Key)
+	}
+	if a.WordingRevision != row.SubjectARev {
+		return fmt.Errorf("%s was reworded after this pair was made: call get_review_context for the current pair", a.Key)
+	}
+	var sessStatus int64
+	err = tc.Tx.QueryRowContext(ctx, "SELECT `status` FROM `session` WHERE `id` = ?", a.Session).Scan(&sessStatus)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return retryable(err, "re-reading the other plan's session")
+	}
+	if st := enums.SessionStatus(sessStatus); err != nil || (st != enums.SESSION_STATUS_LIVE && st != enums.SESSION_STATUS_STALE) {
+		return fmt.Errorf("%s's session has ended; nothing to judge", a.Key)
+	}
+	j.DupA, j.DupB = a, b
+	j.IntentKey, j.IntentSummary, j.IntentSession, j.IntentMember, j.IntentProject = b.Key, b.Summary, b.Session, b.Member, b.Project
+	if err := recordVerdict(ctx, tc, j); err != nil {
+		return err
+	}
+	env.Key = b.Key
+	return nil
+}
+
+// recordVerdict is §3.3's conditional UPDATE, the same for every kind.
+func recordVerdict(ctx context.Context, tc *TxContext, j *judgementReport) error {
+	row := j.Row
 	in := j.In
 	var severity, confidence, rationale any
 	if in.Verdict == enums.JUDGEMENT_VERDICT_CONFLICT {
@@ -266,7 +341,6 @@ func applyReportJudgement(ctx context.Context, tc *TxContext, env *Envelope, j *
 	if n, _ := res.RowsAffected(); n != 1 {
 		return errors.New("this pair was answered by another call; call get_review_context for what is waiting now")
 	}
-	env.Key = j.IntentKey
 	return nil
 }
 
@@ -276,6 +350,15 @@ func applyReportJudgement(ctx context.Context, tc *TxContext, env *Envelope, j *
 
 func (h *Handler) detectReportJudgement(ctx context.Context, tc *TxContext, m *Mutation, j *judgementReport) ([]ConflictNotice, error) {
 	in := j.In
+	if j.Row.Kind == enums.CONFLICT_KIND_DUPLICATE_WORK {
+		// Subject a is the other plan; the payload's intent is the judge's.
+		m.SubjectKey = truncate(j.DupA.Key, 64)
+		m.Summary = fmt.Sprintf("%s judged %s against %s: %s", j.AgentLabel, j.DupB.Key, j.DupA.Key, verdictWords(in.Verdict))
+		m.Payload.Detail = nullString(in.Verdict.String())
+		m.Payload.Message = nullString(in.Rationale)
+		m.Payload.Paths = []string{j.DupA.Key}
+		return h.detectDuplicateVerdict(ctx, tc, m, j)
+	}
 	m.SubjectKey = truncate(j.DecisionKey, 64)
 	m.Summary = fmt.Sprintf("%s judged %s against %s: %s", j.AgentLabel, j.IntentKey, j.DecisionKey, verdictWords(in.Verdict))
 	m.Payload.Detail = nullString(in.Verdict.String())
@@ -289,6 +372,61 @@ func (h *Handler) detectReportJudgement(ctx context.Context, tc *TxContext, m *M
 	return nil, fmt.Errorf("pairs of kind %s cannot be judged yet", j.Row.Kind.String())
 }
 
+// detectDuplicateVerdict is Detect for a duplicate_work pair (docs/DUPLICATES.md
+// §3.3): a no_conflict settles a standing conflict on the pair, an unsure is
+// recorded low, and a conflict is raised or reopened with the judge's plan as
+// the side asked to yield. The incumbent is never told here.
+func (h *Handler) detectDuplicateVerdict(ctx context.Context, tc *TxContext, m *Mutation, j *judgementReport) ([]ConflictNotice, error) {
+	in := j.In
+	if in.Verdict != enums.JUDGEMENT_VERDICT_NO_CONFLICT {
+		return h.raiseDuplicateConflict(ctx, tc, m, j)
+	}
+	a, b := j.DupA, j.DupB
+	m.Envelope.Note = fmt.Sprintf("judged %s against %s: not the same work%s", b.Key, a.Key, confidencePart(in.Confidence))
+	var (
+		id, key string
+		status  int64
+	)
+	err := tc.Tx.QueryRowContext(ctx,
+		"SELECT `id`, `key`, `status` FROM `conflict` WHERE `team_uuid` = ? AND `dedupe_key` = ?",
+		j.TeamUUID.String(), DuplicateWorkDedupeKey(a.ID, b.ID)).Scan(&id, &key, &status)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, nil
+	case err != nil:
+		return nil, retryable(err, "looking up the conflict on this pair")
+	}
+	if st := enums.ConflictStatus(status); st != enums.CONFLICT_STATUS_OPEN && st != enums.CONFLICT_STATUS_ACKNOWLEDGED {
+		return nil, nil
+	}
+	cid, err := uuid.FromString(id)
+	if err != nil {
+		return nil, err
+	}
+	actor := eventActor{SessionUUID: j.SessionUUID}
+	if m.ProjectUUID != nil {
+		actor.ProjectUUID = *m.ProjectUUID
+	}
+	if m.AgentUUID != nil {
+		actor.AgentUUID = *m.AgentUUID
+	}
+	if m.MemberUUID != nil {
+		actor.MemberUUID = *m.MemberUUID
+	}
+	settled, err := h.settleDuplicateConflicts(ctx, tc, DuplicateRelease{
+		TeamUUID: j.TeamUUID, SessionUUID: j.SessionUUID, Kind: DuplicateReleaseJudged, At: tc.Now,
+	}, []uuid.UUID{cid}, actor)
+	if err != nil {
+		return nil, err
+	}
+	if len(settled) > 0 {
+		m.Envelope.Key = key
+		m.Envelope.Note += fmt.Sprintf("; %s settled", key)
+		m.Payload.ConflictUUID = &cid
+	}
+	return nil, nil
+}
+
 func confidencePart(c *float64) string {
 	if c == nil {
 		return ""
@@ -298,7 +436,7 @@ func confidencePart(c *float64) string {
 
 func (h *Handler) detectDecisionVerdict(ctx context.Context, tc *TxContext, m *Mutation, j *judgementReport) ([]ConflictNotice, error) {
 	in := j.In
-	dedupe := DecisionContradictionDedupeKey(j.Row.DecisionID, j.Row.IntentID)
+	dedupe := DecisionContradictionDedupeKey(j.Row.SubjectAID, j.Row.SubjectBID)
 	actor := eventActor{SessionUUID: j.SessionUUID}
 	if m.ProjectUUID != nil {
 		actor.ProjectUUID = *m.ProjectUUID
@@ -450,14 +588,14 @@ func (h *Handler) raiseDecisionConflict(ctx context.Context, tc *TxContext, m *M
 	}
 
 	// Evidence: the paths the two sides meet on, when they do.
-	decisionID, _ := uuid.FromString(j.Row.DecisionID)
+	decisionID, _ := uuid.FromString(j.Row.SubjectAID)
 	scope, err := loadDecisionScope(ctx, q, decisionID)
 	if err != nil {
 		return nil, err
 	}
 	var caseInsensitive bool
 	_ = q.QueryRowContext(ctx, "SELECT `case_insensitive_paths` FROM `project` WHERE `id` = ?", j.IntentProject).Scan(&caseInsensitive)
-	held, err := loadIntentHeldPaths(ctx, q, j.Row.IntentID, tc.Now, settleMaxPathsPerSession)
+	held, err := loadIntentHeldPaths(ctx, q, j.Row.SubjectBID, tc.Now, settleMaxPathsPerSession)
 	if err != nil {
 		return nil, err
 	}
@@ -597,12 +735,12 @@ func (h *Handler) raiseDecisionConflict(ctx context.Context, tc *TxContext, m *M
 	}
 
 	if owner.Found {
-		if err := upsertDecisionParticipant(ctx, tc, j.TeamUUID, conflictID, owner.claimSide, enums.SUBJECT_KIND_INTENT, j.Row.IntentID, enums.PARTICIPANT_ROLE_INITIATOR); err != nil {
+		if err := upsertDecisionParticipant(ctx, tc, j.TeamUUID, conflictID, owner.claimSide, enums.SUBJECT_KIND_INTENT, j.Row.SubjectBID, enums.PARTICIPANT_ROLE_INITIATOR); err != nil {
 			return nil, err
 		}
 	}
 	if decider != nil {
-		if err := upsertDecisionParticipant(ctx, tc, j.TeamUUID, conflictID, decider.claimSide, enums.SUBJECT_KIND_DECISION, j.Row.DecisionID, enums.PARTICIPANT_ROLE_INCUMBENT); err != nil {
+		if err := upsertDecisionParticipant(ctx, tc, j.TeamUUID, conflictID, decider.claimSide, enums.SUBJECT_KIND_DECISION, j.Row.SubjectAID, enums.PARTICIPANT_ROLE_INCUMBENT); err != nil {
 			return nil, err
 		}
 		if sev >= notifySeverityFloor && (fresh || !maxNotif.Valid || int64(sevEnum) > maxNotif.Int64) {

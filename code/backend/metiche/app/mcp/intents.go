@@ -127,7 +127,7 @@ type DeclareIntentParams struct {
 	Mode       string   `json:"mode,omitempty" jsonschema:"What you are doing to every path in this call: 'read' (just reading; two readers never conflict), 'write' (editing, the default) or 'structural' (renaming, moving or deleting). Say structural when it applies - it breaks other people's code without any merge conflict to warn them, so it is scored high even against someone only reading."`
 	Kind       string   `json:"kind,omitempty" jsonschema:"What kind of work this is: implement, fix, refactor, investigate, test, docs, infra, or hold. Defaults to implement."`
 
-	ExternalRef string `json:"external_ref,omitempty" jsonschema:"The issue or ticket id this is for, if there is one. It is the highest-signal duplicate-work key there is, because it is an exact match - two agents on the same ticket is worth knowing immediately."`
+	ExternalRef string `json:"external_ref,omitempty" jsonschema:"The issue or ticket id this is for, if there is one. It is the highest-signal duplicate-work key there is: another live plan on this team with the same id, in any repository, is put to you to judge in this response."`
 	TTLSeconds  int    `json:"ttl_seconds,omitempty" jsonschema:"How long to hold the paths without a heartbeat, in seconds. Defaults to 900. Claims are advisory and expiring by design; heartbeat extends them, up to a hard 4-hour ceiling."`
 
 	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"Pass a key of your own and retrying this exact call returns the exact same answer - including the same conflicts - instead of declaring a second intent. Omit it and every call declares a new one."`
@@ -214,6 +214,9 @@ func (h *Handler) DeclareIntent(ctx context.Context, _ *mcp.CallToolRequest, arg
 		HotspotPatterns: proj.HotspotPatterns,
 		IntentUUID:      uuidPtr(intentID),
 		IntentSummary:   summary,
+		// For the duplicate reviewer (docs/DUPLICATES.md §3.1).
+		ExternalRef:       truncate(args.ExternalRef, 120),
+		ParentSessionUUID: parentSessionString(sess.ParentSessionUUID),
 	}
 	// The detector reads this back out of the context INSIDE the transaction.
 	// It is on the context rather than the Mutation so the detection layer
@@ -316,7 +319,7 @@ type UpdateIntentParams struct {
 	IntentKey  string `json:"intent_key,omitempty" jsonschema:"Which intent, by the key declare_intent returned (INT-12). Omit it to update the one you declared most recently."`
 
 	Status     string `json:"status,omitempty" jsonschema:"Where the work is now: 'active' (you have started), 'done' (finished - this releases your files immediately), 'abandoned' (you are not doing it after all) or 'superseded' (replaced by a different intent). Marking it done the moment you finish is the difference between unblocking a teammate now and in fifteen minutes."`
-	Summary    string `json:"summary,omitempty" jsonschema:"A replacement summary, when the plan changed. Max 280 characters. Changing it bumps the intent's revision, which is what lets other agents' models take one fresh look at a plan they already judged."`
+	Summary    string `json:"summary,omitempty" jsonschema:"A replacement summary, when the plan changed. Max 280 characters. Changing it bumps the intent's revision, which is what lets other agents' models take one fresh look at a plan they already judged, and a reworded summary asks you once more whether your plan duplicates another agent's."`
 	StatusLine string `json:"status_line,omitempty" jsonschema:"What you are doing RIGHT NOW, one line, max 120 characters - 'rewriting the token refresh in auth.go'. This is what a teammate sees on the board."`
 
 	AddPaths  []string `json:"add_paths,omitempty" jsonschema:"Files you have discovered you also need, under the same rules as declare_intent paths: the specific files or narrowest folder ('app/mcp/intents.go'), relative to the git root and never absolute; a repo-wide pattern like '**' warns nobody. They are collision-checked exactly like declare_intent, so you find out in this response if somebody is already there."`
@@ -411,6 +414,8 @@ func (h *Handler) UpdateIntent(ctx context.Context, _ *mcp.CallToolRequest, args
 		IntentUUID:      uuidPtr(intent.ID),
 		IntentKey:       intent.Key,
 		IntentSummary:   firstNonEmpty(summary, intent.Summary),
+		// ExternalRef is filled by Apply from the row, under the lock.
+		ParentSessionUUID: parentSessionString(sess.ParentSessionUUID),
 	}
 	ctx = withPathDetection(ctx, req)
 	// The decision reviewer looks again only at a new revision of the plan.
@@ -465,11 +470,29 @@ func (h *Handler) UpdateIntent(ctx context.Context, _ *mcp.CallToolRequest, args
 			if hasStatus && status == enums.INTENT_STATUS_ACTIVE {
 				startedArg = tc.Now
 			}
+			// wording_revision moves only on a material wording change
+			// (docs/DUPLICATES.md §2.2), never on paths, status or the
+			// status line. Read under the lock, not from resolveIntent, so
+			// two concurrent rewordings of one intent cannot both skip it.
+			wordingBump := 0
+			if summary != "" {
+				var oldSummary, ref string
+				if err := tc.Tx.QueryRowContext(ctx,
+					"SELECT `summary`, COALESCE(`external_ref`, '') FROM `intent` WHERE `id` = ?", intent.ID.String()).
+					Scan(&oldSummary, &ref); err != nil {
+					return retryable(err, "re-reading the intent's wording")
+				}
+				req.ExternalRef = ref
+				if coordination.WordingChanged(oldSummary, ref, summary, ref) {
+					wordingBump = 1
+					req.WordingChanged = !terminal
+				}
+			}
 			if _, err := tc.Tx.ExecContext(ctx,
 				"UPDATE `intent` SET `status` = COALESCE(?, `status`), `summary` = COALESCE(?, `summary`), "+
-					"`revision` = `revision` + ?, `started_at` = COALESCE(`started_at`, ?), "+
+					"`revision` = `revision` + ?, `wording_revision` = `wording_revision` + ?, `started_at` = COALESCE(`started_at`, ?), "+
 					"`ended_at` = COALESCE(?, `ended_at`), `expires_at` = ?, `updated_at` = ? WHERE `id` = ?",
-				statusArg, summaryArg, revBump, startedArg, endedArg,
+				statusArg, summaryArg, revBump, wordingBump, startedArg, endedArg,
 				tc.Now.Add(IntentHorizon), tc.Now, intent.ID.String()); err != nil {
 				return retryable(err, "updating the intent")
 			}
@@ -581,6 +604,25 @@ func (h *Handler) UpdateIntent(ctx context.Context, _ *mcp.CallToolRequest, args
 				if _, err := h.settleDecisionConflicts(ctx, tc, DecisionRelease{
 					TeamUUID: who.Team.ID, SessionUUID: sess.ID, Kind: DecisionReleaseIntentEnded, At: tc.Now,
 				}, ids, eventActor{
+					ProjectUUID: sess.ProjectUUID, SessionUUID: sess.ID, AgentUUID: ag.ID, MemberUUID: who.Member.ID,
+				}); err != nil {
+					return err
+				}
+
+				// Nobody is asked about a plan that is over, and a duplicate
+				// it was in may be settled: it yielded, or it finished anyway
+				// (docs/DUPLICATES.md §3.4, §4.7). expireIntentJudgements
+				// above already covered the pairs where it is subject b.
+				if _, err := ExpireDuplicatePairsOnIntents(ctx, tc.Tx, who.Team.ID, []uuid.UUID{intent.ID}, tc.Now); err != nil {
+					return err
+				}
+				dups, err := openDuplicateConflictsOf(ctx, tc.Tx, who.Team.ID, sess.ID, []uuid.UUID{intent.ID})
+				if err != nil {
+					return err
+				}
+				if _, err := h.settleDuplicateConflicts(ctx, tc, DuplicateRelease{
+					TeamUUID: who.Team.ID, SessionUUID: sess.ID, Kind: DuplicateReleaseIntentEnded, At: tc.Now,
+				}, dups, eventActor{
 					ProjectUUID: sess.ProjectUUID, SessionUUID: sess.ID, AgentUUID: ag.ID, MemberUUID: who.Member.ID,
 				}); err != nil {
 					return err
@@ -1007,6 +1049,15 @@ func patternList(paths []coordination.NormalizedPath) []string {
 		out = append(out, p.PatternNorm)
 	}
 	return out
+}
+
+// parentSessionString is a session's parent_session_uuid as the duplicate
+// reviewer compares it: "" when it has none.
+func parentSessionString(p *uuid.UUID) string {
+	if p == nil || p.IsNil() {
+		return ""
+	}
+	return p.String()
 }
 
 func intentStatusName(has bool, next, current enums.IntentStatus) string {

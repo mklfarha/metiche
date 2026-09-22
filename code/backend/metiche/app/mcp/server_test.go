@@ -238,7 +238,8 @@ func TestAddToolRefusesUnannotatedTools(t *testing.T) {
 func TestServerInstructionsSayTheLoop(t *testing.T) {
 	got := serverInstructions()
 	for _, must := range []string{"join_team", "start_session", "heartbeat", "end_session", "pending", "sequence", "idempotency_key",
-		"record_decision", "pending.reviews", "get_review_context", "report_judgement", "no_conflict"} {
+		"record_decision", "pending.reviews", "get_review_context", "report_judgement", "no_conflict",
+		"duplicate_work", "superseded", "the same area is not enough"} {
 		if !strings.Contains(got, must) {
 			t.Errorf("server instructions never mention %q", must)
 		}

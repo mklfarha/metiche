@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -45,6 +44,11 @@ func NewDecisionReviewer(coreImpl *core.Implementation, logger *zap.Logger) Dete
 
 // ChainDetectors runs hooks in order on the same TxContext and Mutation, skipping nil hooks,
 // concatenating their notices and returning the first error.
+//
+// After its last hook it renders any review pairs the reviewers assigned and no
+// NewReviewRenderer rendered (docs/DUPLICATES.md §3.1): a chain installed as
+// path detector + decision reviewer, with no renderer, still answers with the
+// review block and note it always did.
 func ChainDetectors(hooks ...DetectHook) DetectHook {
 	var live []DetectHook
 	for _, hook := range hooks {
@@ -61,6 +65,7 @@ func ChainDetectors(hooks ...DetectHook) DetectHook {
 			}
 			all = append(all, notices...)
 		}
+		renderReviewPairs(pathDetectionFrom(ctx), m)
 		return all, nil
 	}
 }
@@ -92,11 +97,19 @@ type reviewBlock struct {
 	AnswerWith string            `json:"answer_with"`
 }
 
+// reviewBlockPair is one pair in the block. The duplicate fields are all
+// omitempty and Decision is always set on a decision pair, so a decision pair
+// renders byte for byte as it did before duplicate work (docs/DUPLICATES.md
+// §3.1).
 type reviewBlockPair struct {
 	PairKey   string `json:"pair_key"`
-	Decision  string `json:"decision"`
-	Statement string `json:"statement,omitempty"`
-	Why       string `json:"why"`
+	Kind      string `json:"kind,omitempty"`      // "duplicate_work"; omitted on decision pairs
+	Decision  string `json:"decision,omitempty"`  // decision pairs
+	Statement string `json:"statement,omitempty"` // decision pairs
+	Plan      string `json:"plan,omitempty"`      // duplicate pairs: the other plan's key
+	With      string `json:"with,omitempty"`      // duplicate pairs: describeHolder of its owner
+	Summary   string `json:"summary,omitempty"`   // duplicate pairs: the other plan's summary
+	Why       string `json:"why"`                 // decisions: scope|always_show|words; duplicates: same_issue|words_and_paths|words
 }
 
 func (d *decisionReviewer) review(ctx context.Context, tc *TxContext, m *Mutation) ([]ConflictNotice, error) {
@@ -326,7 +339,9 @@ func (d *decisionReviewer) reviewIntent(ctx context.Context, tc *TxContext, m *M
 	if err != nil {
 		return err
 	}
-	var block []reviewBlockPair
+	if !settings.ReviewBlockEnabled {
+		req.reviewBlockOff = true
+	}
 	for _, c := range coordination.RankDecisionCandidates(list, reviewMaxInlinePairs) {
 		judge := ""
 		if recent < settings.MaxReviewsPerMinute {
@@ -345,34 +360,17 @@ func (d *decisionReviewer) reviewIntent(ctx context.Context, tc *TxContext, m *M
 			return err
 		}
 		if inserted && judge != "" {
-			block = append(block, reviewBlockPair{PairKey: pairKey, Decision: dec.Key, Statement: dec.Statement, Why: c.Signal.String()})
+			// Appended, never rendered here: the review renderer writes the
+			// envelope once for both reviewers.
+			req.ReviewPairs = append(req.ReviewPairs, reviewBlockPair{PairKey: pairKey, Decision: dec.Key, Statement: dec.Statement, Why: c.Signal.String()})
 		}
-	}
-	if len(block) == 0 {
-		return nil
-	}
-
-	if settings.ReviewBlockEnabled {
-		if raw, ok := renderReviewBlock(block); ok {
-			m.Envelope.Review = raw
-		}
-	}
-	how := "call get_review_context, then report_judgement"
-	if m.Envelope.Review != nil {
-		how = "see review, then report_judgement"
-	}
-	lead := fmt.Sprintf("judge %d pair(s) against your plan before you edit: %s", len(block), how)
-	if m.Envelope.Note == "" {
-		m.Envelope.Note = lead
-	} else {
-		m.Envelope.Note += "; " + lead
 	}
 	return nil
 }
 
 // renderReviewBlock applies §3.2's cut order at reviewInlineChars: drop every
-// statement, then drop pairs from the end (counted in more), then drop the
-// block.
+// statement and every duplicate summary, then drop pairs from the end
+// (counted in more), then drop the block.
 func renderReviewBlock(pairs []reviewBlockPair) (json.RawMessage, bool) {
 	b := reviewBlock{Pairs: append([]reviewBlockPair(nil), pairs...), AnswerWith: "report_judgement"}
 	render := func() (json.RawMessage, bool) {
@@ -387,6 +385,7 @@ func renderReviewBlock(pairs []reviewBlockPair) (json.RawMessage, bool) {
 	}
 	for i := range b.Pairs {
 		b.Pairs[i].Statement = ""
+		b.Pairs[i].Summary = ""
 	}
 	if raw, ok := render(); ok {
 		return raw, true

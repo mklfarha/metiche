@@ -122,6 +122,33 @@ type pathDetectionRequest struct {
 
 	// Declared is filled inside the transaction by the tool's Apply hook.
 	Declared []pathDeclaration
+
+	// ExternalRef is the plan's issue id and ParentSessionUUID the caller's
+	// supervising session, for the duplicate reviewer (docs/DUPLICATES.md §3.1).
+	ExternalRef       string
+	ParentSessionUUID string
+
+	// WordingChanged is set by update_intent's Apply when it bumped the
+	// intent's wording_revision: the only update the duplicate reviewer
+	// looks at.
+	WordingChanged bool
+
+	// OverlapSessions is filled by the path detector: every other session
+	// this call recorded a path overlap with, to the overlap path. It lowers
+	// the duplicate wording bar (words_and_paths) and never makes a
+	// candidate by itself.
+	OverlapSessions map[string]string
+
+	// ReviewPairs is what the reviewers assigned in this call, duplicate
+	// pairs first. Neither reviewer writes the envelope; the review renderer
+	// renders these once, last in the chain.
+	ReviewPairs []reviewBlockPair
+	// reviewBlockOff is team_settings.review_block_enabled = false: pairs
+	// are still assigned, only the block is omitted.
+	reviewBlockOff bool
+	// reviewRendered is set once the pairs were rendered, so a chain that
+	// renders at its end never renders twice.
+	reviewRendered bool
 }
 
 type pathDetectionCtxKey struct{}
@@ -183,6 +210,14 @@ func (d *pathDetector) detect(ctx context.Context, tc *TxContext, m *Mutation) (
 		row, err := d.record(ctx, tc, req, found[i], i)
 		if err != nil {
 			return nil, err
+		}
+		// The duplicate reviewer reads which sessions this call collided
+		// with. Worst first, so the first overlap recorded names the path.
+		if req.OverlapSessions == nil {
+			req.OverlapSessions = map[string]string{}
+		}
+		if _, seen := req.OverlapSessions[found[i].Theirs.SessionUUID]; !seen {
+			req.OverlapSessions[found[i].Theirs.SessionUUID] = found[i].Verdict.OverlapPath
 		}
 		if top == nil || row.Severity > top.Severity {
 			r := row
