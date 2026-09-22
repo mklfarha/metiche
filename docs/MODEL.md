@@ -32,7 +32,7 @@ one call: agents declare an intent with paths and never learn a second concept.
 | | |
 |---|---|
 | **`claim_path`** | One normalized path or glob inside a claim, and the hottest table in the system. Six columns are copied down from `claim` so the overlap scan that runs inside *every* intent declaration is a single index range scan with no joins. |
-| **`intent_token`** | The intent's wording, tokenized, so a similar intent elsewhere can be found by overlap. Tokenized in Go rather than with MySQL full-text search, whose defaults silently swallow exactly the words that matter here — `jwt`, `api`, `ui`. |
+| **`intent_token`** | The intent's wording, tokenized. Planned for finding a similar intent by overlap, and **unused**: duplicate work reads the project's live summaries and scores them in Go at declare time, which needs no writes and allows synonym folding a stored token table could not. It stays in the model. What duplicate work does key on is `intent.wording_revision`, bumped only when a plan's wording materially changes (docs/DUPLICATES.md §1.3, §2.2). |
 
 ## What the team has agreed
 

@@ -13,17 +13,20 @@ package view
 //
 // It says only what is deployed. Path overlap (app/mcp/detector.go), contract
 // mismatch, including "nobody is building this" (publish_contract,
-// app/mcp/contractdetect.go and the sweeper), and decision contradiction
+// app/mcp/contractdetect.go and the sweeper), decision contradiction
 // (record_decision, get_review_context, report_judgement, and the review block
-// on declare_intent) all run today. Duplicate work and dismissals still need
-// tools that do not exist yet (resolve_conflict), so those cards carry a
-// "Coming next" badge and are written in the future tense. landing_test.go
-// fails if one of them is rendered without it. The tool list is described by
-// group, never by count, because the count moves.
+// on declare_intent) and duplicate work (the same review block and tools,
+// app/mcp/duplicatereview.go, docs/DUPLICATES.md) all run today. Only
+// dismissals still need a tool that does not exist yet (resolve_conflict), so
+// they carry a "Coming next" badge and are written in the future tense.
+// landing_test.go fails if they are rendered without it. The tool list is
+// described by group, never by count, because the count moves.
 //
-// The decision card is the one place this page describes a judgement, so it is
-// also where it says who makes it: the plan's own agent, in its own model. The
-// server has no model and no provider key, and the footer says so too.
+// The decision and duplicate cards are the places this page describes a
+// judgement, so they are also where it says who makes it: the plan's own
+// agent, in its own model. The server has no model and no provider key, and
+// the footer says so too. The duplicate card is written for a hackathon: no
+// issue numbers, two three-word plans, caught from the wording alone.
 //
 // Everything visual here is inline SVG and one stylesheet. The only script is
 // static/landing.js, a copy button the page works without. No framework, no
@@ -94,8 +97,9 @@ templ landingHero(boardURL string) {
 					<span class="b b2">The awareness is not.</span>
 				</h1>
 				<p class="lede">
-					When two of your team&#39;s agents are about to write the same files, both are told
-					inside their own tool responses, while changing course is still cheap.
+					When two of your team&#39;s agents are about to write the same files, or build the same
+					login page under two different names, they are told inside their own tool responses,
+					while changing course is still cheap.
 				</p>
 				<p class="def">
 					<b>An MCP server every teammate&#39;s coding agent connects to.</b> Each one says
@@ -324,10 +328,10 @@ templ landingHow() {
 
 // ---------------------------------------------------------------- collisions
 
-// landingCollisions shows the three detections that are live, then the one
-// that is not built yet. Every card for an unbuilt kind is .cc.soon and
-// carries a "Coming next" badge; nothing in those cards shows a tool response,
-// because a response that cannot happen today would read as one that does.
+// landingCollisions shows the four detections, all of them live. Anything not
+// built yet is .soon with a "Coming next" badge and shows no tool response,
+// because a response that cannot happen today would read as one that does;
+// today that is only dismissals, in the tool list and the rules below.
 templ landingCollisions() {
 	<section class="section" id="what">
 		<div class="wrap">
@@ -335,19 +339,15 @@ templ landingCollisions() {
 				<div class="sec-eyebrow">What it catches</div>
 				<h2>What it actually catches today</h2>
 				<p class="sub">
-					Today it catches three things: two agents about to write the same file, two sides
-					of an interface that disagree, including a side nobody is building, and a plan
-					that breaks a decision the team already recorded. One more kind of collision is
-					coming next, and it is labelled that way below.
+					Two agents about to write the same file, two sides of an interface that disagree,
+					including a side nobody is building, a plan that breaks a decision the team already
+					recorded, and two agents about to build the same thing under different words.
 				</p>
 			</div>
 			<div class="collide">
 				@collidePath()
 				@collideContract()
 				@collideDecision()
-			</div>
-			<h3 class="soon-head"><span class="soon-badge">Coming next</span> Not built yet</h3>
-			<div class="collide-soon">
 				@collideDuplicate()
 			</div>
 		</div>
@@ -466,14 +466,48 @@ templ collideDecision() {
 	</article>
 }
 
+// collideDuplicate is the hackathon case: no issue numbers, two short plans
+// that say the same thing in different words, in different files.
 templ collideDuplicate() {
-	<article class="cc soon k-dup">
-		<div class="kind">duplicate work <span class="soon-badge">Coming next</span></div>
-		<h3>Two people independently building the same thing</h3>
-		<p class="scene">
-			metiche will notice two intents aimed at the same issue and tell both agents to split
-			the work before either of them finishes it.
-		</p>
+	<article class="cc k-dup wide">
+		<div class="kind">duplicate work <span class="live-badge">works today</span></div>
+		<h3>Two agents about to build the same thing, in different words</h3>
+		<div class="two-up">
+			<div>
+				<p class="scene">
+					Hour two of a hackathon, and nobody has a ticket. Mara&#39;s agent declares
+					<span class="inline-code">add login page</span>. Ten minutes later Devesh&#39;s agent declares
+					<span class="inline-code">build the login screen</span>, in a different file. No path overlaps and
+					there is no issue id, and it is still caught, from the wording alone. Devesh&#39;s agent gets
+					the pair in its own response, <b>its own model</b> judges whether it is the same change, and it
+					changes course before it edits.
+				</p>
+				<details class="why">
+					<summary>Who judges it, and what it looks for</summary>
+					<p>
+						metiche never judges this itself: the server has no model and no provider key, so nothing
+						about your plans is sent anywhere to be judged. It only picks the pair. It reads the few words of
+						each live plan in the same repository, folds &ldquo;screen&rdquo; into &ldquo;page&rdquo; and
+						ignores verbs like &ldquo;build&rdquo;. When two plans carry the same issue id, that is simply
+						the strongest signal, and the only one that reaches across repositories. The pair goes to the
+						agent that declared second, which has not started yet. Different parts of one feature, the login
+						form and the login handler, are <b>no conflict</b>, the usual answer. On a conflict it stops or
+						takes a different part. Mara&#39;s agent hears about it only if Devesh&#39;s did not back off
+						within a couple of minutes, and a person is asked only when the two agents have not settled it.
+					</p>
+				</details>
+			</div>
+			<div class="resp">
+				<div class="rh">in Devesh&#39;s agent&#39;s tool response</div>
+				<div class="rb">
+					<div class="row"><span class="sev medium">▲ medium</span> <span class="dim">CF-44 · duplicate work</span></div>
+					<div class="row"><span class="you">build the login screen</span> <span class="dim">— same work as</span> <span class="them">Mara/ui</span></div>
+					<div class="row"><span class="dim">&ldquo;add login page&rdquo;, active 10m</span></div>
+					<div class="row"><span class="act">→ Stop before you edit: mark yours superseded,</span></div>
+					<div class="row"><span class="act">&nbsp;&nbsp; or take a different part and reword it.</span></div>
+				</div>
+			</div>
+		</div>
 	</article>
 }
 
@@ -580,7 +614,7 @@ templ landingBoard(boardURL string) {
 			</p>
 			<div class="viewlist">
 				<div><b>board</b>Who is live, what each agent is doing, the paths it holds, and a badge the moment one of them is contested.</div>
-				<div><b>conflicts</b>Every finding with its suggested action and the paths it is about. Read-only: nobody settles a finding from the board.</div>
+				<div><b>conflicts</b>Every finding with its suggested action and the paths it is about; a duplicate shows the two plans side by side, why they were paired and what the judge said. Read-only: nobody settles a finding from the board.</div>
 				<div><b>runs</b>Every session end to end, replayed from the event log, so &ldquo;what did that agent actually do&rdquo; has an answer.</div>
 				<div><b>contracts</b>Produces against consumes, with the verdict on each interface: unclaimed, mismatched, contested or converged.</div>
 				<div><b>decisions</b>What the team has settled and the code must obey, how many plans have been judged against each one, and the ones since superseded or revoked.</div>

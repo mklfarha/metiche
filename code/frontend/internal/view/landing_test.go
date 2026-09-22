@@ -151,95 +151,102 @@ func TestLandingLinksToTheDocs(t *testing.T) {
 // comingNext is the marker every not-yet-built feature carries.
 const comingNext = "Coming next"
 
-// unbuiltKinds are the collision kinds that cannot fire today: duplicate work
-// has no tool at all. Path overlap, contract mismatch ("nobody is building
-// this" included) and decision contradiction all run today — record_decision,
-// get_review_context and report_judgement are on the server.
-var unbuiltKinds = []string{
-	"duplicate work",
-}
+// unbuilt are the things that cannot happen today: dismissals need
+// resolve_conflict, which is not on the server. Every collision kind runs
+// today — path overlap, contract mismatch ("nobody is building this"
+// included), decision contradiction and duplicate work.
+var unbuilt = []string{"dismiss", "demote"}
 
-// TestUnbuiltCollisionsAreMarkedComingNext: a collision kind that cannot fire
-// today may only be named inside an element that says "Coming next". The page
-// is split into its elements at every <article> and <li>, so a label that
-// leaks into the board illustration, the rules list or the hero is caught.
-func TestUnbuiltCollisionsAreMarkedComingNext(t *testing.T) {
+// liveKinds are the collision cards, by class, each of which must be marked as
+// working today.
+var liveKinds = []string{"k-path", "k-contract", "k-decision", "k-dup"}
+
+// TestUnbuiltThingsAreMarkedComingNext: anything that cannot happen today may
+// only be named inside an element that says "Coming next". The page is split
+// into its elements at every <article>, <li> and <p>, so a claim that leaks
+// into a card, the rules list or the tool list is caught.
+func TestUnbuiltThingsAreMarkedComingNext(t *testing.T) {
 	body := renderLanding(t, "/t/demo")
 
-	blocks := regexp.MustCompile(`(?s)<article\b.*?</article>|<li\b.*?</li>`).FindAllString(body, -1)
-	outside := regexp.MustCompile(`(?s)<article\b.*?</article>|<li\b.*?</li>`).ReplaceAllString(body, "")
-
-	for _, kind := range unbuiltKinds {
-		named := 0
+	blocks := regexp.MustCompile(`(?s)<article\b.*?</article>|<li\b.*?</li>|<p\b.*?</p>`).FindAllString(body, -1)
+	for _, word := range unbuilt {
 		for _, b := range blocks {
-			if !strings.Contains(strings.ToLower(stripTags(b)), kind) {
-				continue
-			}
-			named++
-			if !strings.Contains(stripTags(b), comingNext) {
-				t.Errorf("%q is rendered without its %q marker: %s", kind, comingNext, strings.Join(strings.Fields(stripTags(b)), " "))
+			plain := stripTags(b)
+			if strings.Contains(strings.ToLower(plain), word) && !strings.Contains(plain, comingNext) {
+				t.Errorf("%q is rendered without its %q marker: %s", word, comingNext, strings.Join(strings.Fields(plain), " "))
 			}
 		}
-		if named == 0 {
-			t.Errorf("%q is not on the page at all; it should be shown as coming next", kind)
-		}
-		if strings.Contains(strings.ToLower(stripTags(outside)), kind) {
-			t.Errorf("%q is named outside a marked card", kind)
-		}
+	}
+	// Dismissals are still on the page, as coming next, in the tool list and
+	// the rules.
+	if !strings.Contains(stripTags(landingSection(t, body, "honest")), "Dismissals") {
+		t.Errorf("the rules no longer say dismissals are coming next")
 	}
 
-	// Every card in the collisions section is either the live one or marked.
+	// Every card in the collisions section is live, and none is marked soon.
 	what := landingSection(t, body, "what")
-	cards := regexp.MustCompile(`(?s)<article class="([^"]*)">(.*?)</article>`).FindAllStringSubmatch(what, -1)
-	if len(cards) != 4 {
-		t.Fatalf("collisions section has %d cards, want 4", len(cards))
+	if strings.Contains(what, comingNext) || strings.Contains(what, "soon") {
+		t.Errorf("the collisions section still marks something as not built")
 	}
-	live := 0
+	cards := regexp.MustCompile(`(?s)<article class="([^"]*)">(.*?)</article>`).FindAllStringSubmatch(what, -1)
+	if len(cards) != len(liveKinds) {
+		t.Fatalf("collisions section has %d cards, want %d", len(cards), len(liveKinds))
+	}
+	seen := map[string]bool{}
 	for _, c := range cards {
 		class, inner := c[1], stripTags(c[2])
-		switch {
-		case strings.Contains(class, "k-path") || strings.Contains(class, "k-contract") || strings.Contains(class, "k-decision"):
-			live++
-			if strings.Contains(inner, comingNext) || strings.Contains(class, "soon") || !strings.Contains(inner, "works today") {
-				t.Errorf("%q works today but is not marked live: %s", class, strings.Join(strings.Fields(inner), " "))
+		one := strings.Join(strings.Fields(inner), " ")
+		kind := ""
+		for _, k := range liveKinds {
+			if strings.Contains(class, k) {
+				kind = k
 			}
-			if strings.Contains(class, "k-contract") && (!strings.Contains(strings.ToLower(inner), "nobody is building this") || !strings.Contains(inner, "is told")) {
-				t.Errorf("the contract card does not say, in the present tense, that nobody is building this is caught: %s", strings.Join(strings.Fields(inner), " "))
+		}
+		if kind == "" {
+			t.Errorf("unexpected collision card %q", class)
+			continue
+		}
+		seen[kind] = true
+		if !strings.Contains(inner, "works today") {
+			t.Errorf("%q works today but is not marked live: %s", class, one)
+		}
+		low := strings.ToLower(inner)
+		switch kind {
+		case "k-contract":
+			if !strings.Contains(low, "nobody is building this") || !strings.Contains(inner, "is told") {
+				t.Errorf("the contract card does not say, in the present tense, that nobody is building this is caught: %s", one)
 			}
-			// The one judgement this page describes is made by the agent's own
-			// model, never by the server. The card has to say both, because
-			// "metiche judges your plan" would imply a model and a key here.
-			if strings.Contains(class, "k-decision") {
-				low := strings.ToLower(inner)
-				if !strings.Contains(low, "its own model") {
-					t.Errorf("the decision card does not say the plan's own agent judges it with its own model: %s", strings.Join(strings.Fields(inner), " "))
-				}
-				if !strings.Contains(low, "never judges") || !strings.Contains(low, "no model") {
-					t.Errorf("the decision card does not say the server never judges and has no model: %s", strings.Join(strings.Fields(inner), " "))
-				}
+		case "k-decision", "k-dup":
+			// A judgement is made by the plan's own agent, in its own model,
+			// never by the server. The card has to say both, because "metiche
+			// judges your plan" would imply a model and a key here.
+			if !strings.Contains(low, "its own model") {
+				t.Errorf("%s does not say the plan's own agent judges it with its own model: %s", kind, one)
 			}
-		case !strings.Contains(class, "soon") || !strings.Contains(inner, comingNext):
-			t.Errorf("unbuilt card %q lacks the soon class or its %q badge", class, comingNext)
+			if !strings.Contains(low, "never judges") || !strings.Contains(low, "no model") {
+				t.Errorf("%s does not say the server never judges and has no model: %s", kind, one)
+			}
+		}
+		if kind != "k-dup" {
+			continue
+		}
+		// Duplicate work is written for a hackathon: no ticket, two short
+		// plans in different words, caught from the wording alone, and the
+		// issue id only the strongest signal when there is one.
+		for _, want := range []string{"add login page", "build the login screen", "wording alone", "strongest signal", "a person is asked only when"} {
+			if !strings.Contains(low, want) {
+				t.Errorf("the duplicate card does not say %q: %s", want, one)
+			}
+		}
+		for _, bad := range []string{" will ", "same issue and tell both"} {
+			if strings.Contains(low, bad) {
+				t.Errorf("the duplicate card is not in the present tense (%q): %s", bad, one)
+			}
 		}
 	}
-	if live != 3 {
-		t.Errorf("%d live collision cards, want path overlap, contract mismatch and decision contradiction", live)
-	}
-
-	// The section must not claim four live detections.
-	text := strings.ToLower(stripTags(body))
-	for _, bad := range []string{"four ways", "all four", "four kinds"} {
-		if strings.Contains(text, bad) {
-			t.Errorf("landing still says %q", bad)
-		}
-	}
-
-	// Dismissals and self-demotion need resolve_conflict.
-	honest := landingSection(t, body, "honest")
-	for _, li := range regexp.MustCompile(`(?s)<li\b.*?</li>`).FindAllString(honest, -1) {
-		plain := strings.ToLower(stripTags(li))
-		if (strings.Contains(plain, "dismiss") || strings.Contains(plain, "demote")) && !strings.Contains(stripTags(li), comingNext) {
-			t.Errorf("rules bullet depends on resolve_conflict but is not marked: %s", strings.Join(strings.Fields(stripTags(li)), " "))
+	for _, k := range liveKinds {
+		if !seen[k] {
+			t.Errorf("no %s card in the collisions section", k)
 		}
 	}
 }

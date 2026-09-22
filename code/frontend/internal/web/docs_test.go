@@ -209,18 +209,71 @@ func TestDocsShowNoSecretsOrUnbuiltThings(t *testing.T) {
 	if next < 0 || !strings.Contains(docText(tools[next:]), "Coming next") {
 		t.Fatalf("the tool reference has no section labelled Coming next")
 	}
-	for _, want := range []string{"Duplicate work", "Dismissals"} {
+	for _, want := range []string{"Dismissals"} {
 		if !strings.Contains(docText(tools[next:]), want) {
 			t.Errorf("Coming next does not list %s", want)
 		}
 	}
-	for _, built := range []string{"Contracts", "Decisions"} {
+	for _, built := range []string{"Contracts", "Decisions", "Duplicate work", "duplicate work"} {
 		if strings.Contains(docText(tools[next:]), built) {
 			t.Errorf("Coming next still lists %s, which is built", built)
 		}
 	}
 	if strings.Contains(tools[next:], `id="tool-`) {
 		t.Errorf("a tool is listed as registered inside Coming next")
+	}
+}
+
+// TestDocsDescribeDuplicateWork: duplicate work is built, so the docs describe
+// it in the present tense, for a hackathon (no issue numbers, caught from the
+// wording alone, the issue id only the strongest signal), with the judging done
+// by the agent's own model and a person asked only when the agents do not
+// settle it. Both review tools name both kinds of pair.
+func TestDocsDescribeDuplicateWork(t *testing.T) {
+	ts := docsTestServer(t)
+
+	_, agents := fetch(t, ts, "/docs/working-with-agents")
+	start := strings.Index(agents, `id="duplicate-work"`)
+	if start < 0 {
+		t.Fatalf("Working with agents has no #duplicate-work section")
+	}
+	end := strings.Index(agents[start:], `id="subagents"`)
+	if end < 0 {
+		t.Fatalf("the #duplicate-work section is not followed by #subagents")
+	}
+	sec := strings.Join(strings.Fields(docText(agents[start:start+end])), " ")
+	for _, want := range []string{
+		"nobody has issue numbers", "add login page", "build the login screen", "wording alone",
+		"strongest signal", "own model", "no model", "no provider key",
+		"declared second", "superseded", "only if the second did not back off",
+	} {
+		if !strings.Contains(sec, want) {
+			t.Errorf("#duplicate-work does not say %q: %s", want, sec)
+		}
+	}
+	for _, bad := range []string{" will ", "coming next", "Coming next", "not built"} {
+		if strings.Contains(sec, bad) {
+			t.Errorf("#duplicate-work is not written as built (%q): %s", bad, sec)
+		}
+	}
+	if !strings.Contains(docText(agents), "building the same thing and have not settled who keeps it") {
+		t.Errorf("When an agent asks you does not name an unsettled duplicate")
+	}
+
+	_, board := fetch(t, ts, "/docs/the-board")
+	for _, want := range []string{`id="duplicate-conflicts"`, "duplicate work", "asked to stop", "why paired", "What the judge said", "a person was asked"} {
+		if !strings.Contains(board, want) {
+			t.Errorf("The board does not describe the duplicate card: missing %q", want)
+		}
+	}
+
+	_, tools := fetch(t, ts, "/docs/tool-reference")
+	for _, tool := range []string{"get_review_context", "report_judgement"} {
+		row := regexp.MustCompile(`(?s)id="tool-` + tool + `".*?</dd>`).FindString(tools)
+		text := docText(row)
+		if !strings.Contains(text, "decision") || !strings.Contains(text, "other") || !strings.Contains(text, "same") {
+			t.Errorf("%s's row does not name both kinds of pair: %s", tool, strings.Join(strings.Fields(text), " "))
+		}
 	}
 }
 

@@ -111,11 +111,18 @@ inline in that agent's review block, its own model reads both and reports a verd
 verdict interrupts a human only at confidence ≥ 0.7 — because a model asked "is this a conflict?"
 has a strong yes-bias.
 
-### 4. Duplicate work — semantic, with a deterministic shortcut
+### 4. Duplicate work — semantic, found from the wording
 
-Two agents on the same issue id is an exact match and the highest-signal duplicate key there is —
-no model needed. Past that, candidates are found by shared contracts, sub-threshold path overlap
-and token overlap, surfaced as similar intents, and judged by the caller's model once.
+Two agents writing "add login page" and "build the login screen" are about to build the same thing,
+and in a hackathon there is no ticket to tell you. metiche compares live plans in the same
+repository by what their summaries name — folding "screen" into "page" and ignoring verbs like
+"build" — and hands the likely pairs to the agent that declared second, whose own model judges
+whether it is the same change. Two plans on the same issue id are the strongest pair of all, across
+every repository on the team, and they are judged too, because people split tickets. On a conflict
+the second agent stops before it edits, or re-scopes to a different part. The agent that was there
+first hears about it only if the duplicate is still standing a couple of minutes later, and a person
+is asked only if the two agents have not settled it. The design is in
+[`docs/DUPLICATES.md`](docs/DUPLICATES.md).
 
 ## Design decisions worth stating
 
@@ -147,8 +154,9 @@ unless it escalates; review items are rate-limited per session; and **the record
 notify floor are deliberately different** — findings are recorded at `low` and only interrupt
 somebody at `medium`. Every surfaced conflict must carry a suggested next action: *"you and Ana
 both hold auth.go"* is noise, *"Ana holds auth.go (write, 4m, feat/auth); consider consuming her
-POST /api/login contract instead"* is signal. And dismissals feed back — a rule dismissed as a
-false positive too often on a project demotes itself to record-only, with one-click re-enable.
+POST /api/login contract instead"* is signal. Next, not built yet: dismissals that feed back — a
+rule dismissed as a false positive too often on a project will demote itself to record-only, with
+one-click re-enable.
 
 **One datastore.** MySQL, no Redis, no message bus. Server-to-browser latency is an in-process
 fan-out on commit plus a database tail as the cross-process backstop, which reads as instant.

@@ -146,7 +146,10 @@ params and prose. UUIDs are for joins only.
 - **`intent`** — the semantic surface. `summary` varchar(280) hard cap, kind, status
   `declared|active|done|abandoned|superseded`, `external_ref` (issue id — the highest-signal
   duplicate-work key because it is an exact match), **`revision`** (bumped on material edits; drives
-  re-judging). Plus **`intent_token`** side table for retrieval.
+  re-judging of decision pairs), and **`wording_revision`** (bumped only when the summary's wording or
+  the `external_ref` materially changes; duplicate-work pairs key on it, so a path edit never re-asks).
+  An **`intent_token`** side table was planned for retrieval; it stays in the model unused, because
+  duplicate work scores the project's live summaries in Go at declare time (docs/DUPLICATES.md §1.3).
 - **`claim`** + **`claim_path`** — the mechanical surface. `mode` (`write|read|structural`), TTL,
   `hard_expires_at` (4h cap that heartbeats cannot push past). `claim_path` carries **denormalized**
   `project_uuid/session_uuid/member_uuid/mode/status/expires_at` plus computed `prefix`, `kind`,
@@ -214,8 +217,9 @@ Levenshtein ≤2 on `key_norm`, catching `/api/session` vs `/api/sessions`.
 ### The semantic half — context return, then verdict report
 After deterministic detection, `declare_intent` returns a **review block**: top ~3 candidate
 decisions (always-show ones, scope overlap via the same prefix query against `decision_path`, then
-token overlap) and top ~3 similar intents (exact `external_ref` match first, then shared contracts,
-then sub-threshold path overlap, then token overlap). Each carries a server-computed **`pair_key`**.
+token overlap) and at most 2 plans that may be the same work (the same `external_ref` anywhere on the
+team first, then summaries in the same project that name the same thing, with overlapping claims
+lowering the bar; docs/DUPLICATES.md §4.2). Each carries a server-computed **`pair_key`**.
 
 **Budget: hard cap 700 tokens on the whole response, typical steady state ~90**, because suppression
 means the block is usually empty. Cut order when over: full contract shapes → pointer; extra
@@ -241,7 +245,9 @@ sequence lock**. Check overlap outside the lock and you get exactly the TOCTOU r
 see a clean world and both insert. Nobody is ever blocked — ordering assigns *responsibility*, not
 permission: the **later declarer is told synchronously** (they have the info in hand and haven't
 started), the **earlier declarer asynchronously** via an instruction that surfaces on their next
-call, including a bare heartbeat.
+call, including a bare heartbeat. For duplicate work the earlier declarer is told only if the
+conflict is still open after a short grace, so a later declarer that yields at once interrupts
+nobody (docs/DUPLICATES.md §4.5).
 
 ### Noise control — non-negotiable
 A conflict system that cries wolf gets ignored, and an LLM that learns to ignore your tool output is

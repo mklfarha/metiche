@@ -1,6 +1,6 @@
 ---
 name: metiche-teamwork
-description: Work alongside other coding agents and humans on one repo through the metiche MCP server — declare what you are about to do before you do it, hold narrow path claims, heartbeat while you work, and act on the collisions metiche reports inside your own tool responses. Use whenever the metiche MCP tools are connected, and whenever the user says metiche, join code, team board, "who else is touching this", "don't step on the other agent", "we're working in parallel", hackathon team, invite a teammate, declare intent, claim paths, heartbeat, or pending instructions.
+description: Work alongside other coding agents and humans on one repo through the metiche MCP server — declare what you are about to do before you do it, hold narrow path claims, heartbeat while you work, and act on the collisions metiche reports inside your own tool responses. Use whenever the metiche MCP tools are connected, and whenever the user says metiche, join code, team board, "who else is touching this", "don't step on the other agent", "we're working in parallel", hackathon team, invite a teammate, declare intent, claim paths, heartbeat, pending instructions, or "is somebody else already building this".
 ---
 
 # metiche — working in a team of agents
@@ -54,7 +54,7 @@ list, in the order you meet them.
 | `check_paths` | before exploring | read-only, no commitment: "who else is in here?" |
 | **`publish_contract`** | **before building or calling an interface** | `produces` or `consumes` an endpoint, event, type, table or env var, with its `request` / `response` fields. See "Publish the contracts between parts". |
 | `record_decision` | when the team settles something the code must obey | key, statement, scope. Revising another person's decision needs your person's yes. See "Record the decisions the team makes". |
-| `get_review_context` | when `pending.reviews > 0` | read-only: the decision and your plan, side by side |
+| `get_review_context` | when `pending.reviews > 0` | read-only: your plan next to a decision, or next to another agent's plan |
 | `report_judgement` | after reading a pair | `conflict` / `no_conflict` / `unsure`, confidence, one-line rationale |
 | **`heartbeat`** | **~every 60s** | alive + extend claims + status line + pending counts. Cheapest call in the system. |
 | **`update_intent`** | **as things change** | status line, `add_paths` / `drop_paths`, mark done |
@@ -87,10 +87,10 @@ that name.
 
 ### Coming next, not available yet
 
-`resolve_conflict` is planned but **not on the server**. Never call it. If a note, a suggested
-action or an instruction names it, skip that step and do what works today: read the conflict,
-change course or coordinate, narrow or drop paths with `update_intent`, and answer instructions
-with `report_back`.
+`resolve_conflict` is planned but **not on the server**, and so are dismissals: there is no way yet
+to mark a finding a false positive. Never call it. If a note, a suggested action or an instruction
+names it, skip that step and do what works today: read the conflict, change course or coordinate,
+narrow or drop paths with `update_intent`, and answer instructions with `report_back`.
 
 ---
 
@@ -171,13 +171,16 @@ summary:  "Add POST /api/login: password check, mint session cookie, wire the ha
 paths:    ["internal/auth/auth.go", "internal/auth/session.go", "internal/api/routes.go"]
 mode:     "write"
 kind:     "implement"
-external_ref: "ISSUE-412"          # if there is one — an exact issue match is the
-                                    # highest-signal duplicate-work key in the system
+external_ref: "ISSUE-412"          # only if there is one — the same id on another live
+                                    # plan is the strongest duplicate-work signal there is
 ```
 
 `summary` is capped at 280 characters and it is read by other agents' models, not by a parser.
-Write the sentence you would say to a teammate. If you have an issue id, always include it — two
-agents on the same ticket is worth knowing immediately.
+Write the sentence you would say to a teammate, and make it **name the thing**: "login page", not
+"frontend stuff". In a hackathon there is no ticket, and three to six words like "add login page"
+are exactly what metiche compares to find two agents building the same thing (see "When another
+agent is building the same thing"). If you have an issue id, always include it too — two agents on
+the same ticket is worth knowing immediately, in any repository on the team.
 
 ---
 
@@ -299,8 +302,12 @@ everybody's later plans. If it would stop being true once you finish the task, i
 
 ## Judge the pairs you are handed
 
-When `pending.reviews > 0`, or a response carries `review`, metiche is asking your own model whether
-your plan breaks a recorded decision. metiche never judges anything itself. Do it before you edit.
+When `pending.reviews > 0`, or a response carries `review`, metiche is asking your own model one of
+two questions: does your plan break a recorded decision, or is another agent's live plan the same
+work as yours? metiche never judges anything itself, calls no model and needs no provider key; the
+judging is yours, and nothing leaves the team to be judged. Do it before you edit.
+
+A pair with `"kind": "duplicate_work"` is the second question; see the next section. For a decision:
 
 1. Read the pair: `get_review_context`, unless the review block already gave you the statement.
 2. Answer honestly with `report_judgement`:
@@ -324,6 +331,64 @@ or revise it with `record_decision` if the team changed its mind, then `report_b
 If an instruction asks you to ask your person, ask them that exact question and `report_back` their
 answer. metiche asks a person only when the conflict is serious and the two agents have not settled
 it within the pace the project sets, so by the time one is asked, it is worth their attention.
+
+## When another agent is building the same thing
+
+A pair with `"kind": "duplicate_work"` puts your plan next to another agent's live plan that may be
+the same work. metiche finds these from the **wording alone**: in a hackathon nobody has issue
+numbers, and "add login page" and "build the login screen" are caught, because it folds "screen"
+into "page" and ignores verbs like "build". The same `external_ref` on both plans, when there is
+one, is simply the strongest signal, and the only one that reaches across repositories. Either way
+metiche only picks the pair. Whether it is the same work is for your own model to say.
+
+Answer the narrow question: **would doing your plan produce the same change theirs will?**
+
+- `conflict`: the same page, the same endpoint, the same fix. Two ways of building one thing is
+  still one thing.
+- `no_conflict`: different parts of one ticket or one feature — the login form and the login
+  handler, the table and the page that reads it. That is the usual answer, and it is the right one
+  whenever the parts really are different.
+- `unsure`: what you were shown does not settle it. It is recorded low and interrupts nobody.
+
+Give a real `confidence` and a `rationale` naming the two things that match or differ: "both build
+the login page; INT-83 already has the route". Below 0.7 a conflict is recorded low and interrupts
+nobody, so do not shade the number either way.
+
+**Never answer `no_conflict` to keep working on something another agent is already building.** You
+are the side that will be asked to stop, which is exactly why a convenient answer tempts you. Your
+verdict, confidence and rationale go on the board next to both plans.
+
+**On a conflict, stop before you edit.** You declared later, or you just reworded, so you are the one
+asked to change course (`"at_fault": "later"`, and `duplicate_of` names their plan). Do one of these
+and say it with `update_intent`:
+
+- **Stop:** `status: "superseded"`, and tell your person what the other agent is already building
+  instead of redoing it.
+- **Re-scope:** take a different part and reword the `summary` so it names that part. While the
+  conflict is open, a reworded summary always asks you once more against their plan, whatever the
+  new words (`"why": "open_conflict"`). Judge it honestly: `no_conflict` closes the conflict only if
+  the new part really is different work.
+- **Keep going** only if you believe your plan is the one that should continue, and only after you
+  have settled that with the other agent (its session key is in `suggested_action`). Put what you
+  agreed in your status line.
+
+**The other agent is told only if you did not back off.** Neither the pair nor your verdict
+interrupts it. If the conflict is still open after a short grace (two minutes on a hackathon
+project), it gets a `conflict_notice` saying you judged your plan the same work and were told to
+stop. Yield inside that window and it never hears a thing.
+
+If you are the one who was there first and a `conflict_notice` like that reaches you: carry on. If
+the other agent's part should stay, agree the split with its agent, then `report_back` what you
+agreed.
+
+**A person is asked only when the agents do not settle it.** If a serious duplicate (`high` by
+default) is still open after the project's time budget (ten minutes on a hackathon project), the agents in it get an
+instruction to ask their person who keeps it. Ask that exact question and `report_back` the answer.
+An agent that vanishes without ending its session is abandoned, and its duplicates close with it.
+
+Name the thing in every summary, even in a hurry: "stripe checkout", not "payments work". That one
+line is how two agents find out they are building the same thing. A summary of nothing but vague
+words ("fix stuff", "demo work") is never compared at all.
 
 ---
 
@@ -618,15 +683,40 @@ A → report_back(session_key: "S-17", instruction_key: "IN-7", outcome: "done",
 
 This is A's **first and only** interruption of the whole exchange, and it took one answer.
 
-**5. A finishes.**
+**4b. A's next plan is B's plan.** The endpoint works. A marks it done and, in a hurry, reaches for
+the login screen, not knowing that B already has it. There is no ticket; the wording is enough:
 
 ```
 A → update_intent(session_key: "S-17", intent_key: "INT-83", status: "done")
-A → end_session(session_key: "S-17", outcome: "succeeded",
-      note: "POST /api/login shipped with cookie session")
+A → declare_intent(session_key: "S-17", summary: "build the login screen",
+      paths: ["web/src/pages/Login.tsx"], mode: "write")
+    ← {"ok": true, "key": "INT-96", "review": {"pairs": [{"pair_key": "5b1e…", "kind": "duplicate_work",
+         "plan": "INT-91", "with": "Bob (ui)", "summary": "Login screen — form, submit, call the login endpoint",
+         "why": "words"}]}, "pending": {"instructions": 0, "conflicts": 0, "reviews": 1}}
+A → report_judgement(session_key: "S-17", pair_key: "5b1e…", verdict: "conflict", confidence: 0.85,
+      rationale: "both build the login screen; INT-91 already has the form")
+    ← {"conflicts": [{"key": "CF-44", "kind": "duplicate_work", "duplicate_of": "INT-91", "at_fault": "later",
+         "suggested_action": "INT-91 (Bob (ui), active 6m) is already building this: … Stop before you edit: …"}]}
+A → update_intent(session_key: "S-17", intent_key: "INT-96",
+      summary: "return field-level login errors from POST /api/login for the login form")
+    ← {"pending": {"reviews": 1}}
+A → report_judgement(session_key: "S-17", pair_key: "7ad0…", verdict: "no_conflict", confidence: 0.9,
+      rationale: "now the error responses behind Bob's form, not the form")
+    ← {"note": "judged INT-96 against INT-91: not the same work (0.90); CF-44 settled"}
 ```
 
-Count the cost. B avoided writing a duplicate handler. A was interrupted exactly once, correctly.
+B was interrupted zero times: A changed course inside the grace, so nobody had to tell B.
+
+**5. A finishes.**
+
+```
+A → update_intent(session_key: "S-17", intent_key: "INT-96", status: "done")
+A → end_session(session_key: "S-17", outcome: "succeeded",
+      note: "POST /api/login shipped with cookie session and field-level errors")
+```
+
+Count the cost. B avoided writing a duplicate handler, and A never wrote a second login screen. A
+was interrupted exactly once, correctly.
 Neither agent was ever blocked, and neither one read the board. The humans watching saw all of it
 happen live.
 
@@ -644,6 +734,9 @@ happen live.
 - Drop paths as soon as you are done with them.
 - `publish_contract` before you build or call an interface between parts, and again when your shape changes.
 - Record a decision once it is agreed, and judge every pair you are handed before you edit.
+- Answer a duplicate-work pair on the narrow question — same change, not same area — and yield
+  before you edit when you declared later.
+- Write summaries that name the thing, even three hurried words: "add login page".
 - Read `pending` on every response. Act when non-zero, do nothing when zero.
 - Answer every instruction with `report_back`, including a refusal.
 - Settle a collision with the other agent yourselves — split the file or sequence the work — and
@@ -663,3 +756,4 @@ happen live.
 - Don't go quiet for twenty minutes mid-refactor.
 - Don't put a secret, a token or a credential in any field.
 - Don't read a conflict and then change nothing and say nothing.
+- Don't answer `no_conflict` to keep building what another agent is already building.

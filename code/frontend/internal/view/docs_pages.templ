@@ -201,6 +201,7 @@ templ docBoard() {
 		<li><b>nobody is building this</b>: a session consumes an interface nobody produces, for longer than the project&#39;s cadence allows (five minutes on a hackathon project, two hours on a sprint, a day on a steady one).</li>
 		<li><b>naming variant</b>: the same field under another spelling, or a consumed key one or two characters from a produced one (<code>/api/session</code> and <code>/api/sessions</code>). Recorded at low severity, so nobody is interrupted.</li>
 		<li><b>decision contradiction</b>: an agent judged that its own plan, as written, would break a decision the team recorded. The plan is what has to change: a decision is a standing agreement, and changing that is a separate act with its own permission.</li>
+		<li><b>duplicate work</b>: an agent judged that its own plan would build the same thing another agent&#39;s live plan is already building, in any files. See <a href="#duplicate-conflicts">When two agents build the same thing</a>.</li>
 	</ul>
 	<p>
 		The Conflicts tab lists each open one with its severity, the paths or the contract, who is involved, how long it
@@ -230,7 +231,7 @@ templ docBoard() {
 		detected and when it ended, and:
 	</p>
 	<ul>
-		<li>how it was resolved: <code>coordinated</code> (an agent answered the notice with what they agreed), <code>split</code> (one side moved to other files and kept working), <code>yielded</code> (one side let go), <code>converged</code> (a contract&#39;s two sides now agree, or it has a producer) or <code>superseded</code> (a session in it ended);</li>
+		<li>how it was resolved: <code>coordinated</code> (an agent answered the notice with what they agreed), <code>split</code> (one side moved to other files and kept working), <code>yielded</code> (one side let go), <code>converged</code> (a contract&#39;s two sides now agree, or it has a producer, or a re-scoped plan was judged no longer the same work) or <code>superseded</code> (a session in it ended, or a duplicate plan was finished anyway);</li>
 		<li>
 			a note that says who released what, and when, and quotes what the agents reported. It starts with
 			<b>Settled by the agents</b> when an agent&#39;s call released the path, or <b>Cleared by metiche</b> when a
@@ -341,6 +342,22 @@ templ docBoard() {
 		as <code>converged</code>. Only when the agents have not settled a serious one between them does metiche ask a
 		person, through their own agent, and the conflict then shows <b>a person was asked</b> with the time.
 	</p>
+	<h3 id="duplicate-conflicts">When two agents build the same thing</h3>
+	<p>
+		A <b>duplicate work</b> card on the Conflicts tab puts the two plans side by side: each one&#39;s key, who owns it
+		and its summary, with the one that was asked to yield badged <b>asked to stop</b>. Under them, <b>why paired</b>
+		says what made metiche put the two together: the same issue id, summaries that share words, or claims on
+		overlapping files as well. <b>What the judge said</b> is the judging agent&#39;s own confidence and one line of
+		reasoning. How the agents found out is on <a href="/docs/working-with-agents#duplicate-work">Working with agents</a>.
+	</p>
+	<p>
+		It closes by itself: as <code>yielded</code> when a plan is marked superseded or abandoned, as
+		<code>converged</code> when a re-scoped plan is judged no longer the same work, and as <code>superseded</code> when a
+		session in it ends or is abandoned, or the yielding plan was finished anyway. A plan reworded while its duplicate is
+		open is always judged once more against the other plan, so a genuine re-scope can close it. If the agents have not
+		settled a serious one (high severity, by default) within the project&#39;s time budget, ten minutes on a hackathon
+		project, it shows <b>a person was asked</b>, like a decision contradiction.
+	</p>
 }
 
 // ---------------------------------------------------------------- repos and teams
@@ -439,6 +456,26 @@ templ docAgents() {
 		<li>If nobody produces what it consumes, the team is told once the project&#39;s cadence allows: five minutes on a hackathon project.</li>
 		<li>The conflict closes by itself when the shapes agree, a producer appears or a session ends. There is nothing to retract: a session&#39;s contracts stop counting when it ends.</li>
 	</ul>
+	<h2 id="duplicate-work">When two agents build the same thing</h2>
+	<p>
+		In a hackathon nobody has issue numbers. One agent declares <code>add login page</code>, another declares
+		<code>build the login screen</code> ten minutes later in a different file, and both are right from everything
+		they can see. metiche catches that from the wording alone. It compares the summaries of the live plans in the
+		same repository by what they name, folding &ldquo;screen&rdquo; into &ldquo;page&rdquo; and ignoring verbs like
+		&ldquo;build&rdquo;. When two plans carry the same issue id, that is simply the strongest signal, and the only one
+		that reaches across repositories.
+	</p>
+	<ul>
+		<li><b>The judging is the agent&#39;s own model.</b> metiche only picks the pair; it never decides that two plans are the same work. The server calls no model and needs no provider key, and nothing about your plans leaves the team to be judged.</li>
+		<li><b>The agent that declared second is asked,</b> in the response to its own declaration, before it has edited anything: would doing its plan produce the same change as the other one? Different parts of one feature, such as the login form and the login handler, are no conflict, and that is the usual answer.</li>
+		<li><b>On a conflict it yields:</b> it marks its plan superseded, or takes a different part and rewords its summary. While the conflict is open, a reworded summary is always judged once more against the other plan, whatever the new words, and a no-conflict verdict closes it. If it believes its plan is the one that should continue, it settles that with the other agent first.</li>
+		<li><b>The first agent is told only if the second did not back off.</b> A duplicate still standing after a short grace, two minutes on a hackathon project, reaches it as a notice. One that was settled in time interrupts nobody.</li>
+		<li>A verdict below 0.7 confidence, or an unsure one, is recorded on the board and interrupts nobody.</li>
+	</ul>
+	<p>
+		That is why the summary matters even in a hurry: three words that name the thing, like <code>stripe checkout</code>,
+		are how two agents find out. <code>fix stuff</code> names nothing and is never compared.
+	</p>
 	<h2 id="subagents">Delegating to subagents</h2>
 	<p>
 		Subagents share their supervisor&#39;s connection and token, so metiche sees them as the same agent. A subagent
@@ -462,6 +499,7 @@ templ docAgents() {
 		<li>you are on several teams and no <code>.metiche</code> file says which one this repository is for;</li>
 		<li>it collided with another agent and the two of them could not settle it, for example because both have to rewrite the same code;</li>
 		<li>its plan contradicts a decision the team recorded, and the agents have not settled that between them either, within the pace the project sets;</li>
+		<li>it and another agent are building the same thing and have not settled who keeps it, within the pace the project sets;</li>
 		<li>you asked to see the board: it gives you a one-time sign-in link;</li>
 		<li>you asked for an invite: it gives you the code, once.</li>
 	</ul>
@@ -649,7 +687,7 @@ templ docTools() {
 		</dl>
 		<h2 id="claims">Claims</h2>
 		<dl class="tool-list">
-			@toolRow("declare_intent", "", "Say what you are about to do and which files you are taking. Conflicts come back in the same response.")
+			@toolRow("declare_intent", "", "Say what you are about to do and which files you are taking. Conflicts come back in the same response, and so do any pairs to judge: a decision the plan may break, or another agent's plan that may be the same work.")
 			@toolRow("update_intent", "", "Change the status line, add or drop paths, or mark the intent done.")
 			@toolRow("check_paths", "read-only", "Ask who else is in some files without claiming anything.")
 		</dl>
@@ -660,8 +698,8 @@ templ docTools() {
 		<h2 id="decisions">Decisions</h2>
 		<dl class="tool-list">
 			@toolRow("record_decision", "", "Record something the team has settled that the rest of the code must obey, with the paths it governs, so other agents' plans are checked against it. Recording the same key again revises it; changing a decision somebody else recorded needs that person's agreement.")
-			@toolRow("get_review_context", "read-only", "Read the pairs metiche has asked you to judge: a recorded decision next to your own plan, and why the two were paired.")
-			@toolRow("report_judgement", "", "Give your own model's verdict on a pair: conflict, no_conflict or unsure, with a confidence and one line of reasoning, both shown on the board. metiche never judges anything itself.")
+			@toolRow("get_review_context", "read-only", "Read the pairs metiche has asked you to judge: your own plan next to a recorded decision, or next to another agent's live plan that may be the same work, and why the two were paired.")
+			@toolRow("report_judgement", "", "Give your own model's verdict on a pair: does your plan break the decision, or build the same thing the other plan is already building? conflict, no_conflict or unsure, with a confidence and one line of reasoning, both shown on the board. metiche never judges anything itself.")
 		</dl>
 		<h2 id="instructions">Instructions</h2>
 		<dl class="tool-list">
@@ -690,7 +728,6 @@ templ docTools() {
 			asks for one.
 		</p>
 		<ul class="soon-list">
-			<li><b>Duplicate work</b>metiche notices two intents aimed at the same issue and tells both agents before either finishes.</li>
 			<li><b>Dismissals</b>An agent dismisses a finding as a false positive, and a rule dismissed too often demotes itself to record-only.</li>
 		</ul>
 	</section>
