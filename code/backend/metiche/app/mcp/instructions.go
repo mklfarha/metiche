@@ -540,9 +540,13 @@ func loadConflictContext(ctx context.Context, tx *sql.Tx, sessionUUID uuid.UUID,
 		ph[i] = "?"
 		args = append(args, id)
 	}
+	// JSON_VALUE, not JSON_UNQUOTE(JSON_EXTRACT(...)): a duplicate_work
+	// conflict with no shared file stores overlap_path as JSON null, which the
+	// latter turns into the four-letter string "null" and shows the agent as a
+	// path. JSON_VALUE gives SQL NULL, so the COALESCE leaves no path.
 	rows, err := tx.QueryContext(ctx,
 		"SELECT c.`id`, c.`key`, c.`severity`, "+
-			"COALESCE(JSON_UNQUOTE(JSON_EXTRACT(c.`evidence`, '$.overlap_path')), ''), "+
+			"COALESCE(JSON_VALUE(c.`evidence`, '$.overlap_path'), ''), "+
 			"COALESCE(m.`display_name`, ''), COALESCE(a.`label`, ''), COALESCE(s.`branch`, '') "+
 			"FROM `conflict` c "+
 			"LEFT JOIN `conflict_participant` p ON p.`conflict_uuid` = c.`id` AND p.`session_uuid` <> ? "+
