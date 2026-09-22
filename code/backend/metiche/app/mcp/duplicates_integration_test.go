@@ -383,6 +383,27 @@ func TestIntegrationDuplicatePinnedPairSkippedEitherOrder(t *testing.T) {
 	}
 }
 
+// TestIntegrationDuplicateJudgementInsertIsIdempotent: the unique index makes
+// the first insert win; a second insert of the same pair is no error, reports
+// not inserted, and leaves the row exactly as it was.
+func TestIntegrationDuplicateJudgementInsertIsIdempotent(t *testing.T) {
+	w := newDupWorld(t)
+	first := w.hs.dupJudgementByKey(t, w.pair)
+	key, inserted, err := insertDuplicateJudgement(context.Background(), w.hs.core.DB(), duplicateJudgement{
+		TeamUUID: w.hs.teamID, AUUID: w.bIntent, AWording: 1, BUUID: w.aIntent, BWording: 1,
+		JudgeSession: w.ana.session.String(), Window: time.Minute, Now: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("a second insert of the same pair must not fail: %v", err)
+	}
+	if inserted || key != w.pair {
+		t.Errorf("second insert: key %s inserted %v, want %s false (the key is symmetric)", key, inserted, w.pair)
+	}
+	if again := w.hs.dupJudgementByKey(t, w.pair); again != first || len(w.hs.dupJudgements(t)) != 1 {
+		t.Errorf("the first insert must win: %+v -> %+v", first, again)
+	}
+}
+
 // TestIntegrationDuplicateReplayIsByteIdentical: a replayed declaration returns
 // the same pair keys, byte for byte, and writes one event and one judgement.
 func TestIntegrationDuplicateReplayIsByteIdentical(t *testing.T) {
