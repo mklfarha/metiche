@@ -27,8 +27,9 @@ import (
 // contract untouched.
 //
 // Like every read in this package, nothing here selects a column by wildcard.
-// conflict.evidence is read only through the three path keys conflictColumns
-// names; the rest of it (the intent summaries an agent wrote) never leaves.
+// conflict.evidence is read only through the keys conflictColumns names, and
+// a side's intent summary leaves only on a duplicate_work, whose card is the
+// two plans side by side.
 
 // PathConflictHistory is the conflict history route.
 const PathConflictHistory = "/v1/teams/{slug}/conflicts/history"
@@ -165,16 +166,18 @@ func pastConflictStatusNames() []string {
 }
 
 // liveConflictKinds are the kinds something actually detects today, in the
-// enum's order. The enum also names duplicate_work and stale_base, which
-// nothing raises yet; offering them as filters would advertise detections
-// that do not exist. decision_contradiction joined the list with
-// report_judgement (docs/DECISIONS.md §3.3), which is what raises one.
+// enum's order. The enum also names stale_base, which nothing raises yet;
+// offering it as a filter would advertise a detection that does not exist.
+// decision_contradiction joined the list with report_judgement
+// (docs/DECISIONS.md §3.3), which is what raises one, and duplicate_work
+// with the duplicate reviewer (docs/DUPLICATES.md §5.1).
 var liveConflictKinds = []enums.ConflictKind{
 	enums.CONFLICT_KIND_PATH_OVERLAP,
 	enums.CONFLICT_KIND_CONTRACT_MISMATCH,
 	enums.CONFLICT_KIND_CONTRACT_UNCLAIMED,
 	enums.CONFLICT_KIND_CONTRACT_NAMING_VARIANT,
 	enums.CONFLICT_KIND_DECISION_CONTRADICTION,
+	enums.CONFLICT_KIND_DUPLICATE_WORK,
 }
 
 // conflictKindNames lists the live conflict kinds by name.

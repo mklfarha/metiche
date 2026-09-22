@@ -829,7 +829,7 @@ func TestConflictHistoryTakesTheDecisionKind(t *testing.T) {
 
 	var page conflictHistoryPage
 	raw := getJSON(t, srv.URL+"/v1/teams/"+fx.slug+"/conflicts/history?kind=decision_contradiction", &page)
-	if strings.Join(page.Kinds, ",") != "path_overlap,contract_mismatch,contract_unclaimed,contract_naming_variant,decision_contradiction" {
+	if strings.Join(page.Kinds, ",") != "path_overlap,contract_mismatch,contract_unclaimed,contract_naming_variant,decision_contradiction,duplicate_work" {
 		t.Fatalf("the kind vocabulary is %v", page.Kinds)
 	}
 	if len(page.Conflicts) != 1 || page.Conflicts[0].Key != "CF-30" || page.Conflicts[0].Kind != "decision_contradiction" {

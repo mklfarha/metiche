@@ -149,13 +149,23 @@ type conflictWire struct {
 	// not about paths.
 	Paths []string `json:"paths"`
 
+	// Plans, Signals and IssueRef are set only on duplicate_work
+	// (docs/DUPLICATES.md §5.1, §9.3), each read from the detector's evidence
+	// by name: the two plans that look like the same work, [incumbent, yield
+	// side]; the human text of why the server paired them, in the evidence's
+	// order; and the external_ref both plans name, when that is a reason.
+	Plans    []conflictPlanWire `json:"plans,omitempty"`
+	Signals  []string           `json:"signals,omitempty"`
+	IssueRef string             `json:"issue_ref,omitempty"`
+
 	// ContractKey is the contract a contract_* conflict is about.
 	ContractKey string `json:"contract_key,omitempty"`
 
 	// DecisionKey and JudgeNote are a decision_contradiction's own two facts
 	// (docs/DECISIONS.md §9.4), both read from the detector's evidence by
 	// name: the decision the plan contradicts, and the one line the plan's
-	// own model wrote when it judged the pair. EscalatedAt is any kind's: it
+	// own model wrote when it judged the pair. A duplicate_work carries
+	// JudgeNote too: the yield side's model's line. EscalatedAt is any kind's: it
 	// is set when metiche gave up waiting for the agents and asked a person,
 	// and cleared again when a conflict it closed reopens.
 	DecisionKey string  `json:"decision_key,omitempty"`
@@ -163,6 +173,17 @@ type conflictWire struct {
 	EscalatedAt *string `json:"escalated_at,omitempty"`
 
 	Participants []participantWire `json:"participants"`
+}
+
+// conflictPlanWire is one side of a duplicate_work conflict
+// (docs/DUPLICATES.md §9.3): the plan, whose it is, what it says, the path it
+// holds, and whether it is the side asked to stop.
+type conflictPlanWire struct {
+	Key     string `json:"key"`
+	Who     string `json:"who"`
+	Summary string `json:"summary"`
+	Path    string `json:"path,omitempty"`
+	Yields  bool   `json:"yields"`
 }
 
 type assertionWire struct {

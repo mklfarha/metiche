@@ -3,6 +3,7 @@ package webapi
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -96,18 +97,26 @@ func loadSessionConflicts(ctx context.Context, tx *sql.Tx, teamUUID, sessionUUID
 // conflictColumns is the one column list every conflict read selects, in the
 // order queryConflicts scans it.
 //
-// evidence is JSON the detector writes, and most of it is not the board's to
-// show: the two sides' intent summaries are whatever an agent typed. Only its
-// three path keys and, for a decision_contradiction, the first field issue —
-// the one line the plan's own model wrote (docs/DECISIONS.md §9.4) — are read,
-// each by name, so the rest of the document never reaches a response.
+// evidence is JSON the detector writes, and it is read only key by key, never
+// whole: MySQL rewrites a JSON column's key order on the way in, and most of
+// the document is not the board's to show. Its three path keys, the first
+// field issue (the one line the judging plan's own model wrote,
+// docs/DECISIONS.md §9.4 and docs/DUPLICATES.md §9.4), and the two sides'
+// labels and summaries and the adjuster facts (docs/DUPLICATES.md §5.1) are
+// read, each by name. queryConflicts serves the labels, summaries and facts
+// on a duplicate_work only and drops them for every other kind, so a path
+// overlap's or a decision conflict's intent summaries still never reach a
+// response.
 const conflictColumns = "c.`id`, c.`key`, c.`kind`, c.`severity`, c.`status`, c.`detected_by`, " +
 	"c.`detector_rule`, c.`suggested_action`, c.`occurrence_count`, " +
 	"c.`first_detected_at`, c.`last_detected_at`, " +
 	"c.`resolution`, c.`resolution_note`, c.`dismiss_reason`, c.`resolved_at`, " +
 	"JSON_VALUE(c.`evidence`, '$.overlap_path'), JSON_VALUE(c.`evidence`, '$.a_pattern'), " +
 	"JSON_VALUE(c.`evidence`, '$.b_pattern'), c.`escalated_at`, " +
-	"JSON_VALUE(c.`evidence`, '$.field_issues[0]')"
+	"JSON_VALUE(c.`evidence`, '$.field_issues[0]'), " +
+	"JSON_VALUE(c.`evidence`, '$.a_label'), JSON_VALUE(c.`evidence`, '$.a_summary'), " +
+	"JSON_VALUE(c.`evidence`, '$.b_label'), JSON_VALUE(c.`evidence`, '$.b_summary'), " +
+	"JSON_EXTRACT(c.`evidence`, '$.adjusters')"
 
 // loadConflictsWhere is the shared read. where is appended verbatim, so it is
 // only ever one of the literal fragments in this package; every value in it is
@@ -157,12 +166,14 @@ func queryConflicts(ctx context.Context, tx *sql.Tx, q string, args []any, limit
 			overlapPath, aPattern, bPattern    sql.NullString
 			escalatedAt                        sql.NullTime
 			judgeNote                          sql.NullString
+			dup                                duplicateEvidence
 			at                                 sql.NullTime
 		)
 		dest := []any{&id, &c.Key, &kind, &severity, &status, &detectedBy,
 			&rule, &action, &occurrences, &first, &last,
 			&resolution, &resNote, &dismissReason, &resolvedAt,
-			&overlapPath, &aPattern, &bPattern, &escalatedAt, &judgeNote}
+			&overlapPath, &aPattern, &bPattern, &escalatedAt, &judgeNote,
+			&dup.aLabel, &dup.aSummary, &dup.bLabel, &dup.bSummary, &dup.adjusters}
 		if ordered {
 			dest = append(dest, &at)
 		}
@@ -185,7 +196,17 @@ func queryConflicts(ctx context.Context, tx *sql.Tx, q string, args []any, limit
 			c.DismissReason = enums.DismissReason(dismissReason.Int64).String()
 		}
 		c.EscalatedAt = rfc3339(escalatedAt)
-		if enums.ConflictKind(kind.Int64) == enums.CONFLICT_KIND_DECISION_CONTRADICTION {
+		switch enums.ConflictKind(kind.Int64) {
+		case enums.CONFLICT_KIND_DUPLICATE_WORK:
+			// A duplicate's overlap_path is the shared issue id when there
+			// is one, else the path both plans also hold (docs/DUPLICATES.md
+			// §9.4); either way it is a signal, not a claimed pattern, so
+			// paths is the yield side's pattern then the incumbent's.
+			dup.overlapPath, dup.aPattern, dup.bPattern = overlapPath, aPattern, bPattern
+			c.Plans, c.Signals, c.IssueRef = dup.wire()
+			c.JudgeNote = boardText(judgeNote.String, maxJudgeNoteChars)
+			c.Paths = conflictPaths(bPattern, aPattern)
+		case enums.CONFLICT_KIND_DECISION_CONTRADICTION:
 			// A decision conflict's overlap_path is the decision's KEY, not a
 			// path (docs/DECISIONS.md §9.4), so it goes to decision_key and
 			// never into paths. What is left is the plan's path and the
@@ -194,7 +215,7 @@ func queryConflicts(ctx context.Context, tx *sql.Tx, q string, args []any, limit
 			c.DecisionKey = strings.TrimSpace(overlapPath.String)
 			c.JudgeNote = strings.TrimSpace(judgeNote.String)
 			c.Paths = conflictPaths(bPattern, aPattern)
-		} else {
+		default:
 			c.Paths = conflictPaths(overlapPath, aPattern, bPattern)
 			if strings.HasPrefix(c.Kind, "contract_") {
 				c.ContractKey = strings.TrimSpace(overlapPath.String)
@@ -206,6 +227,100 @@ func queryConflicts(ctx context.Context, tx *sql.Tx, q string, args []any, limit
 		lastAt = at.Time
 	}
 	return out, ids, lastAt, false, rows.Err()
+}
+
+// Clip lengths for a duplicate's agent-written text. A summary is at most
+// VARCHAR(280) where it was typed, and a label is truncated to 255 where the
+// evidence is written, so neither clips in practice; the judge's note is an
+// agent's free text and gets a decision rationale's room.
+const (
+	maxPlanSummaryChars = 280
+	maxPlanWhoChars     = 255
+	maxJudgeNoteChars   = 600
+)
+
+// duplicateEvidence is what a duplicate_work conflict's evidence holds, each
+// key read by name (docs/DUPLICATES.md §9.4).
+type duplicateEvidence struct {
+	overlapPath, aPattern, bPattern sql.NullString
+	aLabel, aSummary                sql.NullString
+	bLabel, bSummary                sql.NullString
+	adjusters                       sql.NullString // a JSON array of facts
+}
+
+// wire turns the evidence into §9.3's plans, signals and issue_ref.
+//
+// The facts are written in a fixed order (app/mcp/duplicateresolve.go): the
+// plans fact "plans:<a>,<b>" first, where b is the yield side and the judge,
+// then "same_issue:<ref>", "words:w1,w2", "paths:<path>" and
+// "same_member_concurrent". The plans fact names the two plans and is never
+// a signal; every other fact is one, in the order it was written. A fact this
+// binary does not know is left out rather than shown raw.
+//
+// When the incumbent later judges the pair itself, the detector rewrites the
+// whole evidence with the sides swapped, so a and b here are always the
+// current incumbent and yield side.
+func (d duplicateEvidence) wire() (plans []conflictPlanWire, signals []string, issueRef string) {
+	var facts []string
+	if d.adjusters.Valid && strings.TrimSpace(d.adjusters.String) != "" {
+		// A malformed array reads as no facts: the plans still show, with
+		// no keys, and the card still draws.
+		_ = json.Unmarshal([]byte(d.adjusters.String), &facts)
+	}
+	var aKey, bKey string
+	sameIssue := false
+	for _, raw := range facts {
+		f := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(f, "plans:"):
+			if aKey != "" || bKey != "" {
+				continue
+			}
+			if a, b, ok := strings.Cut(strings.TrimPrefix(f, "plans:"), ","); ok {
+				aKey, bKey = strings.TrimSpace(a), strings.TrimSpace(b)
+			}
+		case strings.HasPrefix(f, "same_issue:"):
+			ref := boardText(strings.TrimPrefix(f, "same_issue:"), maxPlanWhoChars)
+			if ref == "" {
+				continue
+			}
+			sameIssue = true
+			if issueRef == "" {
+				issueRef = ref
+			}
+			signals = append(signals, "same issue "+ref)
+		case strings.HasPrefix(f, "words:"):
+			var words []string
+			for _, w := range strings.Split(strings.TrimPrefix(f, "words:"), ",") {
+				if w = strings.TrimSpace(w); w != "" {
+					words = append(words, w)
+				}
+			}
+			if len(words) > 0 {
+				signals = append(signals, "shared words: "+boardText(strings.Join(words, ", "), maxPlanSummaryChars))
+			}
+		case strings.HasPrefix(f, "paths:"):
+			if p := strings.TrimSpace(strings.TrimPrefix(f, "paths:")); p != "" {
+				signals = append(signals, "also share "+p)
+			}
+		case f == "same_member_concurrent":
+			signals = append(signals, "one person's two agents")
+		}
+	}
+	// overlap_path IS the ref when there is a shared issue (§9.4); it is the
+	// overlapping path otherwise, and then never the issue_ref.
+	if sameIssue && d.overlapPath.Valid {
+		if ref := boardText(d.overlapPath.String, maxPlanWhoChars); ref != "" {
+			issueRef = ref
+		}
+	}
+	plans = []conflictPlanWire{
+		{Key: aKey, Who: boardText(d.aLabel.String, maxPlanWhoChars), Summary: boardText(d.aSummary.String, maxPlanSummaryChars),
+			Path: strings.TrimSpace(d.aPattern.String), Yields: false},
+		{Key: bKey, Who: boardText(d.bLabel.String, maxPlanWhoChars), Summary: boardText(d.bSummary.String, maxPlanSummaryChars),
+			Path: strings.TrimSpace(d.bPattern.String), Yields: true},
+	}
+	return plans, signals, issueRef
 }
 
 // conflictPaths is the overlapping path and the two claimed patterns, once
