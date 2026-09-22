@@ -2,12 +2,17 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"sort"
+
+	"github.com/gofrs/uuid"
 
 	"go.uber.org/zap"
 
 	"github.com/mklfarha/metiche/backend/app/coordination"
 	"github.com/mklfarha/metiche/backend/core"
+	conflict_evidence_entity "github.com/mklfarha/metiche/backend/entity/conflict_evidence"
 	"github.com/mklfarha/metiche/backend/enums"
 )
 
@@ -68,7 +73,14 @@ type duplicateCandidateRow struct {
 	Parent          string
 	Signal          coordination.DuplicateSignal
 	Core, Shared    int
+	// Rejudge marks the other plan of an open duplicate conflict this plan
+	// is in: after a rewording it is asked once more whatever the score.
+	Rejudge bool
 }
+
+// whyRejudge is the review block's why for a re-judge pair: the plan was
+// reworded while a duplicate conflict with the other plan is open.
+const whyRejudge = "open_conflict"
 
 func (d *duplicateReviewer) review(ctx context.Context, tc *TxContext, m *Mutation) ([]ConflictNotice, error) {
 	req := pathDetectionFrom(ctx)
@@ -212,6 +224,29 @@ func (d *duplicateReviewer) reviewIntent(ctx context.Context, tc *TxContext, req
 			})
 		}
 	}
+	// 4b. Re-judge. On a rewording, every open duplicate conflict this plan
+	// is in earns one pair against its other plan WHATEVER the new wording
+	// scores: a genuine re-scope ("build the login screen" → "add password
+	// strength meter") stops resembling the other plan, and without this pair
+	// nothing could converge the conflict (§4.7 rule 5). These pairs come
+	// first, ahead of scored candidates, so the per-minute cap never starves
+	// them behind new ones. A plan with no open conflict keeps the score gate.
+	var rejudge []string
+	if reworded {
+		partners, err := openConflictPartners(ctx, q, tc, req, intentID)
+		if err != nil {
+			return err
+		}
+		for _, c := range partners {
+			if prev, ok := cands[c.ID]; ok {
+				prev.Rejudge = true
+			} else {
+				cc := c
+				cands[c.ID] = &cc
+			}
+			rejudge = appendUnique(rejudge, c.ID)
+		}
+	}
 	if len(cands) == 0 {
 		return nil
 	}
@@ -221,6 +256,9 @@ func (d *duplicateReviewer) reviewIntent(ctx context.Context, tc *TxContext, req
 	var list []coordination.DuplicateCandidate
 	for _, id := range order {
 		c := cands[id]
+		if c.Rejudge {
+			continue // already paired once; ordered first below
+		}
 		if c.Session == req.SessionUUID.String() {
 			continue
 		}
@@ -236,6 +274,12 @@ func (d *duplicateReviewer) reviewIntent(ctx context.Context, tc *TxContext, req
 	}
 	// 6. Rank, keep the best scored, then the pinned and existing checks.
 	list = coordination.RankDuplicateCandidates(list, duplicateMaxCandidates)
+	var first []coordination.DuplicateCandidate
+	for _, id := range rejudge {
+		c := cands[id]
+		first = append(first, coordination.DuplicateCandidate{OtherIntentUUID: c.ID, OtherIntentKey: c.Key, Signal: c.Signal})
+	}
+	list = append(first, list...)
 	if len(list) == 0 {
 		return nil
 	}
@@ -256,15 +300,17 @@ func (d *duplicateReviewer) reviewIntent(ctx context.Context, tc *TxContext, req
 	if err != nil {
 		return err
 	}
+	// Re-judge pairs are all kept (bounded by settleMaxConflicts); scored
+	// candidates fill what is left of duplicateMaxPairsPerCall.
 	var chosen []coordination.DuplicateCandidate
 	for _, c := range list {
 		if pinned[c.OtherIntentUUID] || existing[keyOf[c.OtherIntentUUID]] {
 			continue
 		}
-		chosen = append(chosen, c)
-		if len(chosen) >= duplicateMaxPairsPerCall {
-			break
+		if !cands[c.OtherIntentUUID].Rejudge && len(chosen) >= duplicateMaxPairsPerCall {
+			continue
 		}
+		chosen = append(chosen, c)
 	}
 	if len(chosen) == 0 {
 		return nil
@@ -320,7 +366,7 @@ func (d *duplicateReviewer) reviewIntent(ctx context.Context, tc *TxContext, req
 					SessionKey: info.Key, MemberName: info.MemberName, AgentLabel: info.AgentLabel,
 				}),
 				Summary: other.Summary,
-				Why:     c.Signal.String(),
+				Why:     duplicateWhy(other),
 			})
 		}
 	}
@@ -374,4 +420,71 @@ func pinnedDuplicatePairs(ctx context.Context, q queryer, tc *TxContext, intentI
 		}
 	}
 	return out, retryable(rows.Err(), "checking for dismissed duplicate pairs")
+}
+
+// duplicateWhy is a pair's why in the review block.
+func duplicateWhy(c *duplicateCandidateRow) string {
+	if c.Rejudge {
+		return whyRejudge
+	}
+	return c.Signal.String()
+}
+
+// openConflictPartners lists the other plans of the open or acknowledged
+// duplicate_work conflicts this plan is in, as the session's participant or as
+// the owner of subject a (openDuplicateConflictsOf, bounded), each read by
+// uq_intent_team_key. A partner whose plan or session is over is left out:
+// there is nothing left to judge, and the settle paths close that conflict.
+func openConflictPartners(ctx context.Context, q queryer, tc *TxContext, req *pathDetectionRequest, intentID string) ([]duplicateCandidateRow, error) {
+	ids, err := openDuplicateConflictsOf(ctx, q, tc.TeamUUID, req.SessionUUID, []uuid.UUID{*req.IntentUUID})
+	if err != nil || len(ids) == 0 {
+		return nil, err
+	}
+	var out []duplicateCandidateRow
+	for _, id := range ids {
+		var raw string
+		if err := q.QueryRowContext(ctx, "SELECT COALESCE(`evidence`, '{}') FROM `conflict` WHERE `id` = ?", id.String()).Scan(&raw); err != nil {
+			return nil, retryable(err, "reading an open duplicate conflict")
+		}
+		aKey, bKey, ok := DuplicatePlanKeys(conflict_evidence_entity.ConflictEvidenceFromJSON([]byte(raw)).Adjusters)
+		if !ok {
+			continue
+		}
+		other := ""
+		switch req.IntentKey {
+		case aKey:
+			other = bKey
+		case bKey:
+			other = aKey
+		default:
+			continue // a conflict on another plan of this session
+		}
+		var (
+			c                        duplicateCandidateRow
+			kind, iStatus, sessState int64
+		)
+		err := q.QueryRowContext(ctx,
+			"SELECT i.`id`, i.`key`, i.`summary`, i.`wording_revision`, i.`session_uuid`, i.`kind`, COALESCE(s.`parent_session_uuid`, ''), "+
+				"i.`status`, s.`status` FROM `intent` i JOIN `session` s ON s.`id` = i.`session_uuid` WHERE i.`team_uuid` = ? AND i.`key` = ?",
+			tc.TeamUUID.String(), other).
+			Scan(&c.ID, &c.Key, &c.Summary, &c.WordingRevision, &c.Session, &kind, &c.Parent, &iStatus, &sessState)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			continue
+		case err != nil:
+			return nil, retryable(err, "reading the other plan of an open duplicate conflict")
+		}
+		if c.ID == intentID {
+			continue
+		}
+		if st := enums.IntentStatus(iStatus); st != enums.INTENT_STATUS_DECLARED && st != enums.INTENT_STATUS_ACTIVE {
+			continue
+		}
+		if st := enums.SessionStatus(sessState); st != enums.SESSION_STATUS_LIVE && st != enums.SESSION_STATUS_STALE {
+			continue
+		}
+		c.Kind, c.Signal, c.Rejudge = enums.IntentKind(kind), coordination.DupSignalWords, true
+		out = append(out, c)
+	}
+	return out, nil
 }

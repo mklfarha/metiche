@@ -460,6 +460,18 @@ func buildDuplicateReviewItem(ctx context.Context, q queryer, j judgementRow, no
 		if facts.Overlap != "" {
 			item.Why = append(item.Why, "you also claim overlapping files: "+facts.Overlap)
 		}
+		// A re-judge pair after a rewording (§3.1 step 4b) may not share a
+		// word any more; the open conflict is why it was asked.
+		var key string
+		err = q.QueryRowContext(ctx,
+			"SELECT `key` FROM `conflict` WHERE `team_uuid` = (SELECT `team_uuid` FROM `intent` WHERE `id` = ?) AND `dedupe_key` = ? AND `status` IN (?, ?)",
+			b.ID, DuplicateWorkDedupeKey(a.ID, b.ID), int64(enums.CONFLICT_STATUS_OPEN), int64(enums.CONFLICT_STATUS_ACKNOWLEDGED)).Scan(&key)
+		switch {
+		case err == nil:
+			item.Why = append(item.Why, "the duplicate conflict "+key+" between these plans is still open: judge your plan as it is worded now")
+		case !errors.Is(err, sql.ErrNoRows):
+			return item, retryable(err, "reading the pair's open conflict")
+		}
 	}
 	return item, nil
 }

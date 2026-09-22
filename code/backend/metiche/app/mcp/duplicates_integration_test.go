@@ -1453,3 +1453,108 @@ func TestIntegrationDuplicateTwoAgentsOverTheTransport(t *testing.T) {
 	}
 	_ = uuid.Nil
 }
+
+// ─────────────────────────────────────────────
+// Re-judging an open conflict after a re-scope (§3.1 step 4b)
+// ─────────────────────────────────────────────
+
+// TestIntegrationDuplicateRescopeIsAskedOnceMore: a re-scope that stops
+// resembling the other plan still earns one re-judge pair while the duplicate
+// conflict is open, and its no_conflict converges it with §4.10's note.
+func TestIntegrationDuplicateRescopeIsAskedOnceMore(t *testing.T) {
+	w, c := raised(t)
+	hs := w.hs
+	env, text := hs.decUpdate(t, w.bob, UpdateIntentParams{IntentKey: w.bKey, Summary: "add password strength meter"})
+	t.Logf("Bob re-scopes to unrelated words: %s", text)
+	pairs := dupPairs(t, env)
+	if len(pairs) != 1 || pairs[0].Plan != w.aKey || pairs[0].Why != "open_conflict" || pairs[0].PairKey == w.pair || env.Pending.Reviews != 1 {
+		t.Fatalf("a re-scope under an open conflict must earn exactly one re-judge pair against %s: %s", w.aKey, text)
+	}
+	j := hs.dupJudgementByKey(t, pairs[0].PairKey)
+	if j.a != w.aIntent || j.b != w.bIntent || j.aRev != 1 || j.bRev != 2 || j.judge.String != w.bob.session.String() {
+		t.Errorf("re-judge pair = %+v", j)
+	}
+	out, raw := hs.decContext(t, w.bob, GetReviewContextParams{PairKey: pairs[0].PairKey})
+	t.Logf("Bob get_review_context: %s", raw)
+	if len(out.Reviews) != 1 || strings.Join(out.Reviews[0].Why, "|") != "the duplicate conflict "+c.key+" between these plans is still open: judge your plan as it is worded now" {
+		t.Errorf("why = %q", out.Reviews[0].Why)
+	}
+
+	env, text = hs.decJudge(t, w.bob, ReportJudgementParams{PairKey: pairs[0].PairKey, Verdict: "no_conflict", Confidence: conf(0.95),
+		Rationale: "now the password strength meter, not the login page"})
+	t.Logf("Bob no_conflict: %s", text)
+	if env.Key != c.key || env.Note != fmt.Sprintf("judged %s against %s: not the same work (0.95); %s settled", w.bKey, w.aKey, c.key) {
+		t.Errorf("envelope = %+v", env)
+	}
+	got := hs.onlyDupConflict(t)
+	want := fmt.Sprintf("Settled by the agents: %s (test) re-scoped %s at %s and judged it no longer duplicates %s: \"now the password strength meter, not the login page\".",
+		w.bob.key, w.bKey, clock(hs.dupResolvedAt(t, c.id)), w.aKey)
+	t.Logf("settled: resolution=%s\n%s", enums.ConflictResolution(got.resolution).String(), got.note)
+	if enums.ConflictResolution(got.resolution) != enums.CONFLICT_RESOLUTION_CONVERGED || normClock(got.note) != normClock(want) {
+		t.Errorf("resolution %d note %q\nwant %q", got.resolution, got.note, want)
+	}
+
+	// Settled: the next unrelated rewording is back behind the score gate.
+	env, text = hs.decUpdate(t, w.bob, UpdateIntentParams{IntentKey: w.bKey, Summary: "add password strength meter with zxcvbn"})
+	if len(dupPairs(t, env)) != 0 {
+		t.Errorf("with the conflict settled, an unrelated rewording mints nothing: %s", text)
+	}
+}
+
+// TestIntegrationDuplicateRescopeWithoutConflictMintsNothing: a plan with no
+// open duplicate conflict rewording to unrelated words gets no pair, even
+// with a live plan it once resembled.
+func TestIntegrationDuplicateRescopeWithoutConflictMintsNothing(t *testing.T) {
+	w := newDupWorld(t)
+	w.judge(t, w.bob, w.pair, "no_conflict", 0.9)
+	before := len(w.hs.dupJudgements(t))
+	env, text := w.hs.decUpdate(t, w.bob, UpdateIntentParams{IntentKey: w.bKey, Summary: "add password strength meter"})
+	t.Logf("Bob rewords with no open conflict: %s", text)
+	if wr, _ := w.hs.wordingRevisionOf(t, w.bKey); wr != 2 {
+		t.Fatalf("the rewording should bump wording_revision, got %d", wr)
+	}
+	if len(dupPairs(t, env)) != 0 || len(w.hs.dupJudgements(t)) != before {
+		t.Errorf("no open conflict: the score gate holds and nothing is minted: %s", text)
+	}
+}
+
+// TestIntegrationDuplicateRejudgeGoesFirstUnderTheCap: with one review slot
+// left, the re-judge pair takes it and a new scored candidate is backlogged.
+func TestIntegrationDuplicateRejudgeGoesFirstUnderTheCap(t *testing.T) {
+	w, _ := raised(t)
+	hs := w.hs
+	cai := hs.contractAgent(t, "Cai", "client-c")
+	envC, _ := hs.decDeclare(t, cai, DeclareIntentParams{Summary: "password strength meter"})
+	if _, err := hs.core.DB().Exec("UPDATE `team` SET `settings` = ? WHERE `id` = ?", `{"max_reviews_per_minute":1}`, hs.teamID.String()); err != nil {
+		t.Fatal(err)
+	}
+	env, text := hs.decUpdate(t, w.bob, UpdateIntentParams{IntentKey: w.bKey, Summary: "add password strength meter"})
+	t.Logf("Bob re-scopes onto Cai's words, one slot left: %s", text)
+	pairs := dupPairs(t, env)
+	if len(pairs) != 1 || pairs[0].Plan != w.aKey || pairs[0].Why != "open_conflict" {
+		t.Fatalf("the re-judge pair must take the only slot: %s", text)
+	}
+	caiIntent := hs.intentIDOf(t, envC.Key)
+	backlogged := false
+	for _, j := range hs.dupJudgements(t) {
+		if j.a == caiIntent && j.b == w.bIntent {
+			backlogged = !j.judge.Valid
+		}
+	}
+	if !backlogged {
+		t.Errorf("the new scored candidate (Cai's plan) should be minted and backlogged behind the re-judge pair")
+	}
+}
+
+// TestIntegrationDuplicateIncumbentRewordIsRejudged: the incumbent rewording
+// under an open conflict is asked too, found through the judgement before it
+// is a participant.
+func TestIntegrationDuplicateIncumbentRewordIsRejudged(t *testing.T) {
+	w, _ := raised(t)
+	env, text := w.hs.decUpdate(t, w.ana, UpdateIntentParams{IntentKey: w.aKey, Summary: "add oauth buttons"})
+	t.Logf("Ana rewords under the open conflict: %s", text)
+	pairs := dupPairs(t, env)
+	if len(pairs) != 1 || pairs[0].Plan != w.bKey || pairs[0].Why != "open_conflict" {
+		t.Fatalf("the incumbent's rewording earns a re-judge pair against %s: %s", w.bKey, text)
+	}
+}
