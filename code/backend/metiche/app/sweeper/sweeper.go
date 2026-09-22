@@ -360,6 +360,11 @@ type Report struct {
 	// counted on its own rather than folded into InstructionsRaised.
 	ConflictsEscalated int `json:"conflicts_escalated"`
 
+	// DuplicateNoticesSent counts the incumbents told, after the grace, that a
+	// duplicate of their plan is still standing (docs/DUPLICATES.md §4.5).
+	// Each one is also counted in InstructionsRaised.
+	DuplicateNoticesSent int `json:"duplicate_notices_sent"`
+
 	Retention RetentionReport `json:"retention"`
 
 	// Logins is step 5: expired sign-in links and browser sessions deleted.
@@ -607,20 +612,33 @@ func (s *Sweeper) RunOnce(ctx context.Context) (Report, error) {
 			rep.addErr("sweeping the pairs to judge for team "+t.uuid.String(), err)
 		}
 
-		// ── 5. decision conflicts the agents did not settle ─────────────────
-		// §4.7, and deliberately AFTER the backlog step: a pair handed out a
-		// moment ago is a turn the agents have not had yet.
-		if err := s.escalateDecisionConflicts(ctx, t, now, &rep); err != nil {
-			rep.addErr("escalating decision conflicts for team "+t.uuid.String(), err)
+		// ── 5. the duplicate-work pairs, then the incumbents' notices ───────
+		// docs/DUPLICATES.md §3.1 and §4.5. The pair pass is the decision
+		// pass's twin, under the same per-minute cap and just as silent. The
+		// notice pass runs after it and before escalation: an incumbent hears
+		// that a duplicate is still standing before anybody's person does.
+		if err := s.sweepDuplicatePairs(ctx, t, now, &rep); err != nil {
+			rep.addErr("sweeping the duplicate pairs to judge for team "+t.uuid.String(), err)
+		}
+		if err := s.noticeDuplicateIncumbents(ctx, t, now, &rep); err != nil {
+			rep.addErr("telling incumbents about duplicate work for team "+t.uuid.String(), err)
 		}
 
-		// ── 6. retention ────────────────────────────────────────────────────
+		// ── 6. conflicts the agents did not settle ──────────────────────────
+		// Decisions §4.7 and DUPLICATES.md §4.8, deliberately AFTER the
+		// backlog steps: a pair handed out a moment ago is a turn the agents
+		// have not had yet.
+		if err := s.escalateDecisionConflicts(ctx, t, now, &rep); err != nil {
+			rep.addErr("escalating conflicts for team "+t.uuid.String(), err)
+		}
+
+		// ── 7. retention ────────────────────────────────────────────────────
 		if err := s.enforceRetention(ctx, t, now, defaultRetentionDays, &rep); err != nil {
 			rep.addErr("enforcing retention for team "+t.uuid.String(), err)
 		}
 	}
 
-	// ── 7. expired sign-in links and browser sessions ───────────────────────
+	// ── 8. expired sign-in links and browser sessions ───────────────────────
 	// Instance-wide, and NOT gated on RetentionEnabled (logins.go).
 	if err := s.sweepLogins(ctx, now, &rep); err != nil {
 		rep.addErr("sweeping expired browser logins", err)

@@ -53,6 +53,7 @@ import (
 	"github.com/guregu/null/v6"
 
 	"github.com/mklfarha/metiche/backend/app/coordination"
+	"github.com/mklfarha/metiche/backend/app/mcp"
 	payload_entity "github.com/mklfarha/metiche/backend/entity/event_payload"
 	team_settings_entity "github.com/mklfarha/metiche/backend/entity/team_settings"
 	"github.com/mklfarha/metiche/backend/enums"
@@ -483,12 +484,18 @@ func (st escalationState) intentLive() bool {
 // do not change between the two — while every write is guarded by the state
 // the inner read found.
 func (s *Sweeper) escalateDecisionConflicts(ctx context.Context, t teamRow, now time.Time, rep *Report) error {
-	ids, err := s.loadEscalationCandidates(ctx, t)
+	candidates, err := s.loadEscalationCandidates(ctx, t)
 	if err != nil {
 		return err
 	}
-	for _, id := range ids {
-		conflictID := id
+	for _, c := range candidates {
+		conflictID := c.id
+		if c.kind == enums.CONFLICT_KIND_DUPLICATE_WORK {
+			// Same query, same rule, same "once" guard, its own wording and
+			// its own two sides (docs/DUPLICATES.md §4.8): duplicates.go.
+			s.escalateDuplicateConflict(ctx, t, conflictID, now, rep)
+			continue
+		}
 		st, err := loadEscalationState(ctx, s.db, t.uuid, conflictID)
 		if err != nil {
 			return err
@@ -596,31 +603,44 @@ func shouldEscalate(t teamRow, st escalationState, now time.Time) bool {
 		st.intentLive(), st.escalatedAt.Valid)
 }
 
+// escalationCandidate is one row of the escalation scan: the conflict, and its
+// kind, which says whose wording and whose sides it is asked with.
+type escalationCandidate struct {
+	id   uuid.UUID
+	kind enums.ConflictKind
+}
+
 // loadEscalationCandidates is §4.7's query, off idx_conflict_open (team_uuid,
-// status, severity). Oldest first, so a backlog is worked through in the order
-// the conflicts appeared rather than at random.
-func (s *Sweeper) loadEscalationCandidates(ctx context.Context, t teamRow) ([]uuid.UUID, error) {
+// status, severity), for both kinds a person can be asked about: decision
+// contradictions and duplicate work (docs/DUPLICATES.md §4.8). Oldest first,
+// so a backlog is worked through in the order the conflicts appeared rather
+// than at random.
+func (s *Sweeper) loadEscalationCandidates(ctx context.Context, t teamRow) ([]escalationCandidate, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT `id` FROM `conflict` WHERE `team_uuid` = ? AND `status` IN (?, ?) AND `severity` >= ? "+
-			"AND `kind` = ? AND `escalated_at` IS NULL ORDER BY `first_detected_at` LIMIT ?",
+		"SELECT `id`, `kind` FROM `conflict` WHERE `team_uuid` = ? AND `status` IN (?, ?) AND `severity` >= ? "+
+			"AND `kind` IN (?, ?) AND `escalated_at` IS NULL ORDER BY `first_detected_at` LIMIT ?",
 		t.uuid.String(), int64(enums.CONFLICT_STATUS_OPEN), int64(enums.CONFLICT_STATUS_ACKNOWLEDGED),
-		int64(t.humanFloor), int64(enums.CONFLICT_KIND_DECISION_CONTRADICTION), s.opts.MaxEscalationsPerPass)
+		int64(t.humanFloor), int64(enums.CONFLICT_KIND_DECISION_CONTRADICTION), int64(enums.CONFLICT_KIND_DUPLICATE_WORK),
+		s.opts.MaxEscalationsPerPass)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []uuid.UUID
+	var out []escalationCandidate
 	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
+		var (
+			raw  string
+			kind int64
+		)
+		if err := rows.Scan(&raw, &kind); err != nil {
 			return nil, err
 		}
 		id, err := uuid.FromString(raw)
 		if err != nil {
 			continue
 		}
-		out = append(out, id)
+		out = append(out, escalationCandidate{id: id, kind: enums.ConflictKind(kind)})
 	}
 	return out, rows.Err()
 }
@@ -818,6 +838,16 @@ func deciderQuestion(st escalationState, budget time.Duration) string {
 	owner := firstText(st.owner.memberName, st.owner.name(), "the plan owner")
 	return fitQuestion(shape, clipText(st.conflictKey, escalationKeyChars), clipText(st.decisionKey, escalationKeyChars),
 		renderBudget(budget), clipText(owner, escalationNameChars), st.intentSummary)
+}
+
+// duplicateQuestions are docs/DUPLICATES.md §4.10's two escalation questions
+// for a duplicate_work conflict: the yield side's (b) and the incumbent's (a).
+// The wording is single-sourced in app/mcp, which clips each body to the 200
+// characters get_instructions shows; the sweeper only supplies the names.
+func duplicateQuestions(st duplicateConflictState, budget time.Duration) (yieldSide, incumbent string) {
+	return mcp.DuplicateEscalationQuestions(st.conflictKey, st.b.key, st.a.key,
+		firstText(st.b.memberName, st.b.name()), firstText(st.a.memberName, st.a.name()),
+		st.a.summary, renderBudget(budget))
 }
 
 // fitQuestion renders shape inside escalationQuestionChars, and it is the

@@ -48,6 +48,7 @@ func (s *Sweeper) settleAfterAbandon(ctx context.Context, teamUUID uuid.UUID, se
 		s.settleConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, mcp.ReleaseSessionAbandoned, rep)
 		s.settleContractConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, rep)
 		s.settleDecisionConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, rep)
+		s.settleDuplicateConflicts(ctx, teamUUID, c.uuid, &project, &agent, &member, rep)
 	}
 }
 
@@ -247,4 +248,107 @@ func (s *Sweeper) settleDecisionConflicts(ctx context.Context, teamUUID, session
 			rep.EventsEmitted++
 		}
 	}
+}
+
+// settleDuplicateConflicts closes the duplicate_work conflicts an abandoned
+// session took part in, one conflict_resolved event each (docs/DUPLICATES.md
+// §4.7, DuplicateReleaseSessionAbandoned). Same shape as its neighbours:
+// candidates outside the lock, the decision inside it.
+//
+// The order is load-bearing. The candidates are found FIRST, while the
+// session's plans are still declared or active: an incumbent that was never
+// told is not a participant yet, and the only way to reach its conflict is
+// through the judgement rows on the session's live plans (path (b) of
+// OpenDuplicateConflictsOfSession). Nothing in this pass changes an intent's
+// status, and this function keeps it that way by reading before it writes.
+//
+// Then the pairs other agents were asked about this session's plans expire,
+// quietly: nobody will be building those plans. The pairs this session was
+// itself asked to judge already expired in settleDecisionConflicts
+// (ExpireJudgementsOfSession is kind-agnostic).
+//
+// DuplicateReleaseSessionAbandoned also suppresses COORDINATED: nobody
+// coordinated, metiche noticed a silence.
+func (s *Sweeper) settleDuplicateConflicts(ctx context.Context, teamUUID, sessionUUID uuid.UUID,
+	projectUUID, agentUUID, memberUUID *uuid.UUID, rep *Report) {
+	ids, err := mcp.OpenDuplicateConflictsOfSession(ctx, s.db, teamUUID, sessionUUID)
+	if err != nil {
+		rep.addErr("finding the duplicate conflicts an abandoned session may have settled", err)
+		return
+	}
+
+	intents, err := s.sessionLiveIntents(ctx, sessionUUID)
+	if err != nil {
+		rep.addErr("reading the abandoned session's plans", err)
+	} else if n, err := mcp.ExpireDuplicatePairsOnIntents(ctx, s.db, teamUUID, intents, s.now()); err != nil {
+		rep.addErr("expiring the duplicate pairs on the abandoned session's plans", err)
+	} else {
+		rep.JudgementsExpired += int(n)
+	}
+
+	for _, id := range ids {
+		conflictID, session := id, sessionUUID
+		var settled mcp.SettledConflict
+		wrote, err := s.appendEvent(ctx, sweepEvent{
+			teamUUID:       teamUUID,
+			idempotencyKey: "sweep:conflict_resolved:" + conflictID.String(),
+			kind:           enums.EVENT_KIND_CONFLICT_RESOLVED,
+			structural:     true,
+			projectUUID:    projectUUID,
+			sessionUUID:    &session,
+			agentUUID:      agentUUID,
+			memberUUID:     memberUUID,
+			subjectKind:    enums.SUBJECT_KIND_CONFLICT,
+			subjectUUID:    &conflictID,
+			extra: func(ctx context.Context, tx *sql.Tx, _ int64, now time.Time) error {
+				out, ok, err := mcp.SettleDuplicateConflict(ctx, tx, conflictID, mcp.DuplicateRelease{
+					TeamUUID:    teamUUID,
+					SessionUUID: session,
+					Kind:        mcp.DuplicateReleaseSessionAbandoned,
+					At:          now,
+				})
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return errNothingToSay
+				}
+				settled = out
+				return nil
+			},
+			finish: func() (string, string, []byte) {
+				return mcp.ConflictResolvedSummary(settled), settled.Key, mcp.ConflictResolvedPayload(settled).ToJSON()
+			},
+		})
+		switch {
+		case err != nil:
+			rep.addErr("settling duplicate conflict "+conflictID.String(), err)
+		case wrote:
+			rep.ConflictsResolved++
+			rep.EventsEmitted++
+		}
+	}
+}
+
+// sessionLiveIntents reads a session's declared or active plans, capped like
+// app/mcp's own read (the intent_has_session foreign key's index).
+func (s *Sweeper) sessionLiveIntents(ctx context.Context, sessionUUID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT `id` FROM `intent` WHERE `session_uuid` = ? AND `status` IN (?, ?) ORDER BY `created_at`, `id` LIMIT ?",
+		sessionUUID.String(), int64(enums.INTENT_STATUS_DECLARED), int64(enums.INTENT_STATUS_ACTIVE), duplicateSessionIntentsLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []uuid.UUID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if id, err := uuid.FromString(raw); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
 }
