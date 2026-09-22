@@ -971,7 +971,9 @@ func (h *Handler) raiseDuplicateConflict(ctx context.Context, tc *TxContext, m *
 
 	age := ""
 	if a.DeclaredAt.Valid {
-		age = humanAge(tc.Now.Sub(a.DeclaredAt.Time))
+		// DATETIME rounds to the second, so a plan declared this second can
+		// read as a moment in the future.
+		age = humanAge(max(tc.Now.Sub(a.DeclaredAt.Time), 0))
 	}
 	action := duplicateYieldAction(duplicateActionInput{
 		A: a.Key, B: b.Key, Who: describeHolder(aOwner.claimSide), Member: aOwner.MemberName,
